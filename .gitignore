@@ -19,6 +19,8 @@ outputs/
 
 dataset/images/
 dataset/labels/
+dataset/raw/
+dataset/labeled/
 
 .env
 .env.*

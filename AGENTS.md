@@ -12,10 +12,12 @@ This repository is a YOLO object detection project for a robot AI challenge.
 - Camera output must include object kind and `bearing_deg`.
 - LiDAR is for mapping only; do not use it for target distance in inference.
 - Target distance must come through an infrared sensor provider when hardware integration is added.
+- The pipeline starts with raw camera capture, then external YOLO labeling, dataset splitting, dataset validation, training, validation, and camera inference.
 
 ## Development
 
 - Use `argparse` for all executable scripts.
+- Keep data collection and dataset preparation scripts in `scripts/`.
 - Keep robot decision rules in `src/postprocess.py` and cover changes with pytest.
 - Prefer small, deterministic tests that do not require a camera, GPU, or YOLO weights.
 - Do not commit generated model weights, TensorRT engines, datasets, runs, logs, or local virtual environments.
