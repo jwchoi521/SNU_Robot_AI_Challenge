@@ -28,11 +28,11 @@ FRUIT_STICKER_CLASS_IDS = {
 Box = Tuple[float, float, float, float]
 
 
-class BearingDistanceProvider(Protocol):
-    """LiDAR hook for future bearing-based distance matching."""
+class InfraredDistanceProvider(Protocol):
+    """Infrared sensor hook for target distance measurement."""
 
-    def distance_for_bearing_deg(self, bearing_deg: float) -> float | None:
-        """Return a distance in meters for the nearest LiDAR bearing, if any."""
+    def distance_for_target(self, bearing_deg: float, bbox_xyxy: Box) -> float | None:
+        """Return a distance in meters for a camera target, if available."""
 
 
 @dataclass(frozen=True)
@@ -73,22 +73,23 @@ class FrameTarget:
 
 
 @dataclass(frozen=True)
-class LidarBearingSample:
+class InfraredBearingSample:
     bearing_deg: float
     distance_m: float
 
 
-class NearestBearingDistanceMatcher:
+class NearestInfraredBearingMatcher:
     def __init__(
         self,
-        samples: Iterable[LidarBearingSample],
+        samples: Iterable[InfraredBearingSample],
         max_delta_deg: float = 2.0,
     ) -> None:
         self.samples = tuple(samples)
         self.max_delta_deg = max_delta_deg
 
-    def distance_for_bearing_deg(self, bearing_deg: float) -> float | None:
-        best_sample: LidarBearingSample | None = None
+    def distance_for_target(self, bearing_deg: float, bbox_xyxy: Box) -> float | None:
+        del bbox_xyxy
+        best_sample: InfraredBearingSample | None = None
         best_delta = self.max_delta_deg
         for sample in self.samples:
             delta = abs(sample.bearing_deg - bearing_deg)
@@ -220,7 +221,7 @@ def postprocess_detections(
     detections: Sequence[Detection],
     image_width: int,
     horizontal_fov_deg: float = 69.4,
-    lidar_matcher: BearingDistanceProvider | None = None,
+    infrared_provider: InfraredDistanceProvider | None = None,
 ) -> list[FrameTarget]:
     cubes = [detection for detection in detections if detection.class_id == CUBE_CLASS_ID]
     stickers = [
@@ -244,7 +245,7 @@ def postprocess_detections(
                     image_width=image_width,
                     horizontal_fov_deg=horizontal_fov_deg,
                     pick_allowed=False,
-                    lidar_matcher=lidar_matcher,
+                    infrared_provider=infrared_provider,
                     cube_detection=cube,
                 )
             )
@@ -263,7 +264,7 @@ def postprocess_detections(
                 image_width=image_width,
                 horizontal_fov_deg=horizontal_fov_deg,
                 pick_allowed=True,
-                lidar_matcher=lidar_matcher,
+                infrared_provider=infrared_provider,
                 cube_detection=cube,
                 sticker_detection=sticker,
             )
@@ -278,7 +279,7 @@ def postprocess_detections(
                 image_width=image_width,
                 horizontal_fov_deg=horizontal_fov_deg,
                 pick_allowed=True,
-                lidar_matcher=lidar_matcher,
+                infrared_provider=infrared_provider,
             )
         )
 
@@ -292,7 +293,7 @@ def _make_target(
     image_width: int,
     horizontal_fov_deg: float,
     pick_allowed: bool,
-    lidar_matcher: BearingDistanceProvider | None,
+    infrared_provider: InfraredDistanceProvider | None,
     fruit_kind: str | None = None,
     cube_detection: Detection | None = None,
     sticker_detection: Detection | None = None,
@@ -300,8 +301,8 @@ def _make_target(
     bearing_deg = bearing_from_bbox(bbox_xyxy, image_width, horizontal_fov_deg)
     distance_m = (
         None
-        if lidar_matcher is None
-        else lidar_matcher.distance_for_bearing_deg(bearing_deg)
+        if infrared_provider is None
+        else infrared_provider.distance_for_target(bearing_deg, bbox_xyxy)
     )
     return FrameTarget(
         object_kind=object_kind,

@@ -4,8 +4,8 @@ import pytest
 
 from src.postprocess import (
     Detection,
-    LidarBearingSample,
-    NearestBearingDistanceMatcher,
+    InfraredBearingSample,
+    NearestInfraredBearingMatcher,
     TargetConfirmationTracker,
     bearing_from_bbox,
     postprocess_detections,
@@ -80,13 +80,13 @@ def test_target_confirmed_only_after_repeated_frames() -> None:
     assert third[0].target_confirmed is True
 
 
-def test_bearing_and_lidar_distance_are_bearing_based() -> None:
+def test_bearing_and_infrared_distance_are_target_based() -> None:
     assert bearing_from_bbox((0, 0, 100, 100), 200, 90.0) == pytest.approx(-22.5)
 
-    matcher = NearestBearingDistanceMatcher(
+    matcher = NearestInfraredBearingMatcher(
         [
-            LidarBearingSample(bearing_deg=-23.0, distance_m=1.2),
-            LidarBearingSample(bearing_deg=10.0, distance_m=3.0),
+            InfraredBearingSample(bearing_deg=-23.0, distance_m=1.2),
+            InfraredBearingSample(bearing_deg=10.0, distance_m=3.0),
         ],
         max_delta_deg=2.0,
     )
@@ -94,7 +94,7 @@ def test_bearing_and_lidar_distance_are_bearing_based() -> None:
         [Detection(class_id=1, confidence=0.95, bbox_xyxy=(0, 0, 100, 100))],
         image_width=200,
         horizontal_fov_deg=90.0,
-        lidar_matcher=matcher,
+        infrared_provider=matcher,
     )
 
     assert targets[0].object_kind == "octahedron"

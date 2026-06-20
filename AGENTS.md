@@ -10,7 +10,8 @@ This repository is a YOLO object detection project for a robot AI challenge.
 - A fruit target is valid only when a `cube_any` detection is connected to a fruit sticker detection.
 - `target_confirmed` must come from repeated multi-frame observation, not a single frame.
 - Camera output must include object kind and `bearing_deg`.
-- Keep LiDAR integration bearing-based so distance matching can be added without changing camera post-processing contracts.
+- LiDAR is for mapping only; do not use it for target distance in inference.
+- Target distance must come through an infrared sensor provider when hardware integration is added.
 
 ## Development
 
