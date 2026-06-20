@@ -1,0 +1,15 @@
+﻿path: ./dataset
+
+train: images/train
+val: images/val
+test: images/test
+
+names:
+  0: cube_any
+  1: octahedron
+  2: dodecahedron
+  3: icosahedron
+  4: apple_sticker
+  5: orange_sticker
+  6: banana_sticker
+  7: pineapple_sticker
