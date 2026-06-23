@@ -36,6 +36,25 @@ python scripts/check_env.py
 python scripts/check_env.py --check-camera --camera-index 0
 ```
 
+Jetson Orin Nano에서 GPU와 카메라까지 확인할 때는 프로젝트 폴더에서 아래처럼 실행합니다.
+
+```bash
+source .venv/bin/activate
+python scripts/check_env.py --require-cuda --check-camera --camera-index 0
+```
+
+현재 검증된 Jetson 핵심 패키지 조합은 아래와 같습니다.
+
+| package | version |
+| --- | --- |
+| torch | 2.8.0, CUDA 12.6 |
+| torchvision | 0.23.0 |
+| numpy | 1.26.4 |
+| matplotlib | 3.10.9 |
+| opencv | 4.10.0.84 |
+| ultralytics | 8.4.75 |
+| tqdm | 4.68.3 |
+
 ## Pipeline
 
 1. 카메라 원본 이미지 수집
