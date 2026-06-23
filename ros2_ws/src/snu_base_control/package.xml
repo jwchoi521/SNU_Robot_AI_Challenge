@@ -1,17 +1,18 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>snu_target_navigation</name>
+  <name>snu_base_control</name>
   <version>0.1.0</version>
-  <description>Target approach helpers for SNU Robot AI Challenge navigation.</description>
+  <description>Four-wheel base kinematics and odometry helpers.</description>
   <maintainer email="team@example.com">SNU Robot AI Challenge Team</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
 
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
-  <exec_depend>snu_robot_interfaces</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

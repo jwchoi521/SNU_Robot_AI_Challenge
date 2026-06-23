@@ -8,6 +8,8 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/DetectedTarget.msg"
   "msg/DetectedTargetArray.msg"
+  "msg/PerceivedObject.msg"
+  "msg/PerceivedObjectArray.msg"
   DEPENDENCIES std_msgs
 )
 

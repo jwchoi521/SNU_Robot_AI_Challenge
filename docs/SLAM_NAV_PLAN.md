@@ -5,7 +5,7 @@
 가장 먼저 할 일은 알고리즘을 켜는 것이 아니라 센서 입력이 제대로 들어오는지 확인하는 것입니다.
 
 1. base driver, LiDAR driver, IMU driver, static sensor TF를 실행합니다.
-2. `/scan`, `/wheel/odom`, `/imu`, `/cmd_vel`을 확인합니다.
+2. `/scan`, `/joint_states`, `/wheel/odom`, `/imu`, `/cmd_vel`을 확인합니다.
 3. TF를 확인합니다.
 
 ```bash
@@ -60,17 +60,19 @@ ros2 launch snu_robot_bringup navigation.launch.py
 4. Nav2 local costmap의 obstacle range와 inflation radius
 5. controller의 속도와 가속도 제한
 
-## 4단계: 목표 물체 접근
+## 4단계: 목표 물체 접근과 object 장애물 생성
 
-YOLO와 적외선 거리 센서가 `/perception/targets`를 발행합니다.
+YOLO와 적외선 거리 센서가 `/perception/objects`를 발행합니다. 여기에는 필요한 object와
+필요하지 않은 object가 모두 포함됩니다.
 
-target navigation 노드는 다음 순서로 동작합니다.
+semantic object projector는 다음 순서로 동작합니다.
 
-1. `pick_allowed=true`인 target만 봅니다.
-2. `target_confirmed=true`인 target만 봅니다.
-3. `distance_m`이 있는 target만 봅니다.
-4. `bearing_deg + distance_m`을 `base_link` 기준 pose로 변환합니다.
-5. `/target_pose_base`로 발행합니다.
+1. `navigation_role=TARGET`이고 `pick_allowed=true`인 object를 접근 목표 후보로 봅니다.
+2. `target_confirmed=true`이고 `distance_m`이 있는 target을 고릅니다.
+3. target의 `bearing_deg + distance_m`을 `base_link` 기준 pose로 변환합니다.
+4. `/target_pose_base`로 발행합니다.
+5. `navigation_role=OBSTACLE`인 object는 `bearing_deg + distance_m`을 point cloud로 변환합니다.
+6. `/semantic_obstacles`로 발행해서 Nav2 costmap에 넣습니다.
 
 상위 mission logic은 이 pose를 이용해 다음처럼 확장하면 됩니다.
 
@@ -83,7 +85,7 @@ target navigation 노드는 다음 순서로 동작합니다.
 | 거리 상황 | 제어 방식 | 이유 |
 | --- | --- | --- |
 | 멀리 있거나 지도 기반 이동이 필요할 때 | Nav2 global planner | 장애물과 맵을 고려할 수 있음 |
-| 목표 근처 | Nav2 local controller 또는 짧은 visual servoing | 회피와 접근을 함께 처리 |
+| 목표 근처 | Nav2 local controller 또는 짧은 visual servoing | semantic obstacle 회피와 접근을 함께 처리 |
 | 마지막 정렬 | bearing PID + IR stop distance | 목표 물체 기준 정렬이 더 정확함 |
 
 ## 현재 코드의 시작점
@@ -101,4 +103,6 @@ ros2 launch snu_target_navigation target_navigation.launch.py
 ```
 
 아직 이 브랜치에는 실제 하드웨어 driver가 없습니다. 즉 `/scan`, `/wheel/odom`,
-`/imu`, `/cmd_vel`은 로봇 base bringup 쪽에서 제공되어야 합니다.
+`/imu`, `/cmd_vel`은 로봇 base bringup 쪽에서 제공되어야 합니다. 만약 base driver가
+`/joint_states`만 제공한다면 `snu_base_control`의 `four_wheel_odometry` 노드가
+`/wheel/odom`을 계산합니다.

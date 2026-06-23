@@ -1,9 +1,14 @@
-target_pose_projector:
+semantic_object_projector:
   ros__parameters:
-    input_topic: /perception/targets
-    output_topic: /target_pose_base
+    input_topic: /perception/objects
+    target_pose_topic: /target_pose_base
+    obstacle_cloud_topic: /semantic_obstacles
     base_frame: base_link
     bearing_positive_is_left: false
     min_distance_m: 0.10
     max_distance_m: 2.50
-    prefer_closest: true
+    min_confidence: 0.25
+    prefer_closest_target: true
+    require_confirmed_targets: true
+    require_confirmed_obstacles: false
+    default_obstacle_radius_m: 0.18

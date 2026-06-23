@@ -2,7 +2,7 @@ from glob import glob
 from setuptools import setup
 
 
-package_name = "snu_target_navigation"
+package_name = "snu_base_control"
 
 setup(
     name=package_name,
@@ -18,12 +18,11 @@ setup(
     zip_safe=True,
     maintainer="SNU Robot AI Challenge Team",
     maintainer_email="team@example.com",
-    description="Target approach helpers for SNU Robot AI Challenge navigation.",
+    description="Four-wheel base kinematics and odometry helpers.",
     license="MIT",
     entry_points={
         "console_scripts": [
-            "semantic_object_projector = snu_target_navigation.semantic_object_projector:main",
-            "target_pose_projector = snu_target_navigation.target_pose_projector:main",
+            "four_wheel_odometry = snu_base_control.four_wheel_odometry:main",
         ],
     },
 )

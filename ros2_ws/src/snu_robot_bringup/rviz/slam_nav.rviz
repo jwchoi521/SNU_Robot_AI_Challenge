@@ -54,6 +54,14 @@ Visualization Manager:
       Shape: Arrow
       Topic:
         Value: /target_pose_base
+    - Class: rviz_default_plugins/PointCloud2
+      Color: 255; 80; 80
+      Enabled: true
+      Name: Semantic Obstacles
+      Size (m): 0.08
+      Style: Spheres
+      Topic:
+        Value: /semantic_obstacles
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
