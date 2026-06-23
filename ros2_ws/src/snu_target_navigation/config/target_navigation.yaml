@@ -1,0 +1,9 @@
+target_pose_projector:
+  ros__parameters:
+    input_topic: /perception/targets
+    output_topic: /target_pose_base
+    base_frame: base_link
+    bearing_positive_is_left: false
+    min_distance_m: 0.10
+    max_distance_m: 2.50
+    prefer_closest: true
