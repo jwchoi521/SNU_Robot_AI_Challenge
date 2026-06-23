@@ -89,6 +89,7 @@ ros2_ws/src/
   snu_base_control/        4륜 독립 구동 odometry와 바퀴별 명령 변환
   snu_robot_bringup/       SLAM, EKF, Nav2, sensor TF launch와 설정
   snu_robot_interfaces/    perception, base, gripper, navigation 공유 메시지
+  snu_mission_manager/     target 수거 및 고정 drop zone 배치 상태기계
   snu_target_navigation/   object를 target pose와 semantic obstacle로 변환하는 노드
 docs/
   SENSOR_CONTRACT.md       필요한 토픽, TF, 메시지 의미
@@ -179,11 +180,14 @@ ros2 launch snu_target_navigation target_navigation.launch.py
 
 ```text
 /target_pose_base    geometry_msgs/PoseStamped
+/target_pose_map     geometry_msgs/PoseStamped
 /semantic_obstacles  sensor_msgs/PointCloud2
 ```
 
 `navigation_role=TARGET`인 object는 접근 목표가 되고, `navigation_role=OBSTACLE`인 object는
 Nav2 costmap에 들어가는 장애물이 됩니다.
+`semantic_object_registry`는 object를 `map` 좌표계에 저장해서 카메라 시야에서 잠깐 사라져도
+일정 시간 장애물/target 기억을 유지합니다.
 
 ### 6. 집기 후 고정 목적지로 이동
 
@@ -203,6 +207,15 @@ target 접근
 
 drop pose는 맵을 만든 뒤 `map` 좌표계 기준으로 고정합니다. 예를 들어
 `x=1.0, y=-0.5, yaw=1.57`처럼 mission 설정에 저장합니다.
+
+mission manager 실행:
+
+```bash
+ros2 launch snu_mission_manager pick_place_mission.launch.py
+```
+
+현재 mission manager는 Nav2 action과 직접 연결된 완성본이 아니라, `/mission/nav_goal`과
+`/mission/event`를 사용하는 상태기계 골격입니다. Nav2 action 연동은 다음 개발 단계입니다.
 
 ## 현재 브랜치의 목표
 

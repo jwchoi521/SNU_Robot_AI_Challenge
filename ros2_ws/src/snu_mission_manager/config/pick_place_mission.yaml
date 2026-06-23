@@ -1,0 +1,16 @@
+pick_place_mission_manager:
+  ros__parameters:
+    auto_start: false
+    target_pose_topic: /target_pose_map
+    nav_goal_topic: /mission/nav_goal
+    mission_event_topic: /mission/event
+    state_topic: /mission/state
+    gripper_command_topic: /gripper/command
+    gripper_state_topic: /gripper/state
+
+    # Fill these after measuring the fixed drop zone in the saved map.
+    drop_frame: map
+    drop_x: 0.0
+    drop_y: 0.0
+    drop_yaw: 0.0
+    drop_pose_configured: false

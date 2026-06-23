@@ -7,23 +7,16 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description() -> LaunchDescription:
     default_params = PathJoinSubstitution(
-        [FindPackageShare("snu_target_navigation"), "config", "target_navigation.yaml"]
+        [FindPackageShare("snu_mission_manager"), "config", "pick_place_mission.yaml"]
     )
 
     return LaunchDescription(
         [
             DeclareLaunchArgument("params_file", default_value=default_params),
             Node(
-                package="snu_target_navigation",
-                executable="semantic_object_projector",
-                name="semantic_object_projector",
-                output="screen",
-                parameters=[LaunchConfiguration("params_file")],
-            ),
-            Node(
-                package="snu_target_navigation",
-                executable="semantic_object_registry",
-                name="semantic_object_registry",
+                package="snu_mission_manager",
+                executable="pick_place_mission_manager",
+                name="pick_place_mission_manager",
                 output="screen",
                 parameters=[LaunchConfiguration("params_file")],
             ),

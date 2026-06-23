@@ -2,7 +2,7 @@ from glob import glob
 from setuptools import setup
 
 
-package_name = "snu_target_navigation"
+package_name = "snu_mission_manager"
 
 setup(
     name=package_name,
@@ -18,13 +18,11 @@ setup(
     zip_safe=True,
     maintainer="SNU Robot AI Challenge Team",
     maintainer_email="team@example.com",
-    description="Target approach helpers for SNU Robot AI Challenge navigation.",
+    description="Mission state machines for target pickup and drop-off.",
     license="MIT",
     entry_points={
         "console_scripts": [
-            "semantic_object_projector = snu_target_navigation.semantic_object_projector:main",
-            "semantic_object_registry = snu_target_navigation.semantic_object_registry:main",
-            "target_pose_projector = snu_target_navigation.target_pose_projector:main",
+            "pick_place_mission_manager = snu_mission_manager.pick_place_mission_manager:main",
         ],
     },
 )

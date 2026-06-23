@@ -19,6 +19,7 @@ def generate_launch_description() -> LaunchDescription:
     enable_slam = LaunchConfiguration("enable_slam")
     enable_nav2 = LaunchConfiguration("enable_nav2")
     enable_target_navigation = LaunchConfiguration("enable_target_navigation")
+    enable_mission_manager = LaunchConfiguration("enable_mission_manager")
     enable_rviz = LaunchConfiguration("enable_rviz")
     scan_topic = LaunchConfiguration("scan_topic")
 
@@ -91,6 +92,19 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(enable_target_navigation),
     )
 
+    mission_manager_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution(
+                [
+                    FindPackageShare("snu_mission_manager"),
+                    "launch",
+                    "pick_place_mission.launch.py",
+                ]
+            )
+        ),
+        condition=IfCondition(enable_mission_manager),
+    )
+
     rviz_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(_package_file("launch", "rviz.launch.py")),
         launch_arguments={
@@ -110,6 +124,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("enable_slam", default_value="true"),
             DeclareLaunchArgument("enable_nav2", default_value="true"),
             DeclareLaunchArgument("enable_target_navigation", default_value="true"),
+            DeclareLaunchArgument("enable_mission_manager", default_value="false"),
             DeclareLaunchArgument("enable_rviz", default_value="false"),
             sensor_tf_launch,
             wheel_command_mapper_launch,
@@ -118,6 +133,7 @@ def generate_launch_description() -> LaunchDescription:
             slam_launch,
             nav_launch,
             target_navigation_launch,
+            mission_manager_launch,
             rviz_launch,
         ]
     )

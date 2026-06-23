@@ -17,7 +17,12 @@
 | `/wheel_commands` | `snu_robot_interfaces/FourWheelCommand` | `cmd_vel_to_four_wheel` | 모터/base driver | 4개 바퀴별 속도 또는 normalized power |
 | `/perception/objects` | `snu_robot_interfaces/PerceivedObjectArray` | YOLO + IR bridge | target navigation | 모든 object의 역할, 방향, 거리 |
 | `/target_pose_base` | `geometry_msgs/PoseStamped` | target navigation | mission logic | `base_link` 기준 목표 위치 |
+| `/target_pose_map` | `geometry_msgs/PoseStamped` | semantic object registry | mission logic | `map` 기준 목표 위치 |
 | `/semantic_obstacles` | `sensor_msgs/PointCloud2` | target navigation | Nav2 costmap | target이 아닌 object 장애물 |
+| `/semantic_obstacles_live` | `sensor_msgs/PointCloud2` | semantic object projector | debug/RViz | 현재 시야 기준 실시간 object 장애물 |
+| `/mission/nav_goal` | `geometry_msgs/PoseStamped` | mission manager | Nav2 bridge | mission이 요청한 다음 이동 목표 |
+| `/mission/event` | `std_msgs/String` | operator/Nav2 bridge | mission manager | `start`, `target_reached`, `target_inside`, `drop_reached` 등 |
+| `/mission/state` | `std_msgs/String` | mission manager | monitor | 현재 mission 상태 |
 | `/gripper/command` | `snu_robot_interfaces/GripperCommand` | mission logic | gripper driver | 집게 열기/닫기 |
 | `/gripper/state` | `snu_robot_interfaces/GripperState` | gripper driver | mission logic | 집게 상태와 물체 수납 여부 |
 

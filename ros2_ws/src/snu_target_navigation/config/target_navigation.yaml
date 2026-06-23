@@ -2,7 +2,7 @@ semantic_object_projector:
   ros__parameters:
     input_topic: /perception/objects
     target_pose_topic: /target_pose_base
-    obstacle_cloud_topic: /semantic_obstacles
+    obstacle_cloud_topic: /semantic_obstacles_live
     base_frame: base_link
     bearing_positive_is_left: false
     min_distance_m: 0.10
@@ -12,3 +12,22 @@ semantic_object_projector:
     require_confirmed_targets: true
     require_confirmed_obstacles: false
     default_obstacle_radius_m: 0.18
+
+semantic_object_registry:
+  ros__parameters:
+    input_topic: /perception/objects
+    obstacle_cloud_topic: /semantic_obstacles
+    target_pose_topic: /target_pose_map
+    map_frame: map
+    observation_frame: base_link
+    bearing_positive_is_left: false
+    min_distance_m: 0.10
+    max_distance_m: 2.50
+    min_confidence: 0.25
+    merge_distance_m: 0.25
+    obstacle_ttl_sec: 30.0
+    target_ttl_sec: 60.0
+    publish_rate_hz: 5.0
+    default_obstacle_radius_m: 0.18
+    require_confirmed_targets: true
+    require_confirmed_obstacles: false

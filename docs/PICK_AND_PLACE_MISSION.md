@@ -16,8 +16,11 @@
 | --- | --- | --- |
 | `/perception/objects` | `PerceivedObjectArray` | target/obstacle 후보 |
 | `/target_pose_base` | `PoseStamped` | 로봇 기준 target 위치 |
+| `/target_pose_map` | `PoseStamped` | 맵 기준 target 위치 |
 | `/semantic_obstacles` | `PointCloud2` | 회피해야 하는 object |
 | `/cmd_vel` | `Twist` | 로봇 속도 명령 |
+| `/mission/nav_goal` | `PoseStamped` | mission manager가 요청한 이동 목표 |
+| `/mission/event` | `String` | mission 상태 전환 이벤트 |
 | `/gripper/command` | `GripperCommand` | 집게 열기/닫기 |
 | `/gripper/state` | `GripperState` | 수거 여부 확인 |
 
@@ -107,6 +110,24 @@ target을 다시 밀거나 건드리지 않도록 짧게 후진합니다.
 11. `DONE`
 
 해당 target을 semantic object registry에서 삭제하고 다음 mission으로 넘어갑니다.
+
+## 현재 코드 상태
+
+현재 `snu_mission_manager`는 완성된 Nav2 action client가 아니라 상태기계 골격입니다.
+
+```bash
+ros2 launch snu_mission_manager pick_place_mission.launch.py
+```
+
+기본 동작:
+
+- `/target_pose_map`을 받으면 `/mission/nav_goal`로 target goal을 발행합니다.
+- `/mission/event`에 `target_reached`가 들어오면 집게를 엽니다.
+- `/mission/event`에 `target_inside`가 들어오면 집게를 닫습니다.
+- `/gripper/state.has_object=true`가 들어오면 drop pose로 `/mission/nav_goal`을 발행합니다.
+- `/mission/event`에 `drop_reached`가 들어오면 집게를 엽니다.
+
+Nav2 action client 연결, final alignment 제어, registry에서 수거한 target 삭제는 다음 단계 TODO입니다.
 
 ## 중요한 설계 포인트
 
