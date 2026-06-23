@@ -1,59 +1,60 @@
-# Sensor Contract
+# 센서 인터페이스 계약
 
-This document is the interface contract between hardware bringup, SLAM/Nav2,
-and perception.
+이 문서는 하드웨어 bringup, SLAM/Nav2, perception 사이의 약속을 정리합니다.
+각 팀원이 다른 모듈을 작업하더라도 토픽과 TF 이름이 흔들리지 않도록 하는 것이 목적입니다.
 
-## Required Topics
+## 필수 토픽
 
-| Topic | Type | Producer | Consumer | Notes |
+| 토픽 | 타입 | 발행자 | 구독자 | 설명 |
 | --- | --- | --- | --- | --- |
-| `/scan` | `sensor_msgs/LaserScan` | LiDAR driver | `slam_toolbox`, Nav2 costmaps | Used for mapping and obstacle updates only |
-| `/wheel/odom` | `nav_msgs/Odometry` | Motor/base driver | `robot_localization` | Raw wheel odometry |
-| `/imu` | `sensor_msgs/Imu` | IMU driver | `robot_localization` | Optional but recommended |
-| `/odometry/filtered` | `nav_msgs/Odometry` | `robot_localization` | Nav2 | Smoothed local odometry |
-| `/map` | `nav_msgs/OccupancyGrid` | SLAM or map server | Nav2 global costmap | Static/global environment |
-| `/cmd_vel` | `geometry_msgs/Twist` | Nav2 controller | Motor/base driver | Velocity command |
-| `/perception/targets` | `snu_robot_interfaces/DetectedTargetArray` | YOLO + IR bridge | target navigation | Camera bearing plus IR distance |
-| `/target_pose_base` | `geometry_msgs/PoseStamped` | target navigation | higher-level mission logic | Target point in `base_link` frame |
+| `/scan` | `sensor_msgs/LaserScan` | LiDAR driver | `slam_toolbox`, Nav2 costmap | 지도 작성과 장애물 회피에 사용 |
+| `/wheel/odom` | `nav_msgs/Odometry` | 모터/base driver | `robot_localization` | 원본 휠 오도메트리 |
+| `/imu` | `sensor_msgs/Imu` | IMU driver | `robot_localization` | 선택이지만 권장 |
+| `/odometry/filtered` | `nav_msgs/Odometry` | `robot_localization` | Nav2 | EKF로 보정된 odom |
+| `/map` | `nav_msgs/OccupancyGrid` | SLAM 또는 map server | Nav2 global costmap | 전역 지도 |
+| `/cmd_vel` | `geometry_msgs/Twist` | Nav2 controller | 모터/base driver | 로봇 속도 명령 |
+| `/perception/targets` | `snu_robot_interfaces/DetectedTargetArray` | YOLO + IR bridge | target navigation | 물체 방향과 거리 |
+| `/target_pose_base` | `geometry_msgs/PoseStamped` | target navigation | mission logic | `base_link` 기준 목표 위치 |
 
-## Required Frames
+## 필수 TF 프레임
 
-| Frame | Owner | Meaning |
+| 프레임 | 담당 | 의미 |
 | --- | --- | --- |
-| `map` | SLAM/localization | Global map frame |
-| `odom` | odometry/EKF | Smooth local frame |
-| `base_link` | robot base | Robot body frame, x forward, y left |
-| `laser_frame` | static TF | LiDAR optical/mechanical frame |
-| `camera_frame` | static TF | Camera-aligned frame used by target projection |
+| `map` | SLAM/localization | 전역 지도 좌표계 |
+| `odom` | odometry/EKF | 부드럽게 이어지는 지역 좌표계 |
+| `base_link` | robot base | 로봇 중심 좌표계. x는 전방, y는 좌측 |
+| `laser_frame` | static TF | LiDAR 좌표계 |
+| `camera_frame` | static TF | 카메라 좌표계 |
 
-Expected TF chain:
+기대하는 TF 구조:
 
 ```text
 map -> odom -> base_link -> laser_frame
                          -> camera_frame
 ```
 
-## Perception Message Semantics
+`map -> odom`은 SLAM 또는 localization이 만듭니다. `odom -> base_link`는
+`robot_localization` 또는 base driver가 만듭니다. 센서 위치는 static TF로 둡니다.
 
-`DetectedTarget.bearing_deg` follows the current YOLO code convention:
+## perception 메시지 의미
 
-- `0` means image center.
-- Positive values mean the target is to the right side of the image.
+`DetectedTarget.bearing_deg`는 현재 YOLO 코드의 기준을 따릅니다.
 
-`snu_target_navigation` converts that to ROS base-frame y using the
-`bearing_positive_is_left` parameter, which defaults to `false`.
+- `0`은 이미지 중앙입니다.
+- 양수는 이미지 오른쪽입니다.
 
-`distance_m` must come from the infrared sensor or another target-distance
-provider. LiDAR is reserved for SLAM and obstacle avoidance.
+ROS의 `base_link`에서는 보통 y 양수가 왼쪽이므로, `snu_target_navigation`은
+`bearing_positive_is_left` 파라미터로 이 부호를 변환합니다. 기본값은 `false`입니다.
 
-## Hardware Values To Measure
+`distance_m`은 적외선 센서 또는 별도 target-distance provider에서 들어와야 합니다.
+LiDAR는 SLAM과 장애물 회피용으로만 사용합니다.
 
-Before field tuning, measure and update launch arguments or URDF/static TF:
+## 하드웨어에서 실제 측정해야 할 값
 
-| Transform | Default placeholder | Needs measurement |
+| 항목 | 현재 기본값 | 실제 측정 필요 |
 | --- | --- | --- |
-| `base_link -> laser_frame` | x `0.15`, y `0.0`, z `0.12` | yes |
-| `base_link -> camera_frame` | x `0.12`, y `0.0`, z `0.18` | yes |
-| Robot footprint | radius `0.18` m in Nav2 params | yes |
-| Max linear speed | `0.25` m/s in Nav2 params | yes |
-| Max angular speed | `0.8` rad/s in Nav2 params | yes |
+| `base_link -> laser_frame` | x `0.15`, y `0.0`, z `0.12` | 필요 |
+| `base_link -> camera_frame` | x `0.12`, y `0.0`, z `0.18` | 필요 |
+| 로봇 반경 | Nav2 params 기준 `0.18` m | 필요 |
+| 최대 선속도 | Nav2 params 기준 `0.25` m/s | 필요 |
+| 최대 각속도 | Nav2 params 기준 `0.8` rad/s | 필요 |

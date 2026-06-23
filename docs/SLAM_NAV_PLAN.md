@@ -1,80 +1,104 @@
-# SLAM and Navigation Plan
+# SLAM 및 길찾기 진행 계획
 
-## Phase 1 - Topic and TF Verification
+## 1단계: 토픽과 TF 확인
 
-1. Start the base driver, LiDAR driver, IMU driver, and static sensor TF.
-2. Verify `/scan`, `/wheel/odom`, `/imu`, and `/cmd_vel`.
-3. Verify TF:
+가장 먼저 할 일은 알고리즘을 켜는 것이 아니라 센서 입력이 제대로 들어오는지 확인하는 것입니다.
+
+1. base driver, LiDAR driver, IMU driver, static sensor TF를 실행합니다.
+2. `/scan`, `/wheel/odom`, `/imu`, `/cmd_vel`을 확인합니다.
+3. TF를 확인합니다.
 
 ```bash
 ros2 run tf2_tools view_frames
 ```
 
-The minimum valid tree is:
+최소한 아래 구조가 나와야 합니다.
 
 ```text
 odom -> base_link -> laser_frame
                   -> camera_frame
 ```
 
-## Phase 2 - Live Mapping
+SLAM을 켜면 여기에 `map -> odom`이 추가됩니다.
 
-Run:
+## 2단계: 실시간 지도 작성
+
+아래 명령으로 EKF, SLAM Toolbox, Nav2를 함께 실행합니다.
 
 ```bash
 ros2 launch snu_robot_bringup bringup.launch.py enable_slam:=true enable_nav2:=true
 ```
 
-During mapping:
+지도 작성 중에는 다음을 지키는 것이 좋습니다.
 
-- Drive slowly.
-- Rotate in place at corridor junctions.
-- Avoid fast turns that smear LiDAR scans.
-- Revisit known areas to give SLAM loop-closure opportunities.
+- 로봇을 천천히 움직입니다.
+- 교차로나 코너에서는 제자리 회전을 하며 scan matching에 충분한 정보를 줍니다.
+- 빠른 회전은 LiDAR scan을 흐리게 만들 수 있으므로 피합니다.
+- 이미 지나간 구역을 다시 방문해서 loop closure 기회를 줍니다.
 
-Save a map:
+맵 저장:
 
 ```bash
 ros2 run nav2_map_server map_saver_cli -f maps/challenge_map
 ```
 
-## Phase 3 - Localization and Navigation
+## 3단계: 저장된 맵으로 localization + navigation
 
-After saving a map, run localization mode:
+맵을 저장한 뒤에는 매번 새로 SLAM을 할 필요가 없습니다. 저장된 맵을 기준으로
+localization을 수행하고 Nav2로 이동합니다.
 
 ```bash
 ros2 launch snu_robot_bringup localization.launch.py map:=maps/challenge_map.yaml
 ros2 launch snu_robot_bringup navigation.launch.py
 ```
 
-Tune in this order:
+튜닝 순서:
 
-1. Static TF offsets.
-2. EKF odometry stability.
-3. SLAM Toolbox scan matching parameters.
-4. Nav2 local costmap obstacle range and inflation radius.
-5. Controller speed and acceleration limits.
+1. LiDAR와 카메라 static TF 위치
+2. EKF odometry 안정성
+3. SLAM Toolbox scan matching 파라미터
+4. Nav2 local costmap의 obstacle range와 inflation radius
+5. controller의 속도와 가속도 제한
 
-## Phase 4 - Target Approach
+## 4단계: 목표 물체 접근
 
-The detector publishes `/perception/targets`.
+YOLO와 적외선 거리 센서가 `/perception/targets`를 발행합니다.
 
-The target navigation node:
+target navigation 노드는 다음 순서로 동작합니다.
 
-1. Selects confirmed, pickable targets with a valid infrared distance.
-2. Converts `bearing_deg + distance_m` into a `base_link` pose.
-3. Publishes `/target_pose_base`.
+1. `pick_allowed=true`인 target만 봅니다.
+2. `target_confirmed=true`인 target만 봅니다.
+3. `distance_m`이 있는 target만 봅니다.
+4. `bearing_deg + distance_m`을 `base_link` 기준 pose로 변환합니다.
+5. `/target_pose_base`로 발행합니다.
 
-Higher-level mission logic should:
+상위 mission logic은 이 pose를 이용해 다음처럼 확장하면 됩니다.
 
-1. Use Nav2 to approach a waypoint near the target.
-2. Switch to short-range visual servoing for final alignment.
-3. Stop when IR distance reaches the manipulation/grasp threshold.
+1. Nav2로 목표 근처까지 이동합니다.
+2. 가까워지면 bearing 기반 정렬 제어로 전환합니다.
+3. IR 거리가 집기/조작 가능 거리까지 줄어들면 정지합니다.
 
-## Recommended Control Split
+## 제어 역할 분리
 
-| Range | Control method | Reason |
+| 거리 상황 | 제어 방식 | 이유 |
 | --- | --- | --- |
-| Far / unknown map | Nav2 global planner | Avoids known obstacles |
-| Near target | Nav2 local controller or short visual servo | Keeps obstacle avoidance active |
-| Final alignment | Bearing PID + IR stop distance | More accurate than map-based pose |
+| 멀리 있거나 지도 기반 이동이 필요할 때 | Nav2 global planner | 장애물과 맵을 고려할 수 있음 |
+| 목표 근처 | Nav2 local controller 또는 짧은 visual servoing | 회피와 접근을 함께 처리 |
+| 마지막 정렬 | bearing PID + IR stop distance | 목표 물체 기준 정렬이 더 정확함 |
+
+## 현재 코드의 시작점
+
+SLAM/Nav 쪽 시작점:
+
+```bash
+ros2 launch snu_robot_bringup bringup.launch.py
+```
+
+목표 pose 변환 쪽 시작점:
+
+```bash
+ros2 launch snu_target_navigation target_navigation.launch.py
+```
+
+아직 이 브랜치에는 실제 하드웨어 driver가 없습니다. 즉 `/scan`, `/wheel/odom`,
+`/imu`, `/cmd_vel`은 로봇 base bringup 쪽에서 제공되어야 합니다.
