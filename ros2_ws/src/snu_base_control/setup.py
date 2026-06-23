@@ -22,6 +22,7 @@ setup(
     license="MIT",
     entry_points={
         "console_scripts": [
+            "cmd_vel_to_four_wheel = snu_base_control.cmd_vel_to_four_wheel:main",
             "four_wheel_odometry = snu_base_control.four_wheel_odometry:main",
         ],
     },

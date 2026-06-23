@@ -13,6 +13,7 @@ def _package_file(*parts: str) -> PathJoinSubstitution:
 def generate_launch_description() -> LaunchDescription:
     use_sim_time = LaunchConfiguration("use_sim_time")
     enable_sensor_tf = LaunchConfiguration("enable_sensor_tf")
+    enable_wheel_command_mapper = LaunchConfiguration("enable_wheel_command_mapper")
     enable_base_odometry = LaunchConfiguration("enable_base_odometry")
     enable_ekf = LaunchConfiguration("enable_ekf")
     enable_slam = LaunchConfiguration("enable_slam")
@@ -24,6 +25,19 @@ def generate_launch_description() -> LaunchDescription:
     sensor_tf_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(_package_file("launch", "sensor_tf.launch.py")),
         condition=IfCondition(enable_sensor_tf),
+    )
+
+    wheel_command_mapper_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            PathJoinSubstitution(
+                [
+                    FindPackageShare("snu_base_control"),
+                    "launch",
+                    "cmd_vel_to_four_wheel.launch.py",
+                ]
+            )
+        ),
+        condition=IfCondition(enable_wheel_command_mapper),
     )
 
     base_odometry_launch = IncludeLaunchDescription(
@@ -90,6 +104,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("use_sim_time", default_value="false"),
             DeclareLaunchArgument("scan_topic", default_value="/scan"),
             DeclareLaunchArgument("enable_sensor_tf", default_value="true"),
+            DeclareLaunchArgument("enable_wheel_command_mapper", default_value="false"),
             DeclareLaunchArgument("enable_base_odometry", default_value="false"),
             DeclareLaunchArgument("enable_ekf", default_value="true"),
             DeclareLaunchArgument("enable_slam", default_value="true"),
@@ -97,6 +112,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("enable_target_navigation", default_value="true"),
             DeclareLaunchArgument("enable_rviz", default_value="false"),
             sensor_tf_launch,
+            wheel_command_mapper_launch,
             base_odometry_launch,
             ekf_launch,
             slam_launch,

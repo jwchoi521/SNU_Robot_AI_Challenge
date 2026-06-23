@@ -1,14 +1,14 @@
 # 4륜 독립 구동 odometry와 제어 모델
 
-로봇은 4개의 바퀴가 각각 독립 모터로 제어되는 구조입니다. 따라서 base driver는
-각 바퀴의 encoder 위치 또는 속도를 알아야 하고, 이 값으로 로봇의 선속도와 각속도를
-계산해야 합니다.
+로봇은 4개의 바퀴가 각각 독립 모터로 제어되는 구조입니다. 따라서 base driver는 각 바퀴의
+encoder 위치 또는 속도를 알아야 하고, 이 값으로 로봇의 선속도와 각속도를 계산해야 합니다.
 
 ## 입력과 출력
 
 입력:
 
 ```text
+/cmd_vel
 /joint_states
   front_left_wheel_joint
   front_right_wheel_joint
@@ -19,11 +19,12 @@
 출력:
 
 ```text
+/wheel_commands
 /wheel/odom
 ```
 
-`/wheel/odom`은 이후 `robot_localization`으로 들어가고, IMU와 함께
-`/odometry/filtered`로 보정됩니다.
+`/wheel_commands`는 모터 드라이버가 받을 바퀴별 명령이고, `/wheel/odom`은 이후
+`robot_localization`으로 들어가 IMU와 함께 `/odometry/filtered`로 보정됩니다.
 
 ## 일반 4륜 skid-steer 모델
 
@@ -37,23 +38,35 @@ v_x     = (v_left + v_right) / 2
 omega_z = (v_right - v_left) / track_width
 ```
 
-| 기호 | 의미 |
-| --- | --- |
-| `r` | 바퀴 반지름 |
-| `w_*` | 각 바퀴의 각속도 |
-| `track_width` | 좌우 바퀴 중심 간 거리 |
-| `v_x` | 로봇 전진 속도 |
-| `omega_z` | 로봇 yaw 회전 속도 |
+## `/cmd_vel`에서 바퀴 명령으로 변환
 
-위 값을 시간 `dt`만큼 적분하면 위치가 바뀝니다.
+상위 제어기는 보통 `/cmd_vel`로 다음 값을 냅니다.
 
 ```text
-theta += omega_z * dt
-x     += v_x * cos(theta) * dt
-y     += v_x * sin(theta) * dt
+linear.x
+linear.y
+angular.z
 ```
 
-실제 코드에서는 회전 중 오차를 줄이기 위해 중간 yaw를 사용해 적분합니다.
+일반 skid-steer라면 `linear.y`는 사용할 수 없고, `linear.x`와 `angular.z`를 4개 바퀴
+속도로 변환합니다.
+
+```text
+v_left  = linear.x - angular.z * track_width / 2
+v_right = linear.x + angular.z * track_width / 2
+
+w_front_left  = v_left / r
+w_rear_left   = v_left / r
+w_front_right = v_right / r
+w_rear_right  = v_right / r
+```
+
+현재 코드 위치:
+
+```bash
+ros2 launch snu_base_control cmd_vel_to_four_wheel.launch.py
+ros2 launch snu_base_control four_wheel_odometry.launch.py
+```
 
 ## mecanum 모델
 
@@ -69,42 +82,46 @@ omega_z = r / (4 * (lx + ly)) * (-w_fl + w_fr - w_rl + w_rr)
 mecanum은 바퀴 장착 방향과 encoder 부호에 민감하므로 실제 로봇에서 반드시 부호를
 검증해야 합니다.
 
-## 현재 코드 위치
+## 모터 출력과 실제 orientation 매칭
 
-```bash
-ros2 launch snu_base_control four_wheel_odometry.launch.py
-```
+현재 계획에는 두 방향의 매칭이 들어갑니다.
 
-설정 파일:
+1. 명령 변환
 
 ```text
-ros2_ws/src/snu_base_control/config/four_wheel_odometry.yaml
+/cmd_vel
+  -> cmd_vel_to_four_wheel
+  -> /wheel_commands
+  -> motor driver
 ```
 
-기본값은 `drive_model: skid_steer`입니다.
-
-## 제어 관점
-
-상위 제어기는 보통 `/cmd_vel`로 다음 값을 냅니다.
+2. 실제 움직임 검증
 
 ```text
-linear.x
-linear.y
-angular.z
+encoder /joint_states + IMU
+  -> /wheel/odom
+  -> /odometry/filtered
+  -> 실제 x, y, yaw 변화
 ```
 
-일반 skid-steer라면 `linear.y`는 사용할 수 없고, base driver는 `linear.x`와
-`angular.z`를 4개 바퀴 속도로 변환합니다.
+즉 “모터에 어떤 출력을 줬을 때 orientation이 얼마나 바뀌는가”는 아래 실험으로 맞춥니다.
+
+| 실험 | 명령 | 확인할 값 | 보정 파라미터 |
+| --- | --- | --- | --- |
+| 직진 | `linear.x > 0`, `angular.z = 0` | 실제 이동 거리 | `wheel_radius_m`, 좌우 scale |
+| 제자리 회전 | `linear.x = 0`, `angular.z != 0` | 실제 yaw 변화 | `track_width_m`, wheel sign |
+| 좌우 대칭 | 같은 크기의 좌/우 명령 | 한쪽으로 휘는지 | 각 바퀴 motor scale |
+| 반복 주행 | 사각형 또는 왕복 | 시작점으로 돌아오는지 | odom covariance, EKF 설정 |
+
+실제 로봇에서 반드시 기록해야 하는 값:
 
 ```text
-v_left  = linear.x - angular.z * track_width / 2
-v_right = linear.x + angular.z * track_width / 2
-
-w_front_left  = v_left / r
-w_rear_left   = v_left / r
-w_front_right = v_right / r
-w_rear_right  = v_right / r
+명령한 /cmd_vel
+생성된 /wheel_commands
+encoder 기반 /wheel/odom
+IMU yaw-rate
+최종 /odometry/filtered
 ```
 
-이 변환은 실제 모터 드라이버 쪽에서 수행해야 합니다. `snu_base_control`은 현재
-encoder 값을 바탕으로 `/wheel/odom`을 계산하는 역할부터 맡습니다.
+이 로그를 비교해서 명령 모델과 실제 로봇 움직임을 맞춥니다. 처음부터 완벽하게 맞추려고
+하기보다, 직진과 제자리 회전을 먼저 맞춘 뒤 target 접근 속도를 낮게 잡는 것이 좋습니다.

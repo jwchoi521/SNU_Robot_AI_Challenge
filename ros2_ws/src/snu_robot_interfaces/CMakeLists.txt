@@ -8,6 +8,9 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/DetectedTarget.msg"
   "msg/DetectedTargetArray.msg"
+  "msg/FourWheelCommand.msg"
+  "msg/GripperCommand.msg"
+  "msg/GripperState.msg"
   "msg/PerceivedObject.msg"
   "msg/PerceivedObjectArray.msg"
   DEPENDENCIES std_msgs
