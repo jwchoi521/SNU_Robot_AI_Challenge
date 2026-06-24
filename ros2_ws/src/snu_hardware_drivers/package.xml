@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>snu_hardware_drivers</name>
+  <version>0.1.0</version>
+  <description>Jetson hardware drivers and bringup tests for SNU Robot AI Challenge.</description>
+  <maintainer email="team@example.com">SNU Robot AI Challenge Team</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>snu_robot_interfaces</exec_depend>
+  <exec_depend>python3-serial</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
