@@ -3,6 +3,7 @@ esp32_serial_bridge:
     dry_run: true
     serial_port: /dev/ttyUSB0
     baud_rate: 115200
+    serial_reset_wait_sec: 2.0
     command_topic: /wheel_commands
     joint_states_topic: /joint_states
     command_timeout_sec: 0.5

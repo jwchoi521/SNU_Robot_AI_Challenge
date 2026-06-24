@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite, pi
+from time import sleep
 from typing import Any
 
 import rclpy
@@ -28,6 +29,7 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("dry_run", True)
         self.declare_parameter("serial_port", "/dev/ttyUSB0")
         self.declare_parameter("baud_rate", 115200)
+        self.declare_parameter("serial_reset_wait_sec", 2.0)
         self.declare_parameter("command_topic", "/wheel_commands")
         self.declare_parameter("joint_states_topic", "/joint_states")
         self.declare_parameter("command_timeout_sec", 0.5)
@@ -53,6 +55,10 @@ class Esp32SerialBridge(Node):
         self._dry_run = bool(self.get_parameter("dry_run").value)
         self._serial_port = str(self.get_parameter("serial_port").value)
         self._baud_rate = int(self.get_parameter("baud_rate").value)
+        self._serial_reset_wait_sec = max(
+            0.0,
+            float(self.get_parameter("serial_reset_wait_sec").value),
+        )
         self._command_timeout_sec = float(
             self.get_parameter("command_timeout_sec").value
         )
@@ -104,7 +110,11 @@ class Esp32SerialBridge(Node):
                 "ESP32 serial bridge is in dry_run mode; serial port will not be opened"
             )
         else:
-            self._serial = _open_serial(self._serial_port, self._baud_rate)
+            self._serial = _open_serial(
+                self._serial_port,
+                self._baud_rate,
+                self._serial_reset_wait_sec,
+            )
             self.get_logger().info(
                 f"Opened ESP32 serial port {self._serial_port} at {self._baud_rate}"
             )
@@ -224,14 +234,26 @@ class Esp32SerialBridge(Node):
         return super().destroy_node()
 
 
-def _open_serial(port: str, baud_rate: int) -> Any:
+def _open_serial(port: str, baud_rate: int, reset_wait_sec: float) -> Any:
     try:
         import serial
     except ImportError as exc:
         raise RuntimeError(
             "pyserial is not installed. Install python3-serial or run with dry_run:=true."
         ) from exc
-    return serial.Serial(port=port, baudrate=baud_rate, timeout=0.01)
+    serial_port = serial.Serial(
+        port=port,
+        baudrate=baud_rate,
+        timeout=0.01,
+        rtscts=False,
+        dsrdtr=False,
+    )
+    serial_port.setDTR(False)
+    serial_port.setRTS(False)
+    if reset_wait_sec > 0.0:
+        sleep(reset_wait_sec)
+    serial_port.reset_input_buffer()
+    return serial_port
 
 
 def _clamp(value: float, low: float, high: float) -> float:
