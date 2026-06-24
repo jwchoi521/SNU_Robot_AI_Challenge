@@ -5,6 +5,7 @@ from math import isfinite, pi
 from typing import Any
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from snu_robot_interfaces.msg import FourWheelCommand
@@ -242,9 +243,12 @@ def main() -> None:
     node = Esp32SerialBridge()
     try:
         rclpy.spin(node)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

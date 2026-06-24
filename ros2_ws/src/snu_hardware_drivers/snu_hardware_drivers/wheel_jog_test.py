@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from snu_robot_interfaces.msg import FourWheelCommand
 
@@ -130,9 +131,12 @@ def main() -> None:
     try:
         while rclpy.ok() and not node.done:
             rclpy.spin_once(node, timeout_sec=0.1)
+    except (KeyboardInterrupt, ExternalShutdownException):
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
