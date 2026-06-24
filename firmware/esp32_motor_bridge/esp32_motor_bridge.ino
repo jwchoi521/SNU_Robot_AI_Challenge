@@ -14,8 +14,6 @@
 struct MotorPins {
   int pin_a;
   int pin_b;
-  int pwm_channel_a;
-  int pwm_channel_b;
   float sign;
 };
 
@@ -32,10 +30,10 @@ constexpr unsigned long COMMAND_TIMEOUT_MS = 500;
 constexpr unsigned long ENCODER_REPORT_PERIOD_MS = 50;
 
 // Motor input pins from the current wiring note.
-MotorPins FRONT_LEFT_MOTOR = {23, 25, 0, 1, 1.0f};
-MotorPins FRONT_RIGHT_MOTOR = {4, 5, 2, 3, 1.0f};
-MotorPins REAR_LEFT_MOTOR = {2, 15, 4, 5, 1.0f};
-MotorPins REAR_RIGHT_MOTOR = {14, 13, 6, 7, 1.0f};
+MotorPins FRONT_LEFT_MOTOR = {23, 25, 1.0f};
+MotorPins FRONT_RIGHT_MOTOR = {4, 5, 1.0f};
+MotorPins REAR_LEFT_MOTOR = {2, 15, 1.0f};
+MotorPins REAR_RIGHT_MOTOR = {14, 13, 1.0f};
 
 // Encoder pins from the current wiring note.
 EncoderPins FRONT_LEFT_ENCODER = {18, 19, 1.0f};
@@ -106,12 +104,10 @@ void IRAM_ATTR rearRightEncoderIsr() {
 }
 
 void setupMotor(const MotorPins& motor) {
-  ledcSetup(motor.pwm_channel_a, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS);
-  ledcSetup(motor.pwm_channel_b, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS);
-  ledcAttachPin(motor.pin_a, motor.pwm_channel_a);
-  ledcAttachPin(motor.pin_b, motor.pwm_channel_b);
-  ledcWrite(motor.pwm_channel_a, 0);
-  ledcWrite(motor.pwm_channel_b, 0);
+  ledcAttach(motor.pin_a, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS);
+  ledcAttach(motor.pin_b, PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS);
+  ledcWrite(motor.pin_a, 0);
+  ledcWrite(motor.pin_b, 0);
 }
 
 void setupEncoder(const EncoderPins& encoder, void (*isr)(), volatile uint8_t& state) {
@@ -128,11 +124,11 @@ void setMotor(const MotorPins& motor, float power) {
   const int duty = static_cast<int>(abs(signed_power) * PWM_MAX);
 
   if (signed_power >= 0.0f) {
-    ledcWrite(motor.pwm_channel_a, duty);
-    ledcWrite(motor.pwm_channel_b, 0);
+    ledcWrite(motor.pin_a, duty);
+    ledcWrite(motor.pin_b, 0);
   } else {
-    ledcWrite(motor.pwm_channel_a, 0);
-    ledcWrite(motor.pwm_channel_b, duty);
+    ledcWrite(motor.pin_a, 0);
+    ledcWrite(motor.pin_b, duty);
   }
 }
 
