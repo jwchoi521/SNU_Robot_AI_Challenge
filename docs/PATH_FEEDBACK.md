@@ -19,7 +19,7 @@
 예시:
 
 ```text
-status=OK eta=12.84s path_length=2.18m straight=1.92m detour=1.14 rotation=1.35rad min_clearance=0.58m goal_error=0.04m poses=64 obstacles=20
+status=OK eta=12.84s score=12.84s best_eta=12.84s eta_delta=n/a trend=best path_length=2.18m straight=1.92m detour=1.14 rotation=1.35rad min_clearance=0.58m goal_error=0.04m poses=64 obstacles=20
 ```
 
 ## 상태값
@@ -44,7 +44,17 @@ status=OK eta=12.84s path_length=2.18m straight=1.92m detour=1.14 rotation=1.35r
         + 장애물 근접 감속 페널티
 ```
 
-기본값은 현재 Nav2 controller 설정에 맞춰 `desired_linear_speed_mps=0.20`, `max_angular_speed_radps=0.80`입니다. 실제 로봇에서 더 빠르게 달릴 수 있으면 이 값을 올려야 `eta`가 현실에 가까워집니다.
+기본값은 현재 Nav2 controller 설정에 맞춰 `desired_linear_speed_mps=0.23`, `max_angular_speed_radps=0.80`입니다. 실제 로봇에서 더 빠르게 달릴 수 있으면 이 값을 올려야 `eta`가 현실에 가까워집니다.
+
+`score`는 최적화 비교용 시간입니다. `OK`와 `SLOW` 상태의 경로만 후보로 인정하고, `CAUTION`, `BLOCKED`, `GOAL_MISMATCH`는 최단시간 후보에서 제외합니다. 즉 빠르더라도 장애물에 너무 가까운 경로는 best 경로로 저장하지 않습니다.
+
+| 필드 | 의미 |
+| --- | --- |
+| `eta` | 현재 경로의 예상 도착시간 |
+| `score` | 최적화 비교에 사용하는 시간. 안전 후보가 아니면 `n/a` |
+| `best_eta` | 같은 목표에 대해 지금까지 관측한 가장 좋은 안전 후보 시간 |
+| `eta_delta` | 이전 안전 후보 대비 빨라졌는지/느려졌는지 |
+| `trend` | `best`, `improved`, `stable`, `regressed`, `not_safe_for_best_eta` |
 
 ## 튜닝해야 하는 파라미터
 
@@ -56,7 +66,7 @@ status=OK eta=12.84s path_length=2.18m straight=1.92m detour=1.14 rotation=1.35r
 | `caution_clearance_m` | `0.45` | 이보다 가까우면 `CAUTION` 및 감속 페널티 |
 | `detour_ratio_warn` | `1.60` | 직선거리 대비 경로가 길면 `SLOW` |
 | `goal_tolerance_m` | `0.25` | 경로 끝점과 mission goal 허용 오차 |
-| `desired_linear_speed_mps` | `0.20` | 예상 시간 계산용 기준 선속도 |
+| `desired_linear_speed_mps` | `0.23` | 예상 시간 계산용 기준 선속도 |
 | `max_angular_speed_radps` | `0.80` | 예상 시간 계산용 기준 회전속도 |
 | `obstacle_slowdown_weight` | `0.80` | 장애물 근접 시 예상 시간 페널티 강도 |
 

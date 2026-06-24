@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import struct
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import atan2, hypot, isfinite, pi
 
 import rclpy
@@ -25,6 +25,10 @@ class PathMetrics:
     min_clearance_m: float
     estimated_time_sec: float
     goal_error_m: float | None
+    score: float
+    best_eta_sec: float | None
+    eta_delta_sec: float | None
+    trend: str
     notes: tuple[str, ...]
 
 
@@ -52,6 +56,8 @@ class PathFeedbackMonitor(Node):
         self.declare_parameter("clearance_sample_step_m", 0.05)
         self.declare_parameter("max_path_samples", 2000)
         self.declare_parameter("max_obstacle_points", 1000)
+        self.declare_parameter("eta_improvement_epsilon_sec", 0.25)
+        self.declare_parameter("goal_reset_distance_m", 0.20)
 
         self._path_topic = str(self.get_parameter("path_topic").value)
         self._obstacle_cloud_topic = str(
@@ -85,6 +91,12 @@ class PathFeedbackMonitor(Node):
         )
         self._max_path_samples = int(self.get_parameter("max_path_samples").value)
         self._max_obstacle_points = int(self.get_parameter("max_obstacle_points").value)
+        self._eta_improvement_epsilon_sec = float(
+            self.get_parameter("eta_improvement_epsilon_sec").value
+        )
+        self._goal_reset_distance_m = float(
+            self.get_parameter("goal_reset_distance_m").value
+        )
 
         self._latest_path: Path | None = None
         self._latest_path_time: Time | None = None
@@ -94,6 +106,9 @@ class PathFeedbackMonitor(Node):
         self._latest_obstacle_frame = ""
         self._latest_goal: PoseStamped | None = None
         self._latest_goal_time: Time | None = None
+        self._active_goal_xy: tuple[float, float] | None = None
+        self._previous_score: float | None = None
+        self._best_eta_sec: float | None = None
         self._last_status = ""
 
         self._feedback_publisher = self.create_publisher(
@@ -143,6 +158,7 @@ class PathFeedbackMonitor(Node):
         self._latest_obstacle_frame = msg.header.frame_id
 
     def _on_goal(self, msg: PoseStamped) -> None:
+        self._reset_history_if_new_goal(msg)
         self._latest_goal = msg
         self._latest_goal_time = self.get_clock().now()
 
@@ -152,7 +168,11 @@ class PathFeedbackMonitor(Node):
         msg.data = _format_feedback(metrics)
         self._feedback_publisher.publish(msg)
 
-        if metrics.status != self._last_status:
+        should_log = metrics.status != self._last_status or metrics.trend in (
+            "best",
+            "regressed",
+        )
+        if should_log:
             self._last_status = metrics.status
             if metrics.status in ("BLOCKED", "CAUTION", "GOAL_MISMATCH", "STALE_PATH"):
                 self.get_logger().warn(msg.data)
@@ -224,7 +244,7 @@ class PathFeedbackMonitor(Node):
         elif goal_age > self._goal_timeout_sec:
             notes.append(f"mission_goal_stale={goal_age:.2f}s")
 
-        return PathMetrics(
+        metrics = PathMetrics(
             status=status,
             pose_count=len(points),
             obstacle_count=len(self._obstacles),
@@ -235,13 +255,69 @@ class PathFeedbackMonitor(Node):
             min_clearance_m=min_clearance,
             estimated_time_sec=estimated_time,
             goal_error_m=goal_error,
+            score=float("inf"),
+            best_eta_sec=self._best_eta_sec,
+            eta_delta_sec=None,
+            trend="untracked",
             notes=tuple(notes),
         )
+        return self._track_metrics(metrics)
 
     def _age_sec(self, stamp: Time | None) -> float | None:
         if stamp is None:
             return None
         return (self.get_clock().now() - stamp).nanoseconds * 1.0e-9
+
+    def _reset_history_if_new_goal(self, goal: PoseStamped) -> None:
+        goal_xy = (float(goal.pose.position.x), float(goal.pose.position.y))
+        if self._active_goal_xy is not None:
+            distance = hypot(
+                goal_xy[0] - self._active_goal_xy[0],
+                goal_xy[1] - self._active_goal_xy[1],
+            )
+            if distance <= self._goal_reset_distance_m:
+                return
+
+        self._active_goal_xy = goal_xy
+        self._previous_score = None
+        self._best_eta_sec = None
+
+    def _track_metrics(self, metrics: PathMetrics) -> PathMetrics:
+        score = _time_score(metrics)
+        if not isfinite(score):
+            return replace(
+                metrics,
+                score=score,
+                best_eta_sec=self._best_eta_sec,
+                eta_delta_sec=None,
+                trend="not_safe_for_best_eta",
+            )
+
+        eta_delta: float | None = None
+        trend = "baseline"
+        if self._previous_score is not None:
+            eta_delta = score - self._previous_score
+            if eta_delta < -self._eta_improvement_epsilon_sec:
+                trend = "improved"
+            elif eta_delta > self._eta_improvement_epsilon_sec:
+                trend = "regressed"
+            else:
+                trend = "stable"
+
+        self._previous_score = score
+        if self._best_eta_sec is None or score < (
+            self._best_eta_sec - self._eta_improvement_epsilon_sec
+        ):
+            self._best_eta_sec = score
+            trend = "best"
+
+        return replace(
+            metrics,
+            score=score,
+            best_eta_sec=self._best_eta_sec,
+            eta_delta_sec=eta_delta,
+            trend=trend,
+        )
 
     def _goal_error(self, path_end: tuple[float, float]) -> float | None:
         if self._latest_goal is None:
@@ -285,6 +361,10 @@ def _empty_metrics(status: str, *notes: str) -> PathMetrics:
         min_clearance_m=float("inf"),
         estimated_time_sec=0.0,
         goal_error_m=None,
+        score=float("inf"),
+        best_eta_sec=None,
+        eta_delta_sec=None,
+        trend="not_safe_for_best_eta",
         notes=tuple(notes),
     )
 
@@ -296,9 +376,20 @@ def _format_feedback(metrics: PathMetrics) -> str:
     goal_error = (
         "n/a" if metrics.goal_error_m is None else f"{metrics.goal_error_m:.2f}"
     )
+    score = "n/a" if not isfinite(metrics.score) else f"{metrics.score:.2f}s"
+    best_eta = (
+        "n/a" if metrics.best_eta_sec is None else f"{metrics.best_eta_sec:.2f}s"
+    )
+    eta_delta = (
+        "n/a" if metrics.eta_delta_sec is None else f"{metrics.eta_delta_sec:+.2f}s"
+    )
     fields = [
         f"status={metrics.status}",
         f"eta={metrics.estimated_time_sec:.2f}s",
+        f"score={score}",
+        f"best_eta={best_eta}",
+        f"eta_delta={eta_delta}",
+        f"trend={metrics.trend}",
         f"path_length={metrics.path_length_m:.2f}m",
         f"straight={metrics.straight_distance_m:.2f}m",
         f"detour={metrics.detour_ratio:.2f}",
@@ -311,6 +402,12 @@ def _format_feedback(metrics: PathMetrics) -> str:
     if metrics.notes:
         fields.append("notes=" + ",".join(metrics.notes))
     return " ".join(fields)
+
+
+def _time_score(metrics: PathMetrics) -> float:
+    if metrics.status not in ("OK", "SLOW"):
+        return float("inf")
+    return metrics.estimated_time_sec
 
 
 def _path_frame(path: Path) -> str:

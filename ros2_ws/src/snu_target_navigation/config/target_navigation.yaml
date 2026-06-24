@@ -48,9 +48,11 @@ path_feedback_monitor:
     caution_clearance_m: 0.45
     goal_tolerance_m: 0.25
     detour_ratio_warn: 1.60
-    desired_linear_speed_mps: 0.20
+    desired_linear_speed_mps: 0.23
     max_angular_speed_radps: 0.80
     obstacle_slowdown_weight: 0.80
     clearance_sample_step_m: 0.05
     max_path_samples: 2000
     max_obstacle_points: 1000
+    eta_improvement_epsilon_sec: 0.25
+    goal_reset_distance_m: 0.20
