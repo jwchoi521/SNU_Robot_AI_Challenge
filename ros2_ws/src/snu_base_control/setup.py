@@ -16,6 +16,7 @@ setup(
     ],
     install_requires=["setuptools"],
     zip_safe=True,
+    test_suite="test",
     maintainer="SNU Robot AI Challenge Team",
     maintainer_email="team@example.com",
     description="Four-wheel base kinematics and odometry helpers.",
