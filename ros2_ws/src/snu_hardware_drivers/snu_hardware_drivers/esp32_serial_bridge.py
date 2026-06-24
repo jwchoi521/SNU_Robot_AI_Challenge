@@ -30,6 +30,7 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("serial_port", "/dev/ttyUSB0")
         self.declare_parameter("baud_rate", 115200)
         self.declare_parameter("serial_reset_wait_sec", 2.0)
+        self.declare_parameter("esp32_command_mode", "velocity")
         self.declare_parameter("command_topic", "/wheel_commands")
         self.declare_parameter("joint_states_topic", "/joint_states")
         self.declare_parameter("command_timeout_sec", 0.5)
@@ -59,6 +60,9 @@ class Esp32SerialBridge(Node):
             0.0,
             float(self.get_parameter("serial_reset_wait_sec").value),
         )
+        self._esp32_command_mode = str(
+            self.get_parameter("esp32_command_mode").value
+        ).lower()
         self._command_timeout_sec = float(
             self.get_parameter("command_timeout_sec").value
         )
@@ -139,9 +143,12 @@ class Esp32SerialBridge(Node):
         values = []
         for wheel in self._wheels:
             raw_value = float(getattr(msg, wheel.field))
-            normalized = self._normalize(raw_value, msg.command_mode) * wheel.motor_sign
+            normalized = (
+                self._normalize(raw_value, msg.command_mode)
+                * wheel.motor_sign
+            )
             values.append(_clamp(normalized, -self._max_power, self._max_power))
-        self._send_motor_command(values)
+        self._send_wheel_command(self._serial_command_prefix(), values)
 
     def _normalize(self, value: float, command_mode: int) -> float:
         if not isfinite(value):
@@ -153,8 +160,13 @@ class Esp32SerialBridge(Node):
         self.get_logger().warn(f"Unknown wheel command mode {command_mode}; stopping")
         return 0.0
 
-    def _send_motor_command(self, values: list[float]) -> None:
-        line = "M " + " ".join(f"{value:.3f}" for value in values) + "\n"
+    def _serial_command_prefix(self) -> str:
+        if self._esp32_command_mode in ("velocity", "closed_loop", "closed_loop_velocity"):
+            return "V"
+        return "M"
+
+    def _send_wheel_command(self, prefix: str, values: list[float]) -> None:
+        line = prefix + " " + " ".join(f"{value:.3f}" for value in values) + "\n"
         if self._dry_run:
             self._log_dry_run(line.strip())
             return
@@ -225,11 +237,11 @@ class Esp32SerialBridge(Node):
     def _stop_if_timed_out(self) -> None:
         age = (self.get_clock().now() - self._last_command_time).nanoseconds * 1.0e-9
         if age > self._command_timeout_sec:
-            self._send_motor_command([0.0, 0.0, 0.0, 0.0])
+            self._send_wheel_command(self._serial_command_prefix(), [0.0, 0.0, 0.0, 0.0])
 
     def destroy_node(self) -> bool:
         if self._serial is not None:
-            self._send_motor_command([0.0, 0.0, 0.0, 0.0])
+            self._send_wheel_command(self._serial_command_prefix(), [0.0, 0.0, 0.0, 0.0])
             self._serial.close()
         return super().destroy_node()
 

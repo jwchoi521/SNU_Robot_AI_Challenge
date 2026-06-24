@@ -4,6 +4,7 @@ esp32_serial_bridge:
     serial_port: /dev/ttyUSB0
     baud_rate: 115200
     serial_reset_wait_sec: 2.0
+    esp32_command_mode: velocity
     command_topic: /wheel_commands
     joint_states_topic: /joint_states
     command_timeout_sec: 0.5
@@ -19,7 +20,8 @@ esp32_serial_bridge:
     rear_left_joint: rear_left_wheel_joint
     rear_right_joint: rear_right_wheel_joint
 
-    # Flip motor signs after wheel jog test if a wheel spins backward.
+    # Keep ROS commands in robot-frame wheel direction.
+    # Electrical motor direction is handled in the ESP32 firmware.
     front_left_motor_sign: 1.0
     front_right_motor_sign: 1.0
     rear_left_motor_sign: 1.0

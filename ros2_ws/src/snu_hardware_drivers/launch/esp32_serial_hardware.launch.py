@@ -17,6 +17,18 @@ def generate_launch_description() -> LaunchDescription:
         LaunchConfiguration("serial_reset_wait_sec"), value_type=float
     )
     max_power = ParameterValue(LaunchConfiguration("max_power"), value_type=float)
+    front_left_motor_sign = ParameterValue(
+        LaunchConfiguration("front_left_motor_sign"), value_type=float
+    )
+    front_right_motor_sign = ParameterValue(
+        LaunchConfiguration("front_right_motor_sign"), value_type=float
+    )
+    rear_left_motor_sign = ParameterValue(
+        LaunchConfiguration("rear_left_motor_sign"), value_type=float
+    )
+    rear_right_motor_sign = ParameterValue(
+        LaunchConfiguration("rear_right_motor_sign"), value_type=float
+    )
 
     return LaunchDescription(
         [
@@ -25,7 +37,12 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("serial_port", default_value="/dev/ttyUSB0"),
             DeclareLaunchArgument("baud_rate", default_value="115200"),
             DeclareLaunchArgument("serial_reset_wait_sec", default_value="2.0"),
+            DeclareLaunchArgument("esp32_command_mode", default_value="velocity"),
             DeclareLaunchArgument("max_power", default_value="0.12"),
+            DeclareLaunchArgument("front_left_motor_sign", default_value="1.0"),
+            DeclareLaunchArgument("front_right_motor_sign", default_value="1.0"),
+            DeclareLaunchArgument("rear_left_motor_sign", default_value="1.0"),
+            DeclareLaunchArgument("rear_right_motor_sign", default_value="1.0"),
             DeclareLaunchArgument("enable_jog_test", default_value="false"),
             Node(
                 package="snu_hardware_drivers",
@@ -39,7 +56,12 @@ def generate_launch_description() -> LaunchDescription:
                         "serial_port": LaunchConfiguration("serial_port"),
                         "baud_rate": baud_rate,
                         "serial_reset_wait_sec": serial_reset_wait_sec,
+                        "esp32_command_mode": LaunchConfiguration("esp32_command_mode"),
                         "max_power": max_power,
+                        "front_left_motor_sign": front_left_motor_sign,
+                        "front_right_motor_sign": front_right_motor_sign,
+                        "rear_left_motor_sign": rear_left_motor_sign,
+                        "rear_right_motor_sign": rear_right_motor_sign,
                     },
                 ],
             ),
