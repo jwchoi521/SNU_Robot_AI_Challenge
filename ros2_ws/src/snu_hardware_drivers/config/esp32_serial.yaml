@@ -27,7 +27,8 @@ esp32_serial_bridge:
     rear_left_motor_sign: 1.0
     rear_right_motor_sign: 1.0
 
-    # Flip encoder signs if position decreases when the wheel moves forward.
+    # Keep these at 1.0 when ESP32 firmware already reports forward-positive counts.
+    # Flip here only for ROS-only display compensation; ESP32 PID uses firmware signs.
     front_left_encoder_sign: 1.0
     front_right_encoder_sign: 1.0
     rear_left_encoder_sign: 1.0

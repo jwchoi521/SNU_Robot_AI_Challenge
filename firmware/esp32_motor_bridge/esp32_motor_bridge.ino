@@ -50,10 +50,10 @@ MotorPins REAR_LEFT_MOTOR = {2, 15, -1.0f};
 MotorPins REAR_RIGHT_MOTOR = {14, 13, 1.0f};
 
 // Encoder pins from the current wiring note.
-EncoderPins FRONT_LEFT_ENCODER = {18, 19, 1.0f};
-EncoderPins FRONT_RIGHT_ENCODER = {16, 17, 1.0f};
+EncoderPins FRONT_LEFT_ENCODER = {18, 19, -1.0f};
+EncoderPins FRONT_RIGHT_ENCODER = {16, 17, -1.0f};
 EncoderPins REAR_LEFT_ENCODER = {32, 33, 1.0f};
-EncoderPins REAR_RIGHT_ENCODER = {26, 27, 1.0f};
+EncoderPins REAR_RIGHT_ENCODER = {26, 27, -1.0f};
 
 volatile long front_left_count = 0;
 volatile long front_right_count = 0;
