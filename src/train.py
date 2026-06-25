@@ -6,7 +6,7 @@ from pathlib import Path
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train a YOLO detector.")
-    parser.add_argument("--model", default="yolov8n.pt")
+    parser.add_argument("--model", default="yolo11n.pt")
     parser.add_argument("--data", type=Path, default=Path("dataset/data.yaml"))
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--imgsz", type=int, default=640)

@@ -109,7 +109,7 @@ python scripts/check_dataset.py --data dataset/data.yaml --require-non-empty --s
 5. 학습
 
 ```powershell
-python src/train.py --model yolov8n.pt --data dataset/data.yaml --epochs 100 --imgsz 640
+python src/train.py --model yolo11n.pt --data dataset/data.yaml --epochs 100 --imgsz 640
 ```
 
 6. 검증
