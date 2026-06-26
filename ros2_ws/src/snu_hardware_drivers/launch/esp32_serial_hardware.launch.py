@@ -17,6 +17,12 @@ def generate_launch_description() -> LaunchDescription:
         LaunchConfiguration("serial_reset_wait_sec"), value_type=float
     )
     max_power = ParameterValue(LaunchConfiguration("max_power"), value_type=float)
+    max_wheel_velocity_rad_s = ParameterValue(
+        LaunchConfiguration("max_wheel_velocity_rad_s"), value_type=float
+    )
+    encoder_counts_per_revolution = ParameterValue(
+        LaunchConfiguration("encoder_counts_per_revolution"), value_type=float
+    )
     front_left_motor_sign = ParameterValue(
         LaunchConfiguration("front_left_motor_sign"), value_type=float
     )
@@ -39,6 +45,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("serial_reset_wait_sec", default_value="2.0"),
             DeclareLaunchArgument("esp32_command_mode", default_value="velocity"),
             DeclareLaunchArgument("max_power", default_value="0.12"),
+            DeclareLaunchArgument("max_wheel_velocity_rad_s", default_value="20.0"),
+            DeclareLaunchArgument("encoder_counts_per_revolution", default_value="1.0"),
             DeclareLaunchArgument("front_left_motor_sign", default_value="1.0"),
             DeclareLaunchArgument("front_right_motor_sign", default_value="1.0"),
             DeclareLaunchArgument("rear_left_motor_sign", default_value="1.0"),
@@ -58,6 +66,8 @@ def generate_launch_description() -> LaunchDescription:
                         "serial_reset_wait_sec": serial_reset_wait_sec,
                         "esp32_command_mode": LaunchConfiguration("esp32_command_mode"),
                         "max_power": max_power,
+                        "max_wheel_velocity_rad_s": max_wheel_velocity_rad_s,
+                        "encoder_counts_per_revolution": encoder_counts_per_revolution,
                         "front_left_motor_sign": front_left_motor_sign,
                         "front_right_motor_sign": front_right_motor_sign,
                         "rear_left_motor_sign": rear_left_motor_sign,

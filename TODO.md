@@ -27,9 +27,9 @@ semantic object navigation, 4륜 base control, pick-and-place mission의 뼈대�
 
 ### 4륜 구동
 
-- [ ] 바퀴 반지름 `wheel_radius_m` 측정
-- [ ] 좌우 바퀴 중심 간 거리 `track_width_m` 측정
-- [ ] 앞뒤 바퀴 중심 간 거리 `wheelbase_m` 측정
+- [x] 바퀴 반지름 `wheel_radius_m` 입력: `0.035` m
+- [x] 좌우 바퀴 중심 간 거리 `track_width_m` 입력: `0.112` m
+- [x] 앞뒤 바퀴 중심 간 거리 `wheelbase_m` 입력: `0.0986` m
 - [ ] 각 바퀴 joint 이름 확정
   - [ ] `front_left_wheel_joint`
   - [ ] `front_right_wheel_joint`
@@ -221,9 +221,9 @@ semantic object navigation, 4륜 base control, pick-and-place mission의 뼈대�
 | --- | --- | --- |
 | LiDAR 위치 | x `0.15`, z `0.12` | `sensor_tf.launch.py` |
 | 카메라 위치 | x `0.12`, z `0.18` | `sensor_tf.launch.py` |
-| 바퀴 반지름 | `0.05` m | `four_wheel_odometry.yaml`, `cmd_vel_to_four_wheel.yaml` |
-| 좌우 바퀴 거리 | `0.30` m | base control configs |
-| 앞뒤 바퀴 거리 | `0.30` m | base control configs |
+| 바퀴 반지름 | `0.035` m | `four_wheel_odometry.yaml`, `cmd_vel_to_four_wheel.yaml` |
+| 좌우 바퀴 거리 | `0.112` m | base control configs |
+| 앞뒤 바퀴 거리 | `0.0986` m | base control configs |
 | 로봇 반경 | `0.18` m | `nav2_params.yaml` |
 | obstacle TTL | `30.0` sec | `target_navigation.yaml` |
 | target TTL | `60.0` sec | `target_navigation.yaml` |
