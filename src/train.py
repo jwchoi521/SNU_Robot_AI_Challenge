@@ -17,7 +17,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--name", default="robot_yolo")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--from-scratch",
+        action="store_true",
+        help="Use the matching YOLO architecture YAML instead of pretrained weights.",
+    )
     return parser
+
+
+def _model_source(model: str, from_scratch: bool) -> str:
+    if not from_scratch:
+        return model
+    path = Path(model)
+    if path.suffix == ".pt":
+        return str(path.with_suffix(".yaml"))
+    return model
 
 
 def main() -> int:
@@ -25,7 +39,7 @@ def main() -> int:
 
     from ultralytics import YOLO
 
-    model = YOLO(args.model)
+    model = YOLO(_model_source(args.model, args.from_scratch))
     model.train(
         data=str(args.data),
         epochs=args.epochs,

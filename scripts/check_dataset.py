@@ -17,6 +17,16 @@ EXPECTED_NAMES = {
     6: "banana_sticker",
     7: "pineapple_sticker",
 }
+SHAPE_NAMES = {
+    0: "cube_any",
+    1: "octahedron",
+    2: "dodecahedron",
+    3: "icosahedron",
+}
+NAME_PROFILES = {
+    "robot8": EXPECTED_NAMES,
+    "shape4": SHAPE_NAMES,
+}
 
 IMAGE_SUFFIXES = {".bmp", ".jpg", ".jpeg", ".png", ".webp"}
 
@@ -34,7 +44,11 @@ def _resolve_dataset_root(data_yaml: Path, config: dict[str, Any]) -> Path:
     if raw_path.is_absolute():
         return raw_path
 
-    candidates = (Path.cwd() / raw_path, data_yaml.parent / raw_path)
+    candidates = (
+        data_yaml.parent / raw_path,
+        data_yaml.parent.parent / raw_path,
+        Path.cwd() / raw_path,
+    )
     for candidate in candidates:
         if candidate.exists():
             return candidate.resolve()
@@ -59,7 +73,7 @@ def _iter_images(image_dir: Path) -> list[Path]:
     )
 
 
-def _validate_label_file(path: Path) -> list[str]:
+def _validate_label_file(path: Path, expected_names: dict[int, str]) -> list[str]:
     errors: list[str] = []
     for line_number, raw_line in enumerate(path.read_text().splitlines(), start=1):
         line = raw_line.strip()
@@ -78,8 +92,9 @@ def _validate_label_file(path: Path) -> list[str]:
             errors.append(f"{path}:{line_number}: non-numeric label value")
             continue
 
-        if class_id not in EXPECTED_NAMES:
-            errors.append(f"{path}:{line_number}: class id {class_id} is not 0..7")
+        if class_id not in expected_names:
+            allowed = f"0..{len(expected_names) - 1}"
+            errors.append(f"{path}:{line_number}: class id {class_id} is not {allowed}")
         if any(value < 0.0 or value > 1.0 for value in values):
             errors.append(f"{path}:{line_number}: bbox values must be in 0..1")
         if values[2] <= 0.0 or values[3] <= 0.0:
@@ -100,6 +115,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fail when train or val contains no images.",
     )
+    parser.add_argument(
+        "--profile",
+        choices=tuple(NAME_PROFILES),
+        default="robot8",
+        help="Expected class mapping profile.",
+    )
     return parser
 
 
@@ -114,9 +135,10 @@ def main() -> int:
         return 1
 
     config = yaml.safe_load(data_yaml.read_text()) or {}
+    expected_names = NAME_PROFILES[args.profile]
     names = _normalize_names(config.get("names"))
-    if names != EXPECTED_NAMES:
-        errors.append(f"{data_yaml}: names must match the fixed 8-class mapping")
+    if names != expected_names:
+        errors.append(f"{data_yaml}: names must match the {args.profile} mapping")
 
     dataset_root = _resolve_dataset_root(data_yaml, config)
     print(f"Dataset root: {dataset_root}")
@@ -159,7 +181,7 @@ def main() -> int:
         for stem in orphan_labels:
             warnings.append(f"{split}: label without image {stem}")
         for label_path in labels:
-            errors.extend(_validate_label_file(label_path))
+            errors.extend(_validate_label_file(label_path, expected_names))
 
     if total_images == 0:
         warnings.append("dataset contains no image files yet")

@@ -1,0 +1,12 @@
+path: ./dataset
+
+train: images/train
+val: images/val
+test: images/test
+
+nc: 4
+names:
+  0: cube_any
+  1: octahedron
+  2: dodecahedron
+  3: icosahedron
