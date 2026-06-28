@@ -10,6 +10,8 @@ from torch import nn
 
 
 FRUIT_CLASSES: tuple[str, ...] = ("apple", "orange", "banana", "pineapple")
+NO_FRUIT_CLASS = "none"
+CUBE_FRUIT_CLASSES: tuple[str, ...] = (*FRUIT_CLASSES, NO_FRUIT_CLASS)
 DEFAULT_FRUIT_THRESHOLD = 0.7
 NORMALIZE_MEAN = np.array([0.5, 0.5, 0.5], dtype=np.float32)
 NORMALIZE_STD = np.array([0.5, 0.5, 0.5], dtype=np.float32)
@@ -66,7 +68,8 @@ def _conv_block(in_channels: int, out_channels: int) -> nn.Sequential:
 def read_image_rgb(path: Path) -> np.ndarray:
     import cv2
 
-    image_bgr = cv2.imread(str(path), cv2.IMREAD_COLOR)
+    buffer = np.fromfile(path, dtype=np.uint8)
+    image_bgr = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
     if image_bgr is None:
         raise ValueError(f"image could not be read: {path}")
     return cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
@@ -129,7 +132,12 @@ def predict_fruit(
     probabilities = torch.softmax(model(tensor), dim=1)[0].cpu().numpy()
     best_index = int(probabilities.argmax())
     confidence = float(probabilities[best_index])
-    fruit_kind = str(classes[best_index]) if confidence >= threshold else None
+    best_class = str(classes[best_index])
+    fruit_kind = (
+        best_class
+        if best_class != NO_FRUIT_CLASS and confidence >= threshold
+        else None
+    )
     return FruitPrediction(
         fruit_kind=fruit_kind,
         confidence=confidence,

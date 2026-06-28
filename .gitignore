@@ -8,6 +8,7 @@ __pycache__/
 runs/
 logs/
 outputs/
+models/
 
 *.pt
 *.onnx

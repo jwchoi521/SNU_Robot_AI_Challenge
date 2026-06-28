@@ -13,16 +13,16 @@ from torch.utils.data import DataLoader, Dataset
 
 try:
     from src.fruit_classifier import (
+        CUBE_FRUIT_CLASSES,
         DEFAULT_FRUIT_THRESHOLD,
-        FRUIT_CLASSES,
         FruitClassifier,
         preprocess_rgb,
         read_image_rgb,
     )
 except ModuleNotFoundError:
     from fruit_classifier import (  # type: ignore[no-redef]
+        CUBE_FRUIT_CLASSES,
         DEFAULT_FRUIT_THRESHOLD,
-        FRUIT_CLASSES,
         FruitClassifier,
         preprocess_rgb,
         read_image_rgb,
@@ -47,13 +47,15 @@ class FruitImageFolder(Dataset):
         root: Path,
         split: str,
         image_size: int,
+        classes: tuple[str, ...],
         augment: bool = False,
     ) -> None:
         self.root = root / split
         self.image_size = image_size
         self.augment = augment
+        self.classes = classes
         self.samples: list[tuple[Path, int]] = []
-        for class_index, class_name in enumerate(FRUIT_CLASSES):
+        for class_index, class_name in enumerate(classes):
             class_dir = self.root / class_name
             if not class_dir.exists():
                 continue
@@ -99,6 +101,24 @@ def _seed_everything(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def _discover_classes(data_root: Path, requested: list[str] | None) -> tuple[str, ...]:
+    if requested:
+        return tuple(requested)
+
+    train_root = data_root / "train"
+    if not train_root.exists():
+        raise FileNotFoundError(f"train split not found: {train_root}")
+
+    existing = {path.name for path in train_root.iterdir() if path.is_dir()}
+    ordered = [
+        class_name for class_name in CUBE_FRUIT_CLASSES if class_name in existing
+    ]
+    ordered.extend(sorted(existing - set(ordered)))
+    if not ordered:
+        raise ValueError(f"no class folders found in {train_root}")
+    return tuple(ordered)
 
 
 def _make_loader(
@@ -153,16 +173,23 @@ def _run_epoch(
 def train_classifier(args: argparse.Namespace) -> list[EpochMetrics]:
     _seed_everything(args.seed)
     device = _resolve_device(args.device)
+    classes = _discover_classes(args.data_root, args.classes)
+    print(
+        "classes:",
+        ", ".join(f"{index}={name}" for index, name in enumerate(classes)),
+    )
     train_dataset = FruitImageFolder(
         root=args.data_root,
         split="train",
         image_size=args.imgsz,
+        classes=classes,
         augment=True,
     )
     val_dataset = FruitImageFolder(
         root=args.data_root,
         split="val",
         image_size=args.imgsz,
+        classes=classes,
     )
     train_loader = _make_loader(
         train_dataset,
@@ -177,7 +204,7 @@ def train_classifier(args: argparse.Namespace) -> list[EpochMetrics]:
         shuffle=False,
     )
 
-    model = FruitClassifier(num_classes=len(FRUIT_CLASSES)).to(device)
+    model = FruitClassifier(num_classes=len(classes)).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -214,7 +241,7 @@ def train_classifier(args: argparse.Namespace) -> list[EpochMetrics]:
 
         checkpoint = {
             "model_state": model.state_dict(),
-            "classes": list(FRUIT_CLASSES),
+            "classes": list(classes),
             "image_size": args.imgsz,
             "threshold": args.threshold,
             "epoch": epoch,
@@ -235,7 +262,7 @@ def train_classifier(args: argparse.Namespace) -> list[EpochMetrics]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Train a 4-class fruit classifier for cube crops.",
+        description="Train a fruit/no-fruit classifier for cube crops.",
     )
     parser.add_argument("--data-root", type=Path, default=Path("dataset/fruits360"))
     parser.add_argument("--output", type=Path, default=Path("runs/classify/fruits360"))
@@ -248,6 +275,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--threshold", type=float, default=DEFAULT_FRUIT_THRESHOLD)
+    parser.add_argument(
+        "--classes",
+        nargs="+",
+        default=None,
+        help="Optional class folder order. Defaults to discovered cube-fruit classes.",
+    )
     return parser
 
 
