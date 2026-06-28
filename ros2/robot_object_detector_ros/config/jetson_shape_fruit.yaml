@@ -1,0 +1,37 @@
+shape_yolo_node:
+  ros__parameters:
+    engine_path: models/shape_yolo_best.engine
+    image_topic: /camera/image_raw
+    detections_topic: /shape_yolo/detections
+    annotated_topic: /shape_yolo/annotated_image
+    input_width: 640
+    input_height: 640
+    num_classes: 4
+    class_names:
+      - cube_any
+      - octahedron
+      - dodecahedron
+      - icosahedron
+    conf_threshold: 0.25
+    nms_iou_threshold: 0.7
+    class_agnostic_nms: false
+
+cube_fruit_classifier_node:
+  ros__parameters:
+    engine_path: models/cube_fruit_classifier.engine
+    image_topic: /camera/image_raw
+    detections_topic: /shape_yolo/detections
+    classifications_topic: /cube_fruit/classifications
+    annotated_topic: /cube_fruit/annotated_image
+    input_width: 100
+    input_height: 100
+    cube_class_id: 0
+    min_cube_confidence: 0.0
+    threshold: 0.7
+    no_fruit_class: none
+    class_names:
+      - apple
+      - orange
+      - banana
+      - pineapple
+      - none
