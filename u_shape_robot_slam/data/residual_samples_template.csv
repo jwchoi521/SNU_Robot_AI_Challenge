@@ -1,0 +1,3 @@
+frame_id,object_id,class_name,image_width,image_height,x_center,y_center,width,height,x_lidar_gt_m,y_lidar_gt_m,notes
+calib_001,obj_001,cube_any,1280,720,0.503,0.612,0.118,0.207,0.600,0.000,example row; replace with real data
+calib_002,obj_002,cube_any,1280,720,0.421,0.650,0.132,0.236,0.800,0.200,example row; collect 100+ real samples

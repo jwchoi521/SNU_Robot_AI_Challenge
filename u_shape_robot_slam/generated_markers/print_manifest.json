@@ -1,0 +1,23 @@
+{
+  "dictionary": "DICT_4X4_50",
+  "marker_ids": [
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "marker_size_mm": 80.0,
+  "image_pixels": 1200,
+  "generated_utc": "2026-07-02T03:32:25Z",
+  "files": [
+    "generated_markers/aruco_DICT_4X4_50_010_80mm.png",
+    "generated_markers/aruco_DICT_4X4_50_011_80mm.png",
+    "generated_markers/aruco_DICT_4X4_50_012_80mm.png",
+    "generated_markers/aruco_DICT_4X4_50_013_80mm.png",
+    "generated_markers/aruco_DICT_4X4_50_014_80mm.png",
+    "generated_markers/aruco_DICT_4X4_50_015_80mm.png"
+  ],
+  "layout_template": "generated_markers/recommended_marker_layout.csv"
+}
