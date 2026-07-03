@@ -73,12 +73,12 @@ def open_capture(args: argparse.Namespace) -> Any:
         return cv2.VideoCapture(args.gstreamer, cv2.CAP_GSTREAMER)
 
     capture = cv2.VideoCapture(args.camera_index, cv2.CAP_V4L2)
+    capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"UYVY"))
+    capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     capture.set(cv2.CAP_PROP_FRAME_WIDTH, args.capture_width)
     capture.set(cv2.CAP_PROP_FRAME_HEIGHT, args.capture_height)
     capture.set(cv2.CAP_PROP_FPS, args.fps)
     return capture
-
-
 @dataclass
 class FrameSnapshot:
     frame: Any
