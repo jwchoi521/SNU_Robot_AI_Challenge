@@ -83,14 +83,30 @@ def _iter_images(image_dir: Path) -> list[Path]:
     )
 
 
+def _decoded_image_to_rgb_on_white(decoded_image: np.ndarray) -> np.ndarray:
+    if decoded_image.ndim == 2:
+        return np.repeat(decoded_image[..., None], 3, axis=2)
+
+    channels = decoded_image.shape[2]
+    if channels == 3:
+        return decoded_image[..., ::-1].copy()
+    if channels != 4:
+        raise ValueError(f"unsupported image channel count: {channels}")
+
+    bgr = decoded_image[..., :3].astype(np.float32)
+    alpha = decoded_image[..., 3:4].astype(np.float32) / 255.0
+    composited = bgr * alpha + 255.0 * (1.0 - alpha)
+    return np.rint(np.clip(composited, 0, 255)).astype(np.uint8)[..., ::-1].copy()
+
+
 def _read_rgb(path: Path) -> np.ndarray:
     import cv2
 
     buffer = np.fromfile(path, dtype=np.uint8)
-    image_bgr = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
-    if image_bgr is None:
+    decoded_image = cv2.imdecode(buffer, cv2.IMREAD_UNCHANGED)
+    if decoded_image is None:
         raise ValueError(f"image could not be read: {path}")
-    return cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    return _decoded_image_to_rgb_on_white(decoded_image)
 
 
 def _write_rgb(path: Path, image_rgb: np.ndarray) -> None:
@@ -1028,6 +1044,97 @@ def _augment_sticker(sticker_rgb: np.ndarray, rng: random.Random) -> np.ndarray:
     return adjusted
 
 
+def _odd_kernel_size(value: float) -> int:
+    kernel_size = max(3, int(round(value)))
+    if kernel_size % 2 == 0:
+        kernel_size += 1
+    return kernel_size
+
+
+def _random_shadow_mask(
+    height: int,
+    width: int,
+    rng: random.Random,
+    blur_ratio: float,
+) -> np.ndarray:
+    if height <= 0 or width <= 0:
+        raise ValueError("shadow mask image dimensions must be positive")
+    if blur_ratio < 0.0:
+        raise ValueError("shadow blur ratio must be non-negative")
+
+    try:
+        import cv2
+    except ModuleNotFoundError:
+        cv2 = None  # type: ignore[assignment]
+
+    if cv2 is not None and rng.random() < 0.5:
+        mask = np.zeros((height, width), dtype=np.float32)
+        center = (
+            rng.randint(0, max(0, width - 1)),
+            rng.randint(0, max(0, height - 1)),
+        )
+        axes = (
+            max(1, int(width * rng.uniform(0.25, 0.80))),
+            max(1, int(height * rng.uniform(0.18, 0.65))),
+        )
+        angle = rng.uniform(0.0, 180.0)
+        cv2.ellipse(mask, center, axes, angle, 0.0, 360.0, 1.0, -1)
+    else:
+        y_values, x_values = np.mgrid[0:height, 0:width]
+        angle = rng.uniform(0.0, np.pi)
+        projection = x_values * np.cos(angle) + y_values * np.sin(angle)
+        projection_min = float(projection.min())
+        projection_max = float(projection.max())
+        center = rng.uniform(projection_min, projection_max)
+        band_width = max(1.0, min(height, width) * rng.uniform(0.20, 0.70))
+        mask = 1.0 - np.abs(projection - center) / band_width
+        mask = np.clip(mask, 0.0, 1.0).astype(np.float32)
+
+    if cv2 is not None and blur_ratio > 0.0 and min(height, width) > 2:
+        kernel_size = _odd_kernel_size(min(height, width) * blur_ratio)
+        mask = cv2.GaussianBlur(mask, (kernel_size, kernel_size), 0)
+    return np.clip(mask, 0.0, 1.0).astype(np.float32)
+
+
+def apply_lighting_augmentation(
+    image_rgb: np.ndarray,
+    rng: random.Random,
+    shadow_prob: float = 0.0,
+    shadow_min_factor: float = 0.45,
+    shadow_max_factor: float = 0.85,
+    shadow_blur_ratio: float = 0.20,
+    global_brightness_min: float = 1.0,
+    global_brightness_max: float = 1.0,
+    color_jitter: float = 0.0,
+) -> np.ndarray:
+    if not 0.0 <= shadow_prob <= 1.0:
+        raise ValueError("shadow probability must be in 0..1")
+    if not 0.0 < shadow_min_factor <= shadow_max_factor <= 1.0:
+        raise ValueError("shadow factors must satisfy 0 < min <= max <= 1")
+    if global_brightness_min <= 0.0:
+        raise ValueError("global brightness minimum must be positive")
+    if global_brightness_max < global_brightness_min:
+        raise ValueError("global brightness max must be >= min")
+    if global_brightness_max > 1.0:
+        raise ValueError("global brightness max must be <= 1 for darkening only")
+
+    adjusted = image_rgb.astype(np.float32)
+    brightness = rng.uniform(global_brightness_min, global_brightness_max)
+    adjusted *= brightness
+
+    # Keep the original color balance. Fruit kind is color-sensitive, so this
+    # augmentation only darkens uniformly and never adds colored lighting.
+    _ = color_jitter
+
+    if rng.random() < shadow_prob:
+        height, width = image_rgb.shape[:2]
+        shadow_factor = rng.uniform(shadow_min_factor, shadow_max_factor)
+        mask = _random_shadow_mask(height, width, rng, shadow_blur_ratio)
+        adjusted *= 1.0 - mask[..., None] * (1.0 - shadow_factor)
+
+    return np.clip(adjusted, 0, 255).astype(np.uint8)
+
+
 def _make_square_sticker(
     fruit_rgb: np.ndarray,
     size: int,
@@ -1276,6 +1383,13 @@ def synthesize_cube_fruit_dataset(
     sticker_fill_scale: float,
     sticker_face_mode: str,
     max_sticker_faces: int,
+    shadow_prob: float,
+    shadow_min_factor: float,
+    shadow_max_factor: float,
+    shadow_blur_ratio: float,
+    global_brightness_min: float,
+    global_brightness_max: float,
+    color_jitter: float,
     fallback: str,
     seed: int,
     clear: bool,
@@ -1404,13 +1518,24 @@ def synthesize_cube_fruit_dataset(
                     debug_counts[split] += 1
 
             for sample_index in range(none_per_cube):
+                none_crop = apply_lighting_augmentation(
+                    cube_crop,
+                    rng,
+                    shadow_prob=shadow_prob,
+                    shadow_min_factor=shadow_min_factor,
+                    shadow_max_factor=shadow_max_factor,
+                    shadow_blur_ratio=shadow_blur_ratio,
+                    global_brightness_min=global_brightness_min,
+                    global_brightness_max=global_brightness_max,
+                    color_jitter=color_jitter,
+                )
                 output_path = (
                     output_root
                     / split
                     / NO_FRUIT_CLASS
                     / _make_stem(cube, NO_FRUIT_CLASS, sample_index)
                 )
-                _write_rgb(output_path, cube_crop)
+                _write_rgb(output_path, none_crop)
                 counts[split][NO_FRUIT_CLASS] += 1
                 _append_metadata(
                     metadata_path,
@@ -1456,6 +1581,17 @@ def synthesize_cube_fruit_dataset(
                             sticker_quad,
                             alpha=sticker_alpha,
                         )
+                    synthetic = apply_lighting_augmentation(
+                        synthetic,
+                        rng,
+                        shadow_prob=shadow_prob,
+                        shadow_min_factor=shadow_min_factor,
+                        shadow_max_factor=shadow_max_factor,
+                        shadow_blur_ratio=shadow_blur_ratio,
+                        global_brightness_min=global_brightness_min,
+                        global_brightness_max=global_brightness_max,
+                        color_jitter=color_jitter,
+                    )
                     synthetic_face_method = _face_method_label(sticker_face_quads)
                     output_path = (
                         output_root
@@ -1533,6 +1669,48 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sticker-inset-max", type=float, default=0.0)
     parser.add_argument("--sticker-fill-scale", type=float, default=1.0)
     parser.add_argument(
+        "--shadow-prob",
+        type=float,
+        default=0.0,
+        help="Probability of adding a soft synthetic shadow to each cube crop.",
+    )
+    parser.add_argument(
+        "--shadow-min-factor",
+        type=float,
+        default=0.45,
+        help="Darkest possible multiplier inside a synthetic shadow.",
+    )
+    parser.add_argument(
+        "--shadow-max-factor",
+        type=float,
+        default=0.85,
+        help="Lightest possible multiplier inside a synthetic shadow.",
+    )
+    parser.add_argument(
+        "--shadow-blur-ratio",
+        type=float,
+        default=0.20,
+        help="Shadow edge blur as a fraction of the shorter crop side.",
+    )
+    parser.add_argument(
+        "--global-brightness-min",
+        type=float,
+        default=1.0,
+        help="Minimum global brightness multiplier for cube crops.",
+    )
+    parser.add_argument(
+        "--global-brightness-max",
+        type=float,
+        default=1.0,
+        help="Maximum global darkening multiplier for cube crops. Must be <= 1.0.",
+    )
+    parser.add_argument(
+        "--color-jitter",
+        type=float,
+        default=0.0,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
         "--sticker-face-mode",
         choices=("random", "one", "all"),
         default="random",
@@ -1605,6 +1783,13 @@ def main() -> int:
         sticker_fill_scale=args.sticker_fill_scale,
         sticker_face_mode=args.sticker_face_mode,
         max_sticker_faces=args.max_sticker_faces,
+        shadow_prob=args.shadow_prob,
+        shadow_min_factor=args.shadow_min_factor,
+        shadow_max_factor=args.shadow_max_factor,
+        shadow_blur_ratio=args.shadow_blur_ratio,
+        global_brightness_min=args.global_brightness_min,
+        global_brightness_max=args.global_brightness_max,
+        color_jitter=args.color_jitter,
         fallback=args.fallback,
         seed=args.seed,
         clear=args.clear,

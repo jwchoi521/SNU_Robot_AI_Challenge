@@ -88,8 +88,6 @@ def _bbox_text(bbox: Sequence[float] | None) -> str:
 
 
 def evaluate_cube_fruit_classifier(args: argparse.Namespace) -> int:
-    from ultralytics import YOLO
-
     from src.fruit_classifier import (
         crop_rgb,
         load_fruit_classifier,
@@ -106,7 +104,11 @@ def evaluate_cube_fruit_classifier(args: argparse.Namespace) -> int:
         device=args.device,
     )
     threshold = args.threshold if args.threshold is not None else checkpoint_threshold
-    detector = YOLO(args.detector_model) if args.detector_model else None
+    detector = None
+    if args.detector_model:
+        from ultralytics import YOLO
+
+        detector = YOLO(args.detector_model)
     class_names_for_truth = tuple(classes) + (NO_FRUIT_CLASS,)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)

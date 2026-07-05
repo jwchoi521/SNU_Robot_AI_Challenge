@@ -88,6 +88,11 @@ python scripts/synthesize_cube_fruit_dataset.py `
   --val-ratio 0.15 `
   --test-ratio 0.15 `
   --max-sticker-faces 2 `
+  --shadow-prob 0.45 `
+  --shadow-min-factor 0.35 `
+  --shadow-max-factor 0.85 `
+  --global-brightness-min 0.70 `
+  --global-brightness-max 1.00 `
   --clear
 ```
 
@@ -105,6 +110,10 @@ from that class. Use `--sticker-face-mode all` to force every annotated face, or
 `--sticker-face-mode one` to force exactly one face. By default,
 `--max-sticker-faces 2` prevents stickers from being pasted onto more than two
 faces in one synthetic image.
+
+Lighting augmentation can add soft local shadows and uniform global darkening
+after the sticker has been pasted. It keeps the original color balance, so fruit
+classes are not shifted by red or yellow synthetic lighting.
 
 The output is an ImageFolder-style classifier dataset:
 

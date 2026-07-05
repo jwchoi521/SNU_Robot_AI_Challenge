@@ -10,12 +10,14 @@ from scripts.synthesize_cube_fruit_dataset import (
     ManualFace,
     _assign_cubes_to_output_splits,
     _candidate_quads_from_edge_segments,
+    _decoded_image_to_rgb_on_white,
     _face_method_label,
     _fruit_source_label,
     _is_face_like_quad,
     _manual_face_quads,
     _select_sticker_face_quads,
     build_parser,
+    apply_lighting_augmentation,
     order_quad_points,
     random_face_quad,
     sample_sticker_quad,
@@ -166,6 +168,68 @@ def test_random_face_quad_uses_crop_bounds() -> None:
     assert quad[:, 0].max() <= 120
     assert quad[:, 1].min() >= 0
     assert quad[:, 1].max() <= 80
+
+
+def test_decoded_transparent_image_is_composited_on_white() -> None:
+    bgra = np.array(
+        [
+            [
+                [0, 0, 0, 0],
+                [0, 0, 255, 255],
+                [255, 0, 0, 128],
+            ]
+        ],
+        dtype=np.uint8,
+    )
+
+    rgb = _decoded_image_to_rgb_on_white(bgra)
+
+    assert rgb.tolist() == [
+        [
+            [255, 255, 255],
+            [255, 0, 0],
+            [127, 127, 255],
+        ]
+    ]
+
+
+def test_lighting_augmentation_is_noop_by_default() -> None:
+    image = np.full((16, 18, 3), 120, dtype=np.uint8)
+
+    augmented = apply_lighting_augmentation(image, random.Random(13))
+
+    np.testing.assert_array_equal(augmented, image)
+
+
+def test_lighting_augmentation_can_darken_with_shadow() -> None:
+    image = np.full((48, 64, 3), 180, dtype=np.uint8)
+
+    augmented = apply_lighting_augmentation(
+        image,
+        random.Random(13),
+        shadow_prob=1.0,
+        shadow_min_factor=0.5,
+        shadow_max_factor=0.5,
+        shadow_blur_ratio=0.1,
+    )
+
+    assert augmented.mean() < image.mean()
+    assert augmented.min() >= 0
+    assert augmented.max() <= image.max()
+
+
+def test_lighting_augmentation_keeps_color_balance() -> None:
+    image = np.array([[[100, 150, 200]]], dtype=np.uint8)
+
+    augmented = apply_lighting_augmentation(
+        image,
+        random.Random(13),
+        global_brightness_min=0.8,
+        global_brightness_max=0.8,
+        color_jitter=0.5,
+    )
+
+    assert augmented.tolist() == [[[80, 120, 160]]]
 
 
 def test_face_like_quad_rejects_whole_cube_silhouette() -> None:
@@ -401,6 +465,20 @@ def test_debug_face_overlay_options_parse() -> None:
             "one",
             "--max-sticker-faces",
             "2",
+            "--shadow-prob",
+            "0.5",
+            "--shadow-min-factor",
+            "0.35",
+            "--shadow-max-factor",
+            "0.8",
+            "--shadow-blur-ratio",
+            "0.18",
+            "--global-brightness-min",
+            "0.7",
+            "--global-brightness-max",
+            "1.0",
+            "--color-jitter",
+            "0.08",
             "--debug-face-overlays",
             "--debug-max-per-split",
             "3",
@@ -415,6 +493,13 @@ def test_debug_face_overlay_options_parse() -> None:
     assert args.test_ratio == 0.2
     assert args.sticker_face_mode == "one"
     assert args.max_sticker_faces == 2
+    assert args.shadow_prob == 0.5
+    assert args.shadow_min_factor == 0.35
+    assert args.shadow_max_factor == 0.8
+    assert args.shadow_blur_ratio == 0.18
+    assert args.global_brightness_min == 0.7
+    assert args.global_brightness_max == 1.0
+    assert args.color_jitter == 0.08
     assert args.debug_face_overlays
     assert args.debug_face_dir is None
     assert args.debug_max_per_split == 3
