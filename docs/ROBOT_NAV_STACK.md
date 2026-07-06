@@ -25,17 +25,23 @@ navigation stack:
 
 ```bash
 ros2 launch snu_robot_bringup full_robot_stack.launch.py \
+  shape_engine:=models/shape_yolo_best_640.engine \
+  shape_input_size:=640 \
+  classifier_engine:=models/classifier_real_sz256_640.engine \
+  classifier_input_size:=640 \
+  camera_index:=0 \
+  frame_width:=1280 \
+  frame_height:=720 \
   scan_topic:=/scan \
   odom_topic:=/odom \
   arena_width_m:=4.0 \
   arena_height_m:=4.0
 ```
 
-`full_robot_stack.launch.py` already uses the detector defaults from
-`jetson_shape_fruit.launch.py`, so pass `shape_engine` or `classifier_engine`
-only when the engine files live at different paths. Do not start
-`jetson_shape_fruit.launch.py` separately when using the full stack, because
-that would launch a second camera/detector pipeline.
+`full_robot_stack.launch.py` forwards these engine and camera arguments into
+`jetson_shape_fruit.launch.py` once. Do not start `jetson_shape_fruit.launch.py`
+separately when using the full stack, because that would launch a second
+camera/detector pipeline.
 
 If you want to debug perception alone, start only the detector, using the
 engine paths that exist on the Jetson:
