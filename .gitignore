@@ -23,5 +23,7 @@ dataset/labels/
 dataset/raw/
 dataset/labeled/
 
+u_shape_robot_slam/
+
 .env
 .env.*

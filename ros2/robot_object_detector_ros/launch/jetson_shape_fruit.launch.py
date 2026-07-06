@@ -47,8 +47,8 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("camera_topic", default_value="/camera/image_raw"),
             DeclareLaunchArgument("fps", default_value="30.0"),
-            DeclareLaunchArgument("frame_width", default_value="640"),
-            DeclareLaunchArgument("frame_height", default_value="480"),
+            DeclareLaunchArgument("frame_width", default_value="1280"),
+            DeclareLaunchArgument("frame_height", default_value="720"),
             Node(
                 package="robot_object_detector_ros",
                 executable="opencv_camera_node",

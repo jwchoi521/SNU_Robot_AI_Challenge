@@ -27,8 +27,8 @@ public:
     camera_index_ = declare_parameter<int>("camera_index", 0);
     camera_pipeline_ = declare_parameter<std::string>("camera_pipeline", "");
     frame_id_ = declare_parameter<std::string>("frame_id", "camera");
-    width_ = declare_parameter<int>("frame_width", 640);
-    height_ = declare_parameter<int>("frame_height", 480);
+    width_ = declare_parameter<int>("frame_width", 1280);
+    height_ = declare_parameter<int>("frame_height", 720);
     fps_ = declare_parameter<double>("fps", 30.0);
 
     if (!camera_pipeline_.empty()) {
@@ -71,8 +71,8 @@ private:
   int camera_index_ = 0;
   std::string camera_pipeline_;
   std::string frame_id_;
-  int width_ = 640;
-  int height_ = 480;
+  int width_ = 1280;
+  int height_ = 720;
   double fps_ = 30.0;
   cv::VideoCapture cap_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_;
