@@ -1,0 +1,20 @@
+four_wheel_odometry:
+  ros__parameters:
+    joint_states_topic: /joint_states
+    odom_topic: /wheel/odom
+    odom_frame: odom
+    base_frame: base_link
+    publish_tf: false
+
+    # Use "skid_steer" for normal four-wheel differential/skid steering.
+    # Use "mecanum" only if the robot uses mecanum wheels and wheel signs are calibrated.
+    drive_model: skid_steer
+
+    wheel_radius_m: 0.035
+    track_width_m: 0.112
+    wheelbase_m: 0.0986
+
+    front_left_joint: front_left_wheel_joint
+    front_right_joint: front_right_wheel_joint
+    rear_left_joint: rear_left_wheel_joint
+    rear_right_joint: rear_right_wheel_joint

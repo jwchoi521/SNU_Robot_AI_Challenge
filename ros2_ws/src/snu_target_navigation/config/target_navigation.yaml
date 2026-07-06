@@ -1,0 +1,58 @@
+semantic_object_projector:
+  ros__parameters:
+    input_topic: /perception/objects
+    target_pose_topic: /target_pose_base
+    obstacle_cloud_topic: /semantic_obstacles_live
+    base_frame: base_link
+    bearing_positive_is_left: false
+    min_distance_m: 0.10
+    max_distance_m: 2.50
+    min_confidence: 0.25
+    prefer_closest_target: true
+    require_confirmed_targets: true
+    require_confirmed_obstacles: false
+    default_obstacle_radius_m: 0.18
+
+semantic_object_registry:
+  ros__parameters:
+    input_topic: /perception/objects
+    obstacle_cloud_topic: /semantic_obstacles
+    target_pose_topic: /target_pose_map
+    map_frame: map
+    observation_frame: base_link
+    bearing_positive_is_left: false
+    min_distance_m: 0.10
+    max_distance_m: 2.50
+    min_confidence: 0.25
+    merge_distance_m: 0.25
+    obstacle_ttl_sec: 30.0
+    target_ttl_sec: 60.0
+    publish_rate_hz: 5.0
+    default_obstacle_radius_m: 0.18
+    require_confirmed_targets: true
+    require_confirmed_obstacles: false
+
+path_feedback_monitor:
+  ros__parameters:
+    path_topic: /plan
+    obstacle_cloud_topic: /semantic_obstacles
+    goal_topic: /mission/nav_goal
+    feedback_topic: /navigation/path_feedback
+    publish_rate_hz: 2.0
+    path_timeout_sec: 3.0
+    obstacle_timeout_sec: 5.0
+    goal_timeout_sec: 10.0
+
+    # These defaults follow the current Nav2 controller/costmap settings.
+    blocked_clearance_m: 0.22
+    caution_clearance_m: 0.45
+    goal_tolerance_m: 0.25
+    detour_ratio_warn: 1.60
+    desired_linear_speed_mps: 0.23
+    max_angular_speed_radps: 0.80
+    obstacle_slowdown_weight: 0.80
+    clearance_sample_step_m: 0.05
+    max_path_samples: 2000
+    max_obstacle_points: 1000
+    eta_improvement_epsilon_sec: 0.25
+    goal_reset_distance_m: 0.20
