@@ -20,8 +20,21 @@ The workspace now includes the TensorRT YOLO ROS2 package at:
 src/robot_object_detector_ros
 ```
 
-Start the detector in one terminal, using the engine paths that exist on the
-Jetson:
+The easiest runtime entry point starts both the TensorRT detector and the
+navigation stack:
+
+```bash
+ros2 launch snu_robot_bringup full_robot_stack.launch.py \
+  shape_engine:=models/shape_yolo_best_640.engine \
+  classifier_engine:=models/classifier_real_sz256_640.engine \
+  scan_topic:=/scan \
+  odom_topic:=/odom \
+  arena_width_m:=4.0 \
+  arena_height_m:=4.0
+```
+
+If you want to debug perception alone, start only the detector, using the
+engine paths that exist on the Jetson:
 
 ```bash
 ros2 launch robot_object_detector_ros jetson_shape_fruit.launch.py \

@@ -11,6 +11,8 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
+  <exec_depend>robot_nav_stack</exec_depend>
+  <exec_depend>robot_object_detector_ros</exec_depend>
   <exec_depend>robot_localization</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
