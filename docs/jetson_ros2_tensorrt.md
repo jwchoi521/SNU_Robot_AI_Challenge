@@ -86,33 +86,35 @@ python3 src/export_engine.py \
   --model models/shape_yolo_best.pt \
   --imgsz 640 \
   --half \
-  --device 0
+  --device 0 \
+  --output models/shape_yolo_best_640.engine
 ```
 
-The expected output is usually:
+The expected output is:
 
 ```text
-models/shape_yolo_best.engine
+models/shape_yolo_best_640.engine
 ```
 
-Use the default raw YOLO export. The C++ node performs confidence filtering and
-NMS itself.
+`src/export_engine.py --output` strips the Ultralytics metadata prefix and writes
+a raw TensorRT plan. The C++ node performs confidence filtering and NMS itself.
 
 ### Fruit Classifier Engine
 
 Copy your trained classifier checkpoint to Jetson, for example:
 
 ```text
-runs/classify/cube_fruits_synthetic/best.pt
+models/classifier_real_sz256.pt
 ```
 
 Export ONNX:
 
 ```bash
-python3 -m pip install onnx
+python3 -m pip install onnx onnxscript
 python3 scripts/export_fruit_classifier_onnx.py \
-  --model runs/classify/cube_fruits_synthetic/best.pt \
-  --output models/cube_fruit_classifier.onnx \
+  --model models/classifier_real_sz256.pt \
+  --output models/classifier_real_sz256_640.onnx \
+  --imgsz 640 \
   --device cpu
 ```
 
@@ -120,12 +122,14 @@ Build the TensorRT engine on Jetson:
 
 ```bash
 trtexec \
-  --onnx=models/cube_fruit_classifier.onnx \
-  --saveEngine=models/cube_fruit_classifier.engine \
+  --onnx=models/classifier_real_sz256_640.onnx \
+  --saveEngine=models/classifier_real_sz256_640.engine \
   --fp16
 ```
 
-The classifier engine expects `1x3x100x100` RGB input normalized with
+Repeat with `--imgsz 960` and `--imgsz 1280` if you want the larger classifier
+engine variants. The classifier engine expects `1x3x{imgsz}x{imgsz}` RGB input
+normalized with
 `mean=(0.5, 0.5, 0.5)` and `std=(0.5, 0.5, 0.5)`.
 
 ## 4. Run The Pipeline
@@ -138,8 +142,10 @@ source /opt/ros/$ROS_DISTRO/setup.bash
 source ~/ros2_ws/install/setup.bash
 
 ros2 launch robot_object_detector_ros jetson_shape_fruit.launch.py \
-  shape_engine:=models/shape_yolo_best.engine \
-  classifier_engine:=models/cube_fruit_classifier.engine \
+  shape_engine:=models/shape_yolo_best_640.engine \
+  shape_input_size:=640 \
+  classifier_engine:=models/classifier_real_sz256_640.engine \
+  classifier_input_size:=640 \
   camera_index:=0
 ```
 
@@ -147,8 +153,10 @@ CSI camera example:
 
 ```bash
 ros2 launch robot_object_detector_ros jetson_shape_fruit.launch.py \
-  shape_engine:=models/shape_yolo_best.engine \
-  classifier_engine:=models/cube_fruit_classifier.engine \
+  shape_engine:=models/shape_yolo_best_640.engine \
+  shape_input_size:=640 \
+  classifier_engine:=models/classifier_real_sz256_640.engine \
+  classifier_input_size:=640 \
   camera_pipeline:='nvarguscamerasrc ! video/x-raw(memory:NVMM), width=1280, height=720, framerate=30/1 ! nvvidconv ! video/x-raw, format=BGRx ! videoconvert ! video/x-raw, format=BGR ! appsink'
 ```
 

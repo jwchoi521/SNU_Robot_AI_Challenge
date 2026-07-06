@@ -7,7 +7,9 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 def generate_launch_description():
     shape_engine = LaunchConfiguration("shape_engine")
+    shape_input_size = LaunchConfiguration("shape_input_size")
     classifier_engine = LaunchConfiguration("classifier_engine")
+    classifier_input_size = LaunchConfiguration("classifier_input_size")
     camera_index = LaunchConfiguration("camera_index")
     camera_pipeline = LaunchConfiguration("camera_pipeline")
     camera_topic = LaunchConfiguration("camera_topic")
@@ -19,13 +21,23 @@ def generate_launch_description():
         [
             DeclareLaunchArgument(
                 "shape_engine",
-                default_value="models/shape_yolo_best.engine",
+                default_value="models/shape_yolo_best_640.engine",
                 description="Path to the YOLO TensorRT engine.",
             ),
             DeclareLaunchArgument(
+                "shape_input_size",
+                default_value="640",
+                description="Square input size used when the YOLO engine was exported.",
+            ),
+            DeclareLaunchArgument(
                 "classifier_engine",
-                default_value="models/cube_fruit_classifier.engine",
+                default_value="models/classifier_real_sz256_640.engine",
                 description="Path to the cube fruit classifier TensorRT engine.",
+            ),
+            DeclareLaunchArgument(
+                "classifier_input_size",
+                default_value="640",
+                description="Square input size used when the classifier engine was exported.",
             ),
             DeclareLaunchArgument("camera_index", default_value="0"),
             DeclareLaunchArgument(
@@ -64,8 +76,8 @@ def generate_launch_description():
                         "image_topic": camera_topic,
                         "detections_topic": "/shape_yolo/detections",
                         "annotated_topic": "/shape_yolo/annotated_image",
-                        "input_width": 640,
-                        "input_height": 640,
+                        "input_width": ParameterValue(shape_input_size, value_type=int),
+                        "input_height": ParameterValue(shape_input_size, value_type=int),
                         "num_classes": 4,
                         "class_names": [
                             "cube_any",
@@ -90,8 +102,8 @@ def generate_launch_description():
                         "detections_topic": "/shape_yolo/detections",
                         "classifications_topic": "/cube_fruit/classifications",
                         "annotated_topic": "/cube_fruit/annotated_image",
-                        "input_width": 100,
-                        "input_height": 100,
+                        "input_width": ParameterValue(classifier_input_size, value_type=int),
+                        "input_height": ParameterValue(classifier_input_size, value_type=int),
                         "cube_class_id": 0,
                         "threshold": 0.7,
                         "class_names": [

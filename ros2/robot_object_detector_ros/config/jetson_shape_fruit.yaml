@@ -1,6 +1,6 @@
 shape_yolo_node:
   ros__parameters:
-    engine_path: models/shape_yolo_best.engine
+    engine_path: models/shape_yolo_best_640.engine
     image_topic: /camera/image_raw
     detections_topic: /shape_yolo/detections
     annotated_topic: /shape_yolo/annotated_image
@@ -18,13 +18,13 @@ shape_yolo_node:
 
 cube_fruit_classifier_node:
   ros__parameters:
-    engine_path: models/cube_fruit_classifier.engine
+    engine_path: models/classifier_real_sz256_640.engine
     image_topic: /camera/image_raw
     detections_topic: /shape_yolo/detections
     classifications_topic: /cube_fruit/classifications
     annotated_topic: /cube_fruit/annotated_image
-    input_width: 100
-    input_height: 100
+    input_width: 640
+    input_height: 640
     cube_class_id: 0
     min_cube_confidence: 0.0
     threshold: 0.7

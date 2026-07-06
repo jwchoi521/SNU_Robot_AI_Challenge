@@ -22,9 +22,12 @@ def export_fruit_classifier_onnx(args: argparse.Namespace) -> Path:
     )
     model.eval()
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    export_image_size = args.imgsz if args.imgsz is not None else image_size
+    if export_image_size <= 0:
+        raise ValueError("--imgsz must be positive")
 
     dummy = torch.zeros(
-        (1, 3, image_size, image_size),
+        (1, 3, export_image_size, export_image_size),
         dtype=torch.float32,
         device=next(model.parameters()).device,
     )
@@ -43,11 +46,14 @@ def export_fruit_classifier_onnx(args: argparse.Namespace) -> Path:
         output_names=["logits"],
         dynamic_axes=dynamic_axes,
         opset_version=args.opset,
+        dynamo=False,
+        external_data=False,
     )
 
     metadata = {
         "classes": list(classes),
-        "image_size": image_size,
+        "checkpoint_image_size": image_size,
+        "image_size": export_image_size,
         "threshold": threshold,
         "input_name": "input",
         "output_name": "logits",
@@ -71,6 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, default=Path("models/cube_fruit_classifier.onnx"))
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--opset", type=int, default=17)
+    parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=None,
+        help="Override the checkpoint image_size for a fixed-size ONNX export.",
+    )
     parser.add_argument("--dynamic-batch", action="store_true")
     return parser
 

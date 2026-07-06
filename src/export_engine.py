@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
+import struct
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -14,7 +16,31 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dynamic", action="store_true")
     parser.add_argument("--simplify", action="store_true")
     parser.add_argument("--workspace", type=float, default=None)
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Optional destination for the exported .engine file.",
+    )
     return parser
+
+
+def write_runtime_engine(exported_engine: Path, output: Path) -> None:
+    data = exported_engine.read_bytes()
+    if data.startswith(b"ftrt"):
+        output.write_bytes(data)
+        return
+
+    if len(data) < 8:
+        raise ValueError(f"exported engine is too small: {exported_engine}")
+
+    metadata_size = struct.unpack("<I", data[:4])[0]
+    plan_offset = 4 + metadata_size
+    if plan_offset >= len(data) or not data[plan_offset:].startswith(b"ftrt"):
+        raise ValueError(
+            "exported engine does not contain a raw TensorRT plan after metadata",
+        )
+    output.write_bytes(data[plan_offset:])
 
 
 def main() -> int:
@@ -32,7 +58,18 @@ def main() -> int:
         simplify=args.simplify,
         workspace=args.workspace,
     )
-    print(exported_path)
+    exported_engine = Path(exported_path)
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        if exported_engine.resolve() != args.output.resolve():
+            write_runtime_engine(exported_engine, args.output)
+            exported_engine.unlink()
+        else:
+            temporary_output = args.output.with_suffix(f"{args.output.suffix}.raw")
+            write_runtime_engine(exported_engine, temporary_output)
+            temporary_output.replace(args.output)
+        exported_engine = args.output
+    print(exported_engine)
     return 0
 
 
