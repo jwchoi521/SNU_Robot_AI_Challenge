@@ -4,12 +4,14 @@ esp32_serial_bridge:
     serial_port: /dev/ttyUSB0
     baud_rate: 115200
     serial_reset_wait_sec: 2.0
+    esp32_protocol: motor_bridge
     esp32_command_mode: velocity
     command_topic: /wheel_commands
     joint_states_topic: /joint_states
     command_timeout_sec: 0.5
     read_rate_hz: 100.0
     max_power: 0.12
+    u_shape_pwm_max: 120
     max_wheel_velocity_rad_s: 20.0
 
     # Must be calibrated from the actual motor encoder spec and gear ratio.

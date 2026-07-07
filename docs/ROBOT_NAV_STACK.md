@@ -48,6 +48,7 @@ ros2 launch snu_robot_bringup full_robot_stack.launch.py \
   lidar_frame:=lidar \
   scan_topic:=/scan \
   odom_topic:=/odom \
+  arena_origin:=center \
   arena_width_m:=4.0 \
   arena_height_m:=4.0
 ```
@@ -62,6 +63,25 @@ With the full stack, `/cube_fruit/annotated_image` is published by
 `distance_annotator_node`: it redraws the YOLO/classifier bbox labels and adds
 the bbox model distance estimate, for example `apple 0.92 0.77m`. The raw
 classifier-only overlay is still available on `/cube_fruit/classifier_annotated_image`.
+
+To let a bbox-localized object drive the robot through Nav2, enable the
+optional goal bridge:
+
+```bash
+ros2 launch snu_robot_bringup full_robot_stack.launch.py \
+  enable_bbox_goal_navigation:=true \
+  bbox_goal_target_topic:=/object_pose_map \
+  bbox_goal_approach_distance_m:=0.0 \
+  enable_known_map_server:=true \
+  arena_origin:=center \
+  enable_semantic_obstacle_cloud:=false
+```
+
+Leave `enable_bbox_goal_navigation` false while validating perception and
+localization, because setting it true sends `NavigateToPose` goals whenever a
+fresh `/object_pose_map` target is available.
+See `docs/BBOX_GOAL_NAVIGATION_TEST.md` for the safe bring-up checklist and
+robot-side tuning parameters.
 
 If you want to debug the LiDAR alone:
 
@@ -102,10 +122,11 @@ ros2 launch robot_nav_stack robot_nav_stack.launch.py \
   odom_topic:=/odom \
   yolo_detections_topic:=/shape_yolo/detections \
   detections_topic:=/detections_json \
+  arena_origin:=center \
   arena_width_m:=4.0 \
   arena_height_m:=4.0 \
-  initial_x_m:=2.0 \
-  initial_y_m:=2.0 \
+  initial_x_m:=0.0 \
+  initial_y_m:=0.0 \
   initial_yaw_deg:=0.0 \
   lidar_x_m:=0.0 \
   lidar_y_m:=0.0 \
@@ -116,6 +137,12 @@ Set `lidar_x_m`, `lidar_y_m`, and `lidar_yaw_deg` to the LiDAR pose relative
 to `base_link`. By default the 4-wall localizer publishes `map -> base_link`
 and `map -> lidar`, so `object_localizer_node` can transform object detections
 from the learned LiDAR frame into `map`.
+The default 4x4 arena origin is the field center, so the walls are at
+`x=-2`, `x=+2`, `y=-2`, and `y=+2`. Set `arena_origin:=corner` only if you
+want the older `x=0..4`, `y=0..4` convention.
+For Nav2 driving with wheel odometry/EKF, use `wall_tf_mode:=map_to_odom`,
+`enable_sensor_tf:=true`, and `publish_lidar_tf:=false` so the TF tree is
+`map -> odom -> base_link -> lidar`.
 
 ## Nodes
 
@@ -124,8 +151,11 @@ from the learned LiDAR frame into `map`.
   - Output: `/robot_pose_map` (`geometry_msgs/PoseStamped`)
   - Status: `/four_wall_localizer/status` (`std_msgs/String` JSON)
   - Assumes the LiDAR mainly sees the 4 known arena walls.
+  - Can publish either direct localization TF (`map -> base_link`) or Nav2
+    localization TF (`map -> odom`) through `wall_tf_mode`.
   - For each robot pose candidate, ray-casts every LiDAR beam to the first
-    intersected wall among `x=0`, `x=arena_width`, `y=0`, `y=arena_height`,
+    intersected wall. With the default centered 4x4 arena, those walls are
+    `x=-2`, `x=+2`, `y=-2`, and `y=+2`,
     then minimizes the robust range residual.
   - For a square arena, wall-only matching has mirror/rotation ambiguity. The
     node explicitly tests symmetry-equivalent pose candidates, then uses the
@@ -151,6 +181,20 @@ from the learned LiDAR frame into `map`.
     `/cube_fruit/annotated_image` when launched through `full_robot_stack`.
   - Uses the same homography + residual bbox model and overlays the estimated
     object distance in meters next to the fruit/shape label.
+
+- `bbox_goal_navigator_node`
+  - Input: `/object_pose_map` (`geometry_msgs/PoseStamped`),
+    `/robot_pose_map` (`geometry_msgs/PoseStamped`)
+  - Output: `/bbox_goal_pose` (`geometry_msgs/PoseStamped`),
+    `/bbox_goal_navigator/status` (`std_msgs/String` JSON)
+  - Optional action output: Nav2 `NavigateToPose` on `navigate_to_pose`.
+  - Computes either the bbox-localized object center
+    (`bbox_goal_approach_distance_m=0.0`) or a target-facing approach pose,
+    clamps it inside the configured arena, and sends a new Nav2 goal only when
+    the goal moves enough to matter.
+  - Key tuning parameters:
+    `bbox_goal_approach_distance_m`, `bbox_goal_min_separation_m`,
+    `bbox_goal_max_target_age_sec`, `bbox_goal_margin_m`.
 
 - `yolo_detection_adapter_node`
   - Input: `/shape_yolo/detections`

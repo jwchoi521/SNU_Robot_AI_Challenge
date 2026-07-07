@@ -59,18 +59,21 @@ class FourWallLocalizerNode(Node):
         self.declare_parameter("pose_topic", "/robot_pose_map")
         self.declare_parameter("status_topic", "/four_wall_localizer/status")
         self.declare_parameter("map_frame", "map")
+        self.declare_parameter("odom_frame", "odom")
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("lidar_frame", "lidar")
         self.declare_parameter("arena_width_m", 4.0)
         self.declare_parameter("arena_height_m", 4.0)
-        self.declare_parameter("initial_x_m", 2.0)
-        self.declare_parameter("initial_y_m", 2.0)
+        self.declare_parameter("arena_origin", "center")
+        self.declare_parameter("initial_x_m", 0.0)
+        self.declare_parameter("initial_y_m", 0.0)
         self.declare_parameter("initial_yaw_deg", 0.0)
         self.declare_parameter("lidar_x_m", 0.0)
         self.declare_parameter("lidar_y_m", 0.0)
         self.declare_parameter("lidar_yaw_deg", 0.0)
         self.declare_parameter("use_odom_prior", True)
         self.declare_parameter("publish_tf", False)
+        self.declare_parameter("tf_mode", "map_to_base")
         self.declare_parameter("publish_lidar_tf", True)
         self.declare_parameter("max_rays", 720)
         self.declare_parameter("min_rays", 80)
@@ -87,12 +90,16 @@ class FourWallLocalizerNode(Node):
         self.declare_parameter("symmetry_range_score_ratio", 1.20)
 
         self.map_frame = str(self.get_parameter("map_frame").value)
+        self.odom_frame = str(self.get_parameter("odom_frame").value)
         self.base_frame = str(self.get_parameter("base_frame").value)
         self.arena_w = float(self.get_parameter("arena_width_m").value)
         self.arena_h = float(self.get_parameter("arena_height_m").value)
+        self.arena_origin = str(self.get_parameter("arena_origin").value).lower()
+        self.min_x, self.max_x, self.min_y, self.max_y = self._arena_bounds()
         self.last_pose: Pose2D | None = None
         self.last_odom_pose: Pose2D | None = None
         self.current_odom_pose: Pose2D | None = None
+        self._warned_missing_odom_for_tf = False
 
         scan_topic = str(self.get_parameter("scan_topic").value)
         odom_topic = str(self.get_parameter("odom_topic").value)
@@ -156,6 +163,14 @@ class FourWallLocalizerNode(Node):
                 "x": best.pose.x,
                 "y": best.pose.y,
                 "yaw_deg": math.degrees(best.pose.theta),
+                "arena_origin": self.arena_origin,
+                "tf_mode": str(self.get_parameter("tf_mode").value),
+                "arena_bounds": {
+                    "min_x": self.min_x,
+                    "max_x": self.max_x,
+                    "min_y": self.min_y,
+                    "max_y": self.max_y,
+                },
                 "range_score": best.range_score.score,
                 "prior_score": best.prior_score,
                 "total_score": best.total_score,
@@ -228,31 +243,38 @@ class FourWallLocalizerNode(Node):
         )
 
     def _symmetry_seeds(self, pose: Pose2D) -> list[Pose2D]:
-        w = self.arena_w
-        h = self.arena_h
+        min_x = self.min_x
+        max_x = self.max_x
+        min_y = self.min_y
+        max_y = self.max_y
+        center_x = 0.5 * (min_x + max_x)
+        center_y = 0.5 * (min_y + max_y)
+        span_x = max_x - min_x
+        span_y = max_y - min_y
         seeds = [
             pose,
-            Pose2D(w - pose.x, h - pose.y, wrap_angle(pose.theta + math.pi)),
-            Pose2D(w - pose.x, pose.y, wrap_angle(math.pi - pose.theta)),
-            Pose2D(pose.x, h - pose.y, wrap_angle(-pose.theta)),
+            Pose2D(min_x + max_x - pose.x, min_y + max_y - pose.y, wrap_angle(pose.theta + math.pi)),
+            Pose2D(min_x + max_x - pose.x, pose.y, wrap_angle(math.pi - pose.theta)),
+            Pose2D(pose.x, min_y + max_y - pose.y, wrap_angle(-pose.theta)),
         ]
 
-        if abs(w - h) <= 0.05:
-            size = 0.5 * (w + h)
+        if abs(span_x - span_y) <= 0.05:
+            rel_x = pose.x - center_x
+            rel_y = pose.y - center_y
             seeds.extend(
                 [
-                    Pose2D(size - pose.y, pose.x, wrap_angle(pose.theta + math.pi / 2.0)),
-                    Pose2D(pose.y, size - pose.x, wrap_angle(pose.theta - math.pi / 2.0)),
-                    Pose2D(pose.y, pose.x, wrap_angle(math.pi / 2.0 - pose.theta)),
-                    Pose2D(size - pose.y, size - pose.x, wrap_angle(-math.pi / 2.0 - pose.theta)),
+                    Pose2D(center_x - rel_y, center_y + rel_x, wrap_angle(pose.theta + math.pi / 2.0)),
+                    Pose2D(center_x + rel_y, center_y - rel_x, wrap_angle(pose.theta - math.pi / 2.0)),
+                    Pose2D(center_x + rel_y, center_y + rel_x, wrap_angle(math.pi / 2.0 - pose.theta)),
+                    Pose2D(center_x - rel_y, center_y - rel_x, wrap_angle(-math.pi / 2.0 - pose.theta)),
                 ]
             )
 
         unique: list[Pose2D] = []
         for seed in seeds:
             clipped = Pose2D(
-                x=min(max(seed.x, 0.02), w - 0.02),
-                y=min(max(seed.y, 0.02), h - 0.02),
+                x=min(max(seed.x, min_x + 0.02), max_x - 0.02),
+                y=min(max(seed.y, min_y + 0.02), max_y - 0.02),
                 theta=wrap_angle(seed.theta),
             )
             if not any(
@@ -284,7 +306,10 @@ class FourWallLocalizerNode(Node):
                     Pose2D(pose.x, pose.y, wrap_angle(pose.theta - step_yaw)),
                 ]
                 for candidate in candidates:
-                    if not (0.0 <= candidate.x <= self.arena_w and 0.0 <= candidate.y <= self.arena_h):
+                    if not (
+                        self.min_x <= candidate.x <= self.max_x
+                        and self.min_y <= candidate.y <= self.max_y
+                    ):
                         continue
                     candidate_score = self._range_score(candidate, rays)
                     if candidate_score.score + 1e-12 < score:
@@ -358,30 +383,45 @@ class FourWallLocalizerNode(Node):
         hits: list[tuple[float, str]] = []
 
         if abs(dir_x) > eps:
-            t_left = (0.0 - origin_x) / dir_x
+            t_left = (self.min_x - origin_x) / dir_x
             y_left = origin_y + t_left * dir_y
-            if t_left > 0.0 and -tolerance <= y_left <= self.arena_h + tolerance:
+            if t_left > 0.0 and self.min_y - tolerance <= y_left <= self.max_y + tolerance:
                 hits.append((t_left, "left"))
 
-            t_right = (self.arena_w - origin_x) / dir_x
+            t_right = (self.max_x - origin_x) / dir_x
             y_right = origin_y + t_right * dir_y
-            if t_right > 0.0 and -tolerance <= y_right <= self.arena_h + tolerance:
+            if t_right > 0.0 and self.min_y - tolerance <= y_right <= self.max_y + tolerance:
                 hits.append((t_right, "right"))
 
         if abs(dir_y) > eps:
-            t_bottom = (0.0 - origin_y) / dir_y
+            t_bottom = (self.min_y - origin_y) / dir_y
             x_bottom = origin_x + t_bottom * dir_x
-            if t_bottom > 0.0 and -tolerance <= x_bottom <= self.arena_w + tolerance:
+            if t_bottom > 0.0 and self.min_x - tolerance <= x_bottom <= self.max_x + tolerance:
                 hits.append((t_bottom, "bottom"))
 
-            t_top = (self.arena_h - origin_y) / dir_y
+            t_top = (self.max_y - origin_y) / dir_y
             x_top = origin_x + t_top * dir_x
-            if t_top > 0.0 and -tolerance <= x_top <= self.arena_w + tolerance:
+            if t_top > 0.0 and self.min_x - tolerance <= x_top <= self.max_x + tolerance:
                 hits.append((t_top, "top"))
 
         if not hits:
             return None
         return min(hits, key=lambda item: item[0])
+
+    def _arena_bounds(self) -> tuple[float, float, float, float]:
+        if self.arena_origin in ("center", "centre", "middle"):
+            return (
+                -0.5 * self.arena_w,
+                0.5 * self.arena_w,
+                -0.5 * self.arena_h,
+                0.5 * self.arena_h,
+            )
+        if self.arena_origin in ("corner", "bottom_left", "lower_left"):
+            return (0.0, self.arena_w, 0.0, self.arena_h)
+        raise ValueError(
+            "arena_origin must be 'center' or 'corner', "
+            f"got {self.arena_origin!r}"
+        )
 
     def _prior_score(self, pose: Pose2D, prior: Pose2D) -> float:
         dx = pose.x - prior.x
@@ -406,6 +446,15 @@ class FourWallLocalizerNode(Node):
         self.pose_pub.publish(msg)
 
     def _publish_tf(self, pose: Pose2D, stamp) -> None:
+        tf_mode = str(self.get_parameter("tf_mode").value).lower()
+        if tf_mode in ("map_to_odom", "map_odom"):
+            self._publish_map_to_odom_tf(pose, stamp)
+            return
+        if tf_mode not in ("map_to_base", "map_base", "direct"):
+            self.get_logger().warn(
+                f"unknown tf_mode {tf_mode!r}; falling back to map_to_base"
+            )
+
         tf = TransformStamped()
         tf.header.stamp = stamp
         tf.header.frame_id = self.map_frame
@@ -451,6 +500,38 @@ class FourWallLocalizerNode(Node):
         lidar_tf.transform.rotation.z = qz
         lidar_tf.transform.rotation.w = qw
         self.tf_broadcaster.sendTransform(lidar_tf)
+
+    def _publish_map_to_odom_tf(self, map_pose_base: Pose2D, stamp) -> None:
+        if self.current_odom_pose is None:
+            if not self._warned_missing_odom_for_tf:
+                self.get_logger().warn(
+                    "tf_mode=map_to_odom needs odometry; "
+                    "waiting before publishing map -> odom"
+                )
+                self._warned_missing_odom_for_tf = True
+            return
+
+        self._warned_missing_odom_for_tf = False
+        odom_pose_base = self.current_odom_pose
+        theta = wrap_angle(map_pose_base.theta - odom_pose_base.theta)
+        c = math.cos(theta)
+        s = math.sin(theta)
+        tx = map_pose_base.x - (c * odom_pose_base.x - s * odom_pose_base.y)
+        ty = map_pose_base.y - (s * odom_pose_base.x + c * odom_pose_base.y)
+
+        tf = TransformStamped()
+        tf.header.stamp = stamp
+        tf.header.frame_id = self.map_frame
+        tf.child_frame_id = self.odom_frame
+        tf.transform.translation.x = tx
+        tf.transform.translation.y = ty
+        tf.transform.translation.z = 0.0
+        qx, qy, qz, qw = quaternion_from_yaw(theta)
+        tf.transform.rotation.x = qx
+        tf.transform.rotation.y = qy
+        tf.transform.rotation.z = qz
+        tf.transform.rotation.w = qw
+        self.tf_broadcaster.sendTransform(tf)
 
     def _publish_status(self, payload: dict) -> None:
         msg = String()

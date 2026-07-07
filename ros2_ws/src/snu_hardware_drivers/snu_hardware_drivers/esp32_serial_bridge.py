@@ -30,12 +30,15 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("serial_port", "/dev/ttyUSB0")
         self.declare_parameter("baud_rate", 115200)
         self.declare_parameter("serial_reset_wait_sec", 2.0)
+        self.declare_parameter("esp32_protocol", "motor_bridge")
         self.declare_parameter("esp32_command_mode", "velocity")
         self.declare_parameter("command_topic", "/wheel_commands")
         self.declare_parameter("joint_states_topic", "/joint_states")
         self.declare_parameter("command_timeout_sec", 0.5)
         self.declare_parameter("read_rate_hz", 100.0)
         self.declare_parameter("max_power", 0.12)
+        self.declare_parameter("u_shape_pwm_max", 120)
+        self.declare_parameter("u_shape_stream_encoders", True)
         self.declare_parameter("max_wheel_velocity_rad_s", 20.0)
         self.declare_parameter("encoder_counts_per_revolution", 1.0)
 
@@ -63,10 +66,17 @@ class Esp32SerialBridge(Node):
         self._esp32_command_mode = str(
             self.get_parameter("esp32_command_mode").value
         ).lower()
+        self._esp32_protocol = str(self.get_parameter("esp32_protocol").value).lower()
         self._command_timeout_sec = float(
             self.get_parameter("command_timeout_sec").value
         )
         self._max_power = _clamp(float(self.get_parameter("max_power").value), 0.0, 1.0)
+        self._u_shape_pwm_max = int(
+            _clamp(float(self.get_parameter("u_shape_pwm_max").value), 0.0, 255.0)
+        )
+        self._u_shape_stream_encoders = bool(
+            self.get_parameter("u_shape_stream_encoders").value
+        )
         self._max_wheel_velocity_rad_s = max(
             0.01,
             float(self.get_parameter("max_wheel_velocity_rad_s").value),
@@ -119,8 +129,10 @@ class Esp32SerialBridge(Node):
                 self._baud_rate,
                 self._serial_reset_wait_sec,
             )
+            self._configure_firmware_after_open()
             self.get_logger().info(
-                f"Opened ESP32 serial port {self._serial_port} at {self._baud_rate}"
+                f"Opened ESP32 serial port {self._serial_port} at {self._baud_rate} "
+                f"using protocol {self._esp32_protocol}"
             )
 
         self._joint_publisher = self.create_publisher(
@@ -166,12 +178,37 @@ class Esp32SerialBridge(Node):
         return "M"
 
     def _send_wheel_command(self, prefix: str, values: list[float]) -> None:
+        if self._esp32_protocol in ("u_shape", "u_shape_pwm", "u_shape_robot"):
+            line = self._u_shape_set_command(values)
+            if self._dry_run:
+                self._log_dry_run(line.strip())
+                return
+            if self._serial is not None:
+                self._serial.write(line.encode("ascii"))
+            return
+
         line = prefix + " " + " ".join(f"{value:.3f}" for value in values) + "\n"
         if self._dry_run:
             self._log_dry_run(line.strip())
             return
         if self._serial is not None:
             self._serial.write(line.encode("ascii"))
+
+    def _u_shape_set_command(self, values: list[float]) -> str:
+        scale = self._u_shape_pwm_max / max(self._max_power, 1.0e-6)
+        pwm = [
+            int(round(_clamp(value * scale, -self._u_shape_pwm_max, self._u_shape_pwm_max)))
+            for value in values
+        ]
+        return "SET " + " ".join(str(value) for value in pwm) + "\n"
+
+    def _configure_firmware_after_open(self) -> None:
+        if self._serial is None:
+            return
+        if self._esp32_protocol not in ("u_shape", "u_shape_pwm", "u_shape_robot"):
+            return
+        if self._u_shape_stream_encoders:
+            self._serial.write(b"ENC ON\n")
 
     def _log_dry_run(self, line: str) -> None:
         now_sec = self.get_clock().now().nanoseconds * 1.0e-9
@@ -201,6 +238,10 @@ class Esp32SerialBridge(Node):
                 self.get_logger().warn(f"Invalid encoder line from ESP32: {line}")
                 return
             self._publish_joint_states(counts)
+        elif parts[0] == "ENC":
+            counts = _parse_u_shape_encoder_line(parts)
+            if counts is not None:
+                self._publish_joint_states(counts)
         elif parts[0] not in ("OK", "READY"):
             self.get_logger().info(f"ESP32: {line}")
 
@@ -266,6 +307,23 @@ def _open_serial(port: str, baud_rate: int, reset_wait_sec: float) -> Any:
         sleep(reset_wait_sec)
     serial_port.reset_input_buffer()
     return serial_port
+
+
+def _parse_u_shape_encoder_line(parts: list[str]) -> list[int] | None:
+    values: dict[str, int] = {}
+    for part in parts[1:]:
+        if "=" not in part:
+            continue
+        name, value = part.split("=", 1)
+        try:
+            values[name.upper()] = int(value)
+        except ValueError:
+            return None
+
+    required = ("FL", "FR", "BL", "BR")
+    if not all(name in values for name in required):
+        return None
+    return [values[name] for name in required]
 
 
 def _clamp(value: float, low: float, high: float) -> float:

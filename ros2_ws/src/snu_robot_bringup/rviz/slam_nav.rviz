@@ -54,6 +54,27 @@ Visualization Manager:
       Shape: Arrow
       Topic:
         Value: /target_pose_base
+    - Class: rviz_default_plugins/Pose
+      Color: 80; 180; 255
+      Enabled: true
+      Name: Robot Pose Map
+      Shape: Arrow
+      Topic:
+        Value: /robot_pose_map
+    - Class: rviz_default_plugins/Pose
+      Color: 255; 230; 80
+      Enabled: true
+      Name: Object Pose Map
+      Shape: Arrow
+      Topic:
+        Value: /object_pose_map
+    - Class: rviz_default_plugins/Pose
+      Color: 80; 255; 120
+      Enabled: true
+      Name: BBox Goal Pose
+      Shape: Arrow
+      Topic:
+        Value: /bbox_goal_pose
     - Class: rviz_default_plugins/PointCloud2
       Color: 255; 80; 80
       Enabled: true
