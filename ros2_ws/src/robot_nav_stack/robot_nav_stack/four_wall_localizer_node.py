@@ -85,6 +85,9 @@ class FourWallLocalizerNode(Node):
         self.declare_parameter("opt_iterations", 6)
         self.declare_parameter("initial_step_xy_m", 0.10)
         self.declare_parameter("initial_step_yaw_deg", 5.0)
+        self.declare_parameter("use_global_seed_search_on_first_scan", True)
+        self.declare_parameter("global_seed_step_m", 0.75)
+        self.declare_parameter("global_seed_yaw_step_deg", 90.0)
         self.declare_parameter("prior_xy_weight", 0.03)
         self.declare_parameter("prior_yaw_weight", 0.01)
         self.declare_parameter("symmetry_range_score_ratio", 1.20)
@@ -171,6 +174,9 @@ class FourWallLocalizerNode(Node):
                     "min_y": self.min_y,
                     "max_y": self.max_y,
                 },
+                "global_seed_search_on_first_scan": bool(
+                    self.get_parameter("use_global_seed_search_on_first_scan").value
+                ),
                 "range_score": best.range_score.score,
                 "prior_score": best.prior_score,
                 "total_score": best.total_score,
@@ -283,7 +289,62 @@ class FourWallLocalizerNode(Node):
                 for old in unique
             ):
                 unique.append(clipped)
+        unique.extend(self._global_first_scan_seeds(unique, pose))
         return unique
+
+    def _global_first_scan_seeds(self, existing: list[Pose2D], prior: Pose2D) -> list[Pose2D]:
+        if self.last_pose is not None:
+            return []
+        if not bool(self.get_parameter("use_global_seed_search_on_first_scan").value):
+            return []
+
+        step = max(0.10, float(self.get_parameter("global_seed_step_m").value))
+        yaw_step = math.radians(
+            max(5.0, float(self.get_parameter("global_seed_yaw_step_deg").value))
+        )
+        yaw_count = max(1, int(math.ceil((2.0 * math.pi) / yaw_step)))
+        margin = 0.02
+
+        x_values = self._seed_axis_values(self.min_x + margin, self.max_x - margin, step)
+        y_values = self._seed_axis_values(self.min_y + margin, self.max_y - margin, step)
+        seeds: list[Pose2D] = []
+        for x in x_values:
+            for y in y_values:
+                for yaw_idx in range(yaw_count):
+                    seed = Pose2D(
+                        x=x,
+                        y=y,
+                        theta=wrap_angle(prior.theta + yaw_idx * yaw_step),
+                    )
+                    if self._seed_exists(seed, existing) or self._seed_exists(seed, seeds):
+                        continue
+                    seeds.append(seed)
+        return seeds
+
+    @staticmethod
+    def _seed_axis_values(low: float, high: float, step: float) -> list[float]:
+        if high <= low:
+            return [0.5 * (low + high)]
+        values = [low]
+        current = low
+        while current + step < high:
+            current += step
+            values.append(current)
+        if abs(values[-1] - high) > 1e-6:
+            values.append(high)
+        center = 0.5 * (low + high)
+        if all(abs(value - center) > 1e-6 for value in values):
+            values.append(center)
+            values.sort()
+        return values
+
+    @staticmethod
+    def _seed_exists(seed: Pose2D, seeds: list[Pose2D]) -> bool:
+        return any(
+            math.hypot(seed.x - old.x, seed.y - old.y) < 1e-4
+            and abs(wrap_angle(seed.theta - old.theta)) < 1e-4
+            for old in seeds
+        )
 
     def _optimize_seed(self, seed: Pose2D, prior: Pose2D, rays: list[ScanRay]) -> LocalizerResult:
         pose = seed

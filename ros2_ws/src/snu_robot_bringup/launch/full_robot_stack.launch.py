@@ -95,6 +95,11 @@ def generate_launch_description():
         "lidar_yaw_deg": LaunchConfiguration("lidar_yaw_deg"),
         "min_visible_walls": LaunchConfiguration("min_visible_walls"),
         "min_rays_per_wall": LaunchConfiguration("min_rays_per_wall"),
+        "use_global_seed_search_on_first_scan": LaunchConfiguration(
+            "use_global_seed_search_on_first_scan"
+        ),
+        "global_seed_step_m": LaunchConfiguration("global_seed_step_m"),
+        "global_seed_yaw_step_deg": LaunchConfiguration("global_seed_yaw_step_deg"),
         "adapter_min_confidence": LaunchConfiguration("adapter_min_confidence"),
         "detection_stamp_mode": LaunchConfiguration("detection_stamp_mode"),
         "max_header_stamp_offset_sec": LaunchConfiguration("max_header_stamp_offset_sec"),
@@ -310,6 +315,9 @@ def generate_launch_description():
             DeclareLaunchArgument("lidar_yaw_deg", default_value="0.0"),
             DeclareLaunchArgument("min_visible_walls", default_value="2"),
             DeclareLaunchArgument("min_rays_per_wall", default_value="10"),
+            DeclareLaunchArgument("use_global_seed_search_on_first_scan", default_value="true"),
+            DeclareLaunchArgument("global_seed_step_m", default_value="0.75"),
+            DeclareLaunchArgument("global_seed_yaw_step_deg", default_value="90.0"),
             DeclareLaunchArgument("adapter_min_confidence", default_value="0.0"),
             DeclareLaunchArgument("detection_stamp_mode", default_value="auto"),
             DeclareLaunchArgument("max_header_stamp_offset_sec", default_value="2.0"),
