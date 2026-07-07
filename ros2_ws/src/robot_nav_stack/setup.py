@@ -33,6 +33,7 @@ setup(
             "yolo_detection_adapter_node = robot_nav_stack.yolo_detection_adapter_node:main",
             "object_localizer_node = robot_nav_stack.object_localizer_node:main",
             "semantic_obstacle_cloud_node = robot_nav_stack.semantic_obstacle_cloud_node:main",
+            "mapping_debug_monitor_node = robot_nav_stack.mapping_debug_monitor_node:main",
             "approach_goal_node = robot_nav_stack.approach_goal_node:main",
             "pure_pursuit_node = robot_nav_stack.pure_pursuit_node:main",
             "wheel_controller_node = robot_nav_stack.wheel_controller_node:main",

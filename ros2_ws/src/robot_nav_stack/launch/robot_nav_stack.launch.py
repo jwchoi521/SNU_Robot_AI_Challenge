@@ -1,5 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -44,6 +45,9 @@ def generate_launch_description():
             DeclareLaunchArgument("detection_stamp_mode", default_value="auto"),
             DeclareLaunchArgument("max_header_stamp_offset_sec", default_value="2.0"),
             DeclareLaunchArgument("fallback_to_latest_tf", default_value="true"),
+            DeclareLaunchArgument("enable_mapping_debug", default_value="true"),
+            DeclareLaunchArgument("mapping_debug_period_sec", default_value="1.0"),
+            DeclareLaunchArgument("mapping_debug_topic", default_value="/robot_nav_stack/debug_state"),
             DeclareLaunchArgument("publish_tf", default_value="true"),
             DeclareLaunchArgument("publish_lidar_tf", default_value="true"),
             DeclareLaunchArgument(
@@ -142,6 +146,27 @@ def generate_launch_description():
                         "association_radius_m": 0.12,
                         "position_smoothing_alpha": 0.35,
                         "publish_hz": 10.0,
+                    }
+                ],
+            ),
+            Node(
+                package="robot_nav_stack",
+                executable="mapping_debug_monitor_node",
+                name="mapping_debug_monitor_node",
+                condition=IfCondition(LaunchConfiguration("enable_mapping_debug")),
+                parameters=[
+                    {
+                        "robot_pose_topic": LaunchConfiguration("robot_pose_topic"),
+                        "object_pose_topic": LaunchConfiguration("object_pose_topic"),
+                        "approach_goal_topic": "/approach_goal",
+                        "semantic_cloud_topic": "/semantic_obstacle_cloud",
+                        "localizer_status_topic": "/four_wall_localizer/status",
+                        "detections_topic": LaunchConfiguration("detections_topic"),
+                        "debug_topic": LaunchConfiguration("mapping_debug_topic"),
+                        "log_period_sec": _float_arg("mapping_debug_period_sec"),
+                        "stale_after_sec": 2.0,
+                        "print_to_console": True,
+                        "publish_debug_json": True,
                     }
                 ],
             ),
