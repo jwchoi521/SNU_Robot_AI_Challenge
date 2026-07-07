@@ -135,9 +135,13 @@ class FourWallLocalizerNode(Node):
             )
             return
 
+        has_pose_prior = self.last_pose is not None
         prior = self._predict_prior_pose()
         seeds = self._symmetry_seeds(prior)
-        results = [self._optimize_seed(seed, prior, rays) for seed in seeds]
+        results = [
+            self._optimize_seed(seed, prior, rays, use_prior=has_pose_prior)
+            for seed in seeds
+        ]
         results.sort(key=lambda item: item.total_score)
         best = results[0]
 
@@ -177,6 +181,7 @@ class FourWallLocalizerNode(Node):
                 "global_seed_search_on_first_scan": bool(
                     self.get_parameter("use_global_seed_search_on_first_scan").value
                 ),
+                "pose_prior_active": has_pose_prior,
                 "range_score": best.range_score.score,
                 "prior_score": best.prior_score,
                 "total_score": best.total_score,
@@ -249,6 +254,14 @@ class FourWallLocalizerNode(Node):
         )
 
     def _symmetry_seeds(self, pose: Pose2D) -> list[Pose2D]:
+        if (
+            self.last_pose is None
+            and bool(self.get_parameter("use_global_seed_search_on_first_scan").value)
+        ):
+            seeds = self._global_first_scan_seeds([], pose)
+            if seeds:
+                return seeds
+
         min_x = self.min_x
         max_x = self.max_x
         min_y = self.min_y
@@ -346,7 +359,14 @@ class FourWallLocalizerNode(Node):
             for old in seeds
         )
 
-    def _optimize_seed(self, seed: Pose2D, prior: Pose2D, rays: list[ScanRay]) -> LocalizerResult:
+    def _optimize_seed(
+        self,
+        seed: Pose2D,
+        prior: Pose2D,
+        rays: list[ScanRay],
+        *,
+        use_prior: bool,
+    ) -> LocalizerResult:
         pose = seed
         range_score = self._range_score(pose, rays)
         score = range_score.score
@@ -381,7 +401,7 @@ class FourWallLocalizerNode(Node):
             step_xy *= 0.5
             step_yaw *= 0.5
 
-        prior_score = self._prior_score(pose, prior)
+        prior_score = self._prior_score(pose, prior) if use_prior else 0.0
         return LocalizerResult(
             pose=pose,
             range_score=range_score,
