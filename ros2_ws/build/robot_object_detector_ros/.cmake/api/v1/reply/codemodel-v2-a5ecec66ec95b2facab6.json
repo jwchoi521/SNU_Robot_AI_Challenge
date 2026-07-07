@@ -1,0 +1,285 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"childIndexes" : 
+					[
+						1,
+						2
+					],
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-39caa832ad3cf0035e62.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.12"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17,
+						19,
+						20,
+						21
+					]
+				},
+				{
+					"build" : "robot_object_detector_ros__py",
+					"jsonFile" : "directory-robot_object_detector_ros__py-31c485e1de0e0a799de5.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.12"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/robot_object_detector_ros/robot_object_detector_ros__py",
+					"targetIndexes" : 
+					[
+						6
+					]
+				},
+				{
+					"build" : "robot_object_detector_ros__rs",
+					"jsonFile" : "directory-robot_object_detector_ros__rs-2cb92d4019a1dfde19c9.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.12"
+					},
+					"parentIndex" : 0,
+					"projectIndex" : 0,
+					"source" : "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/robot_object_detector_ros/robot_object_detector_ros__rs",
+					"targetIndexes" : 
+					[
+						18
+					]
+				}
+			],
+			"name" : "",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0,
+						1,
+						2
+					],
+					"name" : "robot_object_detector_ros",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17,
+						18,
+						19,
+						20,
+						21
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "ament_cmake_python_build_robot_object_detector_ros_egg::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ament_cmake_python_build_robot_object_detector_ros_egg-5fc3874a6312028caa94.json",
+					"name" : "ament_cmake_python_build_robot_object_detector_ros_egg",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "ament_cmake_python_symlink_robot_object_detector_ros::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ament_cmake_python_symlink_robot_object_detector_ros-b88b14dd42d9dc1c0ada.json",
+					"name" : "ament_cmake_python_symlink_robot_object_detector_ros",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "cube_fruit_classifier_node::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-cube_fruit_classifier_node-6d43160c9ba0aa458471.json",
+					"name" : "cube_fruit_classifier_node",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "opencv_camera_node::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-opencv_camera_node-17beb23419923107c875.json",
+					"name" : "opencv_camera_node",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros-6577e1bf5dbd1574e1ed.json",
+					"name" : "robot_object_detector_ros",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros__cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros__cpp-afad9aa0a8c8d543e41b.json",
+					"name" : "robot_object_detector_ros__cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 1,
+					"id" : "robot_object_detector_ros__py::@230c89c86806167cf1fe",
+					"jsonFile" : "target-robot_object_detector_ros__py-51bfd4414239826bf55d.json",
+					"name" : "robot_object_detector_ros__py",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros__rosidl_generator_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros__rosidl_generator_c-6e1773e39e797560e2d4.json",
+					"name" : "robot_object_detector_ros__rosidl_generator_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros__rosidl_generator_py::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros__rosidl_generator_py-81e967999f90dd967756.json",
+					"name" : "robot_object_detector_ros__rosidl_generator_py",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros__rosidl_typesupport_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros__rosidl_typesupport_c-719ad4c4bdedf07443c2.json",
+					"name" : "robot_object_detector_ros__rosidl_typesupport_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros__rosidl_typesupport_c__pyext::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros__rosidl_typesupport_c__pyext-2b9db3f72ac6c5c50e4e.json",
+					"name" : "robot_object_detector_ros__rosidl_typesupport_c__pyext",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros__rosidl_typesupport_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros__rosidl_typesupport_cpp-ef18fa0a8e4275a806c9.json",
+					"name" : "robot_object_detector_ros__rosidl_typesupport_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros__rosidl_typesupport_fastrtps_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros__rosidl_typesupport_fastrtps_c-4a54c37fff353ba17c93.json",
+					"name" : "robot_object_detector_ros__rosidl_typesupport_fastrtps_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros__rosidl_typesupport_fastrtps_c__pyext::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros__rosidl_typesupport_fastrtps_c__pyext-670aa7b02ed7a5d62af7.json",
+					"name" : "robot_object_detector_ros__rosidl_typesupport_fastrtps_c__pyext",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros__rosidl_typesupport_fastrtps_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros__rosidl_typesupport_fastrtps_cpp-25652a612dbad90ffcd5.json",
+					"name" : "robot_object_detector_ros__rosidl_typesupport_fastrtps_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros__rosidl_typesupport_introspection_c::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros__rosidl_typesupport_introspection_c-6f148f2f0d6fee214a25.json",
+					"name" : "robot_object_detector_ros__rosidl_typesupport_introspection_c",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros__rosidl_typesupport_introspection_c__pyext::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros__rosidl_typesupport_introspection_c__pyext-672960830b4aca13fea9.json",
+					"name" : "robot_object_detector_ros__rosidl_typesupport_introspection_c__pyext",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros__rosidl_typesupport_introspection_cpp::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros__rosidl_typesupport_introspection_cpp-84ba9819c1503c7c1dfb.json",
+					"name" : "robot_object_detector_ros__rosidl_typesupport_introspection_cpp",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 2,
+					"id" : "robot_object_detector_ros__rs::@1210a29d72e9cd34ebb0",
+					"jsonFile" : "target-robot_object_detector_ros__rs-6148015a27f54e053100.json",
+					"name" : "robot_object_detector_ros__rs",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "robot_object_detector_ros_uninstall::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-robot_object_detector_ros_uninstall-819bc9c61cf709825aac.json",
+					"name" : "robot_object_detector_ros_uninstall",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "shape_yolo_node::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-shape_yolo_node-f54c006148413ded18c7.json",
+					"name" : "shape_yolo_node",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "uninstall::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-uninstall-a7d5a1f17df00340efda.json",
+					"name" : "uninstall",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/robot_object_detector_ros",
+		"source" : "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/robot_object_detector_ros"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 3
+	}
+}

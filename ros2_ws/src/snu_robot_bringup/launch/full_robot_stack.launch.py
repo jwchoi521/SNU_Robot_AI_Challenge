@@ -42,6 +42,8 @@ def generate_launch_description():
         "camera_index": LaunchConfiguration("camera_index"),
         "camera_pipeline": LaunchConfiguration("camera_pipeline"),
         "camera_topic": LaunchConfiguration("camera_topic"),
+        "classifications_topic": LaunchConfiguration("classifications_topic"),
+        "classifier_annotated_topic": LaunchConfiguration("classifier_annotated_topic"),
         "fps": LaunchConfiguration("fps"),
         "frame_width": LaunchConfiguration("frame_width"),
         "frame_height": LaunchConfiguration("frame_height"),
@@ -50,8 +52,11 @@ def generate_launch_description():
     nav_arguments = {
         "scan_topic": LaunchConfiguration("scan_topic"),
         "odom_topic": LaunchConfiguration("odom_topic"),
+        "image_topic": LaunchConfiguration("camera_topic"),
         "yolo_detections_topic": LaunchConfiguration("yolo_detections_topic"),
         "detections_topic": LaunchConfiguration("detections_topic"),
+        "classifications_topic": LaunchConfiguration("classifications_topic"),
+        "distance_annotated_topic": LaunchConfiguration("distance_annotated_topic"),
         "robot_pose_topic": LaunchConfiguration("robot_pose_topic"),
         "object_pose_topic": LaunchConfiguration("object_pose_topic"),
         "map_frame": LaunchConfiguration("map_frame"),
@@ -71,6 +76,7 @@ def generate_launch_description():
         "detection_stamp_mode": LaunchConfiguration("detection_stamp_mode"),
         "max_header_stamp_offset_sec": LaunchConfiguration("max_header_stamp_offset_sec"),
         "fallback_to_latest_tf": LaunchConfiguration("fallback_to_latest_tf"),
+        "enable_distance_overlay": LaunchConfiguration("enable_distance_overlay"),
         "enable_mapping_debug": LaunchConfiguration("enable_mapping_debug"),
         "mapping_debug_period_sec": LaunchConfiguration("mapping_debug_period_sec"),
         "mapping_debug_topic": LaunchConfiguration("mapping_debug_topic"),
@@ -91,7 +97,10 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("shape_engine", default_value="models/shape_yolo_best_640.engine"),
+            DeclareLaunchArgument(
+                "shape_engine",
+                default_value="models/shape_yolo_best_640.engine",
+            ),
             DeclareLaunchArgument("shape_input_size", default_value="640"),
             DeclareLaunchArgument(
                 "classifier_engine",
@@ -104,6 +113,19 @@ def generate_launch_description():
             DeclareLaunchArgument("fps", default_value="30.0"),
             DeclareLaunchArgument("frame_width", default_value="1280"),
             DeclareLaunchArgument("frame_height", default_value="720"),
+            DeclareLaunchArgument(
+                "classifications_topic",
+                default_value="/cube_fruit/classifications",
+            ),
+            DeclareLaunchArgument(
+                "classifier_annotated_topic",
+                default_value="/cube_fruit/classifier_annotated_image",
+            ),
+            DeclareLaunchArgument(
+                "distance_annotated_topic",
+                default_value="/cube_fruit/annotated_image",
+            ),
+            DeclareLaunchArgument("enable_distance_overlay", default_value="true"),
             DeclareLaunchArgument("enable_lidar_driver", default_value="true"),
             DeclareLaunchArgument("lidar_serial_port", default_value="/dev/ttyUSB0"),
             DeclareLaunchArgument("lidar_serial_baudrate", default_value="460800"),
@@ -135,7 +157,10 @@ def generate_launch_description():
             DeclareLaunchArgument("fallback_to_latest_tf", default_value="true"),
             DeclareLaunchArgument("enable_mapping_debug", default_value="true"),
             DeclareLaunchArgument("mapping_debug_period_sec", default_value="1.0"),
-            DeclareLaunchArgument("mapping_debug_topic", default_value="/robot_nav_stack/debug_state"),
+            DeclareLaunchArgument(
+                "mapping_debug_topic",
+                default_value="/robot_nav_stack/debug_state",
+            ),
             DeclareLaunchArgument("publish_tf", default_value="true"),
             DeclareLaunchArgument("publish_lidar_tf", default_value="true"),
             DeclareLaunchArgument("bbox_model_path", default_value=bbox_model_default),

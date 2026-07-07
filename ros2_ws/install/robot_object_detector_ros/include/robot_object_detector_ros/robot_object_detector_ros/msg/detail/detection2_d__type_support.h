@@ -1,0 +1,1 @@
+/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/robot_object_detector_ros/rosidl_generator_c/robot_object_detector_ros/msg/detail/detection2_d__type_support.h

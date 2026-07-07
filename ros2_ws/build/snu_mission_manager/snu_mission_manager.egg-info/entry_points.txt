@@ -1,0 +1,3 @@
+[console_scripts]
+pick_place_mission_manager = snu_mission_manager.pick_place_mission_manager:main
+

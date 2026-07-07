@@ -1,0 +1,1 @@
+/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/robot_object_detector_ros/msg/Detection2D.msg

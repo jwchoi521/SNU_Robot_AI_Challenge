@@ -1,0 +1,39 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from snu_robot_interfaces/msg/DetectedTarget.msg
+// generated code does not contain a copyright notice
+
+
+module snu_robot_interfaces {
+  module msg {
+    @verbatim (language="comment", text=
+      "One target produced by the camera detector and distance provider." "\n"
+      "" "\n"
+      "The current YOLO branch uses bearing_deg where positive means image-right." "\n"
+      "Consumers can convert that convention with their own parameters.")
+    struct DetectedTarget {
+      string object_kind;
+
+      string fruit_kind;
+
+      float confidence;
+
+      float bbox_x1;
+
+      float bbox_y1;
+
+      float bbox_x2;
+
+      float bbox_y2;
+
+      float bearing_deg;
+
+      boolean has_distance;
+
+      float distance_m;
+
+      boolean pick_allowed;
+
+      boolean target_confirmed;
+    };
+  };
+};

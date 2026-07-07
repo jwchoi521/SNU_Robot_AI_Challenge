@@ -1,0 +1,21 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/robot_object_detector_ros__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_object_detector_ros/msg/detection2_d__type_support.cpp.o"
+  "CMakeFiles/robot_object_detector_ros__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_object_detector_ros/msg/detection2_d__type_support.cpp.o.d"
+  "CMakeFiles/robot_object_detector_ros__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_object_detector_ros/msg/detection2_d_array__type_support.cpp.o"
+  "CMakeFiles/robot_object_detector_ros__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_object_detector_ros/msg/detection2_d_array__type_support.cpp.o.d"
+  "CMakeFiles/robot_object_detector_ros__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_object_detector_ros/msg/fruit_classification__type_support.cpp.o"
+  "CMakeFiles/robot_object_detector_ros__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_object_detector_ros/msg/fruit_classification__type_support.cpp.o.d"
+  "CMakeFiles/robot_object_detector_ros__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_object_detector_ros/msg/fruit_classification_array__type_support.cpp.o"
+  "CMakeFiles/robot_object_detector_ros__rosidl_typesupport_cpp.dir/rosidl_typesupport_cpp/robot_object_detector_ros/msg/fruit_classification_array__type_support.cpp.o.d"
+  "librobot_object_detector_ros__rosidl_typesupport_cpp.pdb"
+  "librobot_object_detector_ros__rosidl_typesupport_cpp.so"
+  "rosidl_typesupport_cpp/robot_object_detector_ros/msg/detection2_d__type_support.cpp"
+  "rosidl_typesupport_cpp/robot_object_detector_ros/msg/detection2_d_array__type_support.cpp"
+  "rosidl_typesupport_cpp/robot_object_detector_ros/msg/fruit_classification__type_support.cpp"
+  "rosidl_typesupport_cpp/robot_object_detector_ros/msg/fruit_classification_array__type_support.cpp"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang CXX)
+  include(CMakeFiles/robot_object_detector_ros__rosidl_typesupport_cpp.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

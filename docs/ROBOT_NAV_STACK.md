@@ -58,6 +58,11 @@ ros2 launch snu_robot_bringup full_robot_stack.launch.py \
 using the full stack, because that would launch duplicate camera or LiDAR
 pipelines.
 
+With the full stack, `/cube_fruit/annotated_image` is published by
+`distance_annotator_node`: it redraws the YOLO/classifier bbox labels and adds
+the bbox model distance estimate, for example `apple 0.92 0.77m`. The raw
+classifier-only overlay is still available on `/cube_fruit/classifier_annotated_image`.
+
 If you want to debug the LiDAR alone:
 
 ```bash
@@ -138,6 +143,14 @@ from the learned LiDAR frame into `map`.
   - Input: `/detections_json` (`std_msgs/String`)
   - Output: `/object_pose_map` (`geometry_msgs/PoseStamped`)
   - Uses homography + residual model from `bbox_pose_ml.py`.
+
+- `distance_annotator_node`
+  - Input: `/camera/image_raw`, `/shape_yolo/detections`,
+    `/cube_fruit/classifications`
+  - Output: `/cube_fruit/annotated_image_distance` by default, or
+    `/cube_fruit/annotated_image` when launched through `full_robot_stack`.
+  - Uses the same homography + residual bbox model and overlays the estimated
+    object distance in meters next to the fruit/shape label.
 
 - `yolo_detection_adapter_node`
   - Input: `/shape_yolo/detections`

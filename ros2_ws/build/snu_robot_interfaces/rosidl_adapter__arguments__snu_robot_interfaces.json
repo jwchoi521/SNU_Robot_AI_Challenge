@@ -1,0 +1,12 @@
+{
+  "package_name": "snu_robot_interfaces",
+  "non_idl_tuples": [
+    "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/snu_robot_interfaces:msg/DetectedTarget.msg",
+    "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/snu_robot_interfaces:msg/DetectedTargetArray.msg",
+    "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/snu_robot_interfaces:msg/FourWheelCommand.msg",
+    "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/snu_robot_interfaces:msg/GripperCommand.msg",
+    "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/snu_robot_interfaces:msg/GripperState.msg",
+    "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/snu_robot_interfaces:msg/PerceivedObject.msg",
+    "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/snu_robot_interfaces:msg/PerceivedObjectArray.msg"
+  ]
+}

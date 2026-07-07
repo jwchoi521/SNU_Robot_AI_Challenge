@@ -1,0 +1,1 @@
+/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/rosidl_typesupport_introspection_cpp/snu_robot_interfaces/msg/detail/perceived_object__rosidl_typesupport_introspection_cpp.hpp

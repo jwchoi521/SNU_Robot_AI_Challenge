@@ -1,0 +1,23 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from robot_object_detector_ros/msg/FruitClassification.msg
+// generated code does not contain a copyright notice
+
+#include "robot_object_detector_ros/msg/Detection2D.idl"
+
+module robot_object_detector_ros {
+  module msg {
+    struct FruitClassification {
+      robot_object_detector_ros::msg::Detection2D cube;
+
+      string fruit_kind;
+
+      float confidence;
+
+      boolean pick_allowed;
+
+      sequence<string> class_names;
+
+      sequence<float> probabilities;
+    };
+  };
+};

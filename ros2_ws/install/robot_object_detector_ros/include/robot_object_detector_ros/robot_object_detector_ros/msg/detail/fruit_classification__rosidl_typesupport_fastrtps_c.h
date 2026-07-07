@@ -1,0 +1,1 @@
+/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/robot_object_detector_ros/rosidl_typesupport_fastrtps_c/robot_object_detector_ros/msg/detail/fruit_classification__rosidl_typesupport_fastrtps_c.h

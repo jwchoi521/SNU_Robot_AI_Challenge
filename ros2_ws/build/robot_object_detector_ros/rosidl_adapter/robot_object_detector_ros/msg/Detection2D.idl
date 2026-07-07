@@ -1,0 +1,24 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from robot_object_detector_ros/msg/Detection2D.msg
+// generated code does not contain a copyright notice
+
+
+module robot_object_detector_ros {
+  module msg {
+    struct Detection2D {
+      int32 class_id;
+
+      string class_name;
+
+      float confidence;
+
+      float x1;
+
+      float y1;
+
+      float x2;
+
+      float y2;
+    };
+  };
+};

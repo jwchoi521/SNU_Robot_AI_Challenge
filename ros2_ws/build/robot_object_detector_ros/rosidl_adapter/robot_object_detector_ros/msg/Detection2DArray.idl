@@ -1,0 +1,16 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from robot_object_detector_ros/msg/Detection2DArray.msg
+// generated code does not contain a copyright notice
+
+#include "robot_object_detector_ros/msg/Detection2D.idl"
+#include "std_msgs/msg/Header.idl"
+
+module robot_object_detector_ros {
+  module msg {
+    struct Detection2DArray {
+      std_msgs::msg::Header header;
+
+      sequence<robot_object_detector_ros::msg::Detection2D> detections;
+    };
+  };
+};

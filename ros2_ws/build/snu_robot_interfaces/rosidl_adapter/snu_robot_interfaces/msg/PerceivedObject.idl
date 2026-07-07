@@ -1,0 +1,55 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from snu_robot_interfaces/msg/PerceivedObject.msg
+// generated code does not contain a copyright notice
+
+
+module snu_robot_interfaces {
+  module msg {
+    module PerceivedObject_Constants {
+      const uint8 ROLE_UNKNOWN = 0;
+      const uint8 ROLE_TARGET = 1;
+      const uint8 ROLE_OBSTACLE = 2;
+      const uint8 ROLE_IGNORE = 3;
+    };
+    @verbatim (language="comment", text=
+      "One camera-visible object enriched with distance and navigation role." "\n"
+      "" "\n"
+      "The detector should publish every relevant object, not only the current target." "\n"
+      "Mission logic or perception post-processing assigns navigation_role:" "\n"
+      "target objects become approach goals, non-target objects become obstacles.")
+    struct PerceivedObject {
+      string object_kind;
+
+      string fruit_kind;
+
+      uint8 navigation_role;
+
+      float confidence;
+
+      float bbox_x1;
+
+      float bbox_y1;
+
+      float bbox_x2;
+
+      float bbox_y2;
+
+      @verbatim (language="comment", text=
+        "Current YOLO convention: positive means image-right.")
+      float bearing_deg;
+
+      boolean has_distance;
+
+      float distance_m;
+
+      @verbatim (language="comment", text=
+        "Optional physical radius used when expanding semantic obstacles." "\n"
+        "If this is 0, consumers use their configured default radius.")
+      float obstacle_radius_m;
+
+      boolean pick_allowed;
+
+      boolean target_confirmed;
+    };
+  };
+};

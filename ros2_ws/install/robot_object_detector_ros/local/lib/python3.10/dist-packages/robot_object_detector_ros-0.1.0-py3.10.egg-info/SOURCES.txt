@@ -1,0 +1,1 @@
+/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/robot_object_detector_ros/ament_cmake_python/robot_object_detector_ros/robot_object_detector_ros.egg-info/SOURCES.txt

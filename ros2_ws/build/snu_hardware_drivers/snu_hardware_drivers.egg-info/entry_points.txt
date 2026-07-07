@@ -1,0 +1,6 @@
+[console_scripts]
+esp32_serial_bridge = snu_hardware_drivers.esp32_serial_bridge:main
+gpio_encoder_joint_state = snu_hardware_drivers.gpio_encoder_joint_state:main
+gpio_four_wheel_driver = snu_hardware_drivers.gpio_four_wheel_driver:main
+wheel_jog_test = snu_hardware_drivers.wheel_jog_test:main
+

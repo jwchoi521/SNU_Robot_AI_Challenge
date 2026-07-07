@@ -13,6 +13,8 @@ def generate_launch_description():
     camera_index = LaunchConfiguration("camera_index")
     camera_pipeline = LaunchConfiguration("camera_pipeline")
     camera_topic = LaunchConfiguration("camera_topic")
+    classifications_topic = LaunchConfiguration("classifications_topic")
+    classifier_annotated_topic = LaunchConfiguration("classifier_annotated_topic")
     fps = LaunchConfiguration("fps")
     frame_width = LaunchConfiguration("frame_width")
     frame_height = LaunchConfiguration("frame_height")
@@ -46,6 +48,14 @@ def generate_launch_description():
                 description="Optional OpenCV GStreamer pipeline. If set, camera_index is ignored.",
             ),
             DeclareLaunchArgument("camera_topic", default_value="/camera/image_raw"),
+            DeclareLaunchArgument(
+                "classifications_topic",
+                default_value="/cube_fruit/classifications",
+            ),
+            DeclareLaunchArgument(
+                "classifier_annotated_topic",
+                default_value="/cube_fruit/annotated_image",
+            ),
             DeclareLaunchArgument("fps", default_value="30.0"),
             DeclareLaunchArgument("frame_width", default_value="1280"),
             DeclareLaunchArgument("frame_height", default_value="720"),
@@ -100,8 +110,8 @@ def generate_launch_description():
                         "engine_path": classifier_engine,
                         "image_topic": camera_topic,
                         "detections_topic": "/shape_yolo/detections",
-                        "classifications_topic": "/cube_fruit/classifications",
-                        "annotated_topic": "/cube_fruit/annotated_image",
+                        "classifications_topic": classifications_topic,
+                        "annotated_topic": classifier_annotated_topic,
                         "input_width": ParameterValue(classifier_input_size, value_type=int),
                         "input_height": ParameterValue(classifier_input_size, value_type=int),
                         "cube_class_id": 0,

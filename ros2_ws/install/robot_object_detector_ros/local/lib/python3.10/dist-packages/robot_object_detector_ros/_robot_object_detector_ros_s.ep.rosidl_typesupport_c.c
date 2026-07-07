@@ -1,0 +1,1 @@
+/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/robot_object_detector_ros/rosidl_generator_py/robot_object_detector_ros/_robot_object_detector_ros_s.ep.rosidl_typesupport_c.c

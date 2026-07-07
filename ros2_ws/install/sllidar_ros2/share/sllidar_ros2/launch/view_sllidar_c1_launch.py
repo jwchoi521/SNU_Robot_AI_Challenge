@@ -1,0 +1,1 @@
+/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/sllidar_ros2/launch/view_sllidar_c1_launch.py

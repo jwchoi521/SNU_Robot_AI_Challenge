@@ -1,0 +1,14 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Runtime outputs and logs
+/runs/
+log/
+*.log
+
+# Local model artifacts
+/models/
+
+# Local SLAM capture/model artifacts
+/u_shape_robot_slam/

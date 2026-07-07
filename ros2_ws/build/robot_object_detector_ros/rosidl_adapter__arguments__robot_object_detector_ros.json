@@ -1,0 +1,9 @@
+{
+  "package_name": "robot_object_detector_ros",
+  "non_idl_tuples": [
+    "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/robot_object_detector_ros:msg/Detection2D.msg",
+    "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/robot_object_detector_ros:msg/Detection2DArray.msg",
+    "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/robot_object_detector_ros:msg/FruitClassification.msg",
+    "/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/robot_object_detector_ros:msg/FruitClassificationArray.msg"
+  ]
+}
