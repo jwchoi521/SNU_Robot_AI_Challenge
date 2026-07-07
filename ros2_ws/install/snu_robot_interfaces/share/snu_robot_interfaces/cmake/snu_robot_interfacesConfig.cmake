@@ -1,1 +1,0 @@
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/ament_cmake_core/snu_robot_interfacesConfig.cmake

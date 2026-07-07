@@ -1,1 +1,0 @@
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/snu_mission_manager/launch/pick_place_mission.launch.py

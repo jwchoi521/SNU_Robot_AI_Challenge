@@ -1,1 +1,0 @@
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/rosidl_typesupport_fastrtps_c/snu_robot_interfaces/msg/detail/gripper_state__rosidl_typesupport_fastrtps_c.h

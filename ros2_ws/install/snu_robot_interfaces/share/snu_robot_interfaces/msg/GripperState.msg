@@ -1,1 +1,0 @@
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/src/snu_robot_interfaces/msg/GripperState.msg

@@ -1,7 +1,0 @@
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/rosidl_adapter/snu_robot_interfaces:msg/DetectedTarget.idl
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/rosidl_adapter/snu_robot_interfaces:msg/DetectedTargetArray.idl
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/rosidl_adapter/snu_robot_interfaces:msg/FourWheelCommand.idl
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/rosidl_adapter/snu_robot_interfaces:msg/GripperCommand.idl
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/rosidl_adapter/snu_robot_interfaces:msg/GripperState.idl
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/rosidl_adapter/snu_robot_interfaces:msg/PerceivedObject.idl
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/rosidl_adapter/snu_robot_interfaces:msg/PerceivedObjectArray.idl

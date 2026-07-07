@@ -1,9 +1,0 @@
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_bringup/CMakeFiles/uninstall.dir
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_bringup/CMakeFiles/snu_robot_bringup_uninstall.dir
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_bringup/CMakeFiles/test.dir
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_bringup/CMakeFiles/edit_cache.dir
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_bringup/CMakeFiles/rebuild_cache.dir
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_bringup/CMakeFiles/list_install_components.dir
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_bringup/CMakeFiles/install.dir
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_bringup/CMakeFiles/install/local.dir
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_bringup/CMakeFiles/install/strip.dir

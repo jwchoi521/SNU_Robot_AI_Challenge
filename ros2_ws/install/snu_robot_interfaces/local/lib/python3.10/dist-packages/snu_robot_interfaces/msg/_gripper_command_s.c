@@ -1,1 +1,0 @@
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/rosidl_generator_py/snu_robot_interfaces/msg/_gripper_command_s.c

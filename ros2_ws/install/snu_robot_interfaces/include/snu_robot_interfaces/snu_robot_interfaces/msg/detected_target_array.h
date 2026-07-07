@@ -1,1 +1,0 @@
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/rosidl_generator_c/snu_robot_interfaces/msg/detected_target_array.h

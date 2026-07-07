@@ -1,1 +1,0 @@
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/rosidl_typesupport_introspection_c/snu_robot_interfaces/msg/detail/detected_target_array__rosidl_typesupport_introspection_c.h

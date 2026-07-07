@@ -1,9 +1,0 @@
-source;share/snu_base_control/hook/pythonpath.ps1
-source;share/snu_base_control/hook/pythonpath.dsv
-source;share/snu_base_control/hook/pythonpath.sh
-source;share/snu_base_control/hook/ament_prefix_path.ps1
-source;share/snu_base_control/hook/ament_prefix_path.dsv
-source;share/snu_base_control/hook/ament_prefix_path.sh
-source;../../build/snu_base_control/share/snu_base_control/hook/pythonpath_develop.ps1
-source;../../build/snu_base_control/share/snu_base_control/hook/pythonpath_develop.dsv
-source;../../build/snu_base_control/share/snu_base_control/hook/pythonpath_develop.sh

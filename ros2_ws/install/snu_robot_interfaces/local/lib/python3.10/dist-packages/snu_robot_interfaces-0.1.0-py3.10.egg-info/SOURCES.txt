@@ -1,1 +1,0 @@
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/ament_cmake_python/snu_robot_interfaces/snu_robot_interfaces.egg-info/SOURCES.txt

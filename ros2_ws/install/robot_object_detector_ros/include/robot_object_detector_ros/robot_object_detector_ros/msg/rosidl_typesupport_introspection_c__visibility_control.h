@@ -1,1 +1,0 @@
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/robot_object_detector_ros/rosidl_typesupport_introspection_c/robot_object_detector_ros/msg/rosidl_typesupport_introspection_c__visibility_control.h

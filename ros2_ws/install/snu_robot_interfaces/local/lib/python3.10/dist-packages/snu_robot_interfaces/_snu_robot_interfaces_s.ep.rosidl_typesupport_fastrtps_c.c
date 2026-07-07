@@ -1,1 +1,0 @@
-/home/cho/SNU_Robot_AI_Challenge/ros2_ws/build/snu_robot_interfaces/rosidl_generator_py/snu_robot_interfaces/_snu_robot_interfaces_s.ep.rosidl_typesupport_fastrtps_c.c
