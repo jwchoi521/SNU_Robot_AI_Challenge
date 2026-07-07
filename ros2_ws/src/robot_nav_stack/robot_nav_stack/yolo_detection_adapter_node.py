@@ -18,6 +18,8 @@ class YoloDetectionAdapterNode(Node):
         self.declare_parameter("output_topic", "/detections_json")
         self.declare_parameter("min_confidence", 0.0)
         self.declare_parameter("use_current_time_when_stamp_zero", True)
+        self.declare_parameter("stamp_mode", "auto")
+        self.declare_parameter("max_header_stamp_offset_sec", 2.0)
 
         input_topic = str(self.get_parameter("input_topic").value)
         output_topic = str(self.get_parameter("output_topic").value)
@@ -25,6 +27,12 @@ class YoloDetectionAdapterNode(Node):
         self.use_current_time_when_stamp_zero = bool(
             self.get_parameter("use_current_time_when_stamp_zero").value
         )
+        self.stamp_mode = str(self.get_parameter("stamp_mode").value).lower()
+        self.max_header_stamp_offset_sec = float(
+            self.get_parameter("max_header_stamp_offset_sec").value
+        )
+        self._warned_bad_stamp = False
+        self._warned_unknown_stamp_mode = False
 
         self.sub = self.create_subscription(
             Detection2DArray,
@@ -35,13 +43,12 @@ class YoloDetectionAdapterNode(Node):
         self.pub = self.create_publisher(String, output_topic, 10)
 
         self.get_logger().info(
-            f"adapting {input_topic} Detection2DArray messages to {output_topic} JSON"
+            f"adapting {input_topic} Detection2DArray messages to {output_topic} JSON "
+            f"(stamp_mode={self.stamp_mode})"
         )
 
     def on_detections(self, msg: Detection2DArray) -> None:
-        stamp = self._stamp_to_seconds(msg.header.stamp)
-        if stamp <= 0.0 and self.use_current_time_when_stamp_zero:
-            stamp = self.get_clock().now().nanoseconds * 1e-9
+        stamp = self._select_stamp_seconds(msg.header.stamp)
 
         for detection in msg.detections:
             confidence = float(detection.confidence)
@@ -82,6 +89,43 @@ class YoloDetectionAdapterNode(Node):
     @staticmethod
     def _stamp_to_seconds(stamp) -> float:
         return float(stamp.sec) + float(stamp.nanosec) * 1e-9
+
+    def _select_stamp_seconds(self, header_stamp) -> float:
+        now = self.get_clock().now().nanoseconds * 1e-9
+        header = self._stamp_to_seconds(header_stamp)
+        mode = self.stamp_mode
+
+        if mode not in ("auto", "header", "now"):
+            if not self._warned_unknown_stamp_mode:
+                self.get_logger().warn(
+                    f"unknown stamp_mode={mode!r}; falling back to auto"
+                )
+                self._warned_unknown_stamp_mode = True
+            mode = "auto"
+
+        if mode == "now":
+            return now
+
+        if mode == "header":
+            if header <= 0.0 and self.use_current_time_when_stamp_zero:
+                return now
+            return header
+
+        # auto: keep valid source stamps, but repair zero or obviously different clocks.
+        if header <= 0.0:
+            return now if self.use_current_time_when_stamp_zero else header
+
+        offset = abs(now - header)
+        if self.max_header_stamp_offset_sec > 0.0 and offset > self.max_header_stamp_offset_sec:
+            if not self._warned_bad_stamp:
+                self.get_logger().warn(
+                    "detection header stamp is far from this node clock "
+                    f"({offset:.3f}s); using current ROS time for detection JSON"
+                )
+                self._warned_bad_stamp = True
+            return now
+
+        return header
 
 
 def main() -> None:

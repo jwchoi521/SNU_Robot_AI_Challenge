@@ -41,6 +41,9 @@ def generate_launch_description():
             DeclareLaunchArgument("min_visible_walls", default_value="2"),
             DeclareLaunchArgument("min_rays_per_wall", default_value="10"),
             DeclareLaunchArgument("adapter_min_confidence", default_value="0.0"),
+            DeclareLaunchArgument("detection_stamp_mode", default_value="auto"),
+            DeclareLaunchArgument("max_header_stamp_offset_sec", default_value="2.0"),
+            DeclareLaunchArgument("fallback_to_latest_tf", default_value="true"),
             DeclareLaunchArgument("publish_tf", default_value="true"),
             DeclareLaunchArgument("publish_lidar_tf", default_value="true"),
             DeclareLaunchArgument(
@@ -92,6 +95,8 @@ def generate_launch_description():
                         "output_topic": LaunchConfiguration("detections_topic"),
                         "min_confidence": _float_arg("adapter_min_confidence"),
                         "use_current_time_when_stamp_zero": True,
+                        "stamp_mode": LaunchConfiguration("detection_stamp_mode"),
+                        "max_header_stamp_offset_sec": _float_arg("max_header_stamp_offset_sec"),
                     }
                 ],
             ),
@@ -107,6 +112,7 @@ def generate_launch_description():
                         "target_frame": LaunchConfiguration("map_frame"),
                         "lidar_frame": LaunchConfiguration("lidar_frame"),
                         "tf_lookup_timeout_sec": 0.08,
+                        "fallback_to_latest_tf": _bool_arg("fallback_to_latest_tf"),
                     }
                 ],
             ),

@@ -30,6 +30,7 @@ class ObjectLocalizerNode(Node):
         self.declare_parameter("target_frame", "map")
         self.declare_parameter("lidar_frame", "lidar")
         self.declare_parameter("tf_lookup_timeout_sec", 0.05)
+        self.declare_parameter("fallback_to_latest_tf", True)
 
         model_path = self.get_parameter("model_path").get_parameter_value().string_value
         if not model_path:
@@ -38,6 +39,8 @@ class ObjectLocalizerNode(Node):
         self.target_frame = str(self.get_parameter("target_frame").value)
         self.lidar_frame = str(self.get_parameter("lidar_frame").value)
         self.tf_lookup_timeout_sec = float(self.get_parameter("tf_lookup_timeout_sec").value)
+        self.fallback_to_latest_tf = bool(self.get_parameter("fallback_to_latest_tf").value)
+        self._warned_latest_tf_fallback = False
         self.estimator = HomographyResidualBboxEstimator(model_path)
 
         self.tf_buffer = Buffer()
@@ -86,12 +89,7 @@ class ObjectLocalizerNode(Node):
         )
 
     def _transform_lidar_to_map(self, object_lidar: Pose2D, stamp: float) -> Pose2D:
-        transform = self.tf_buffer.lookup_transform(
-            self.target_frame,
-            self.lidar_frame,
-            Time(seconds=stamp),
-            timeout=Duration(seconds=self.tf_lookup_timeout_sec),
-        )
+        transform = self._lookup_map_lidar_transform(stamp)
         t = transform.transform.translation
         q = transform.transform.rotation
         lidar_map = Pose2D(
@@ -108,6 +106,32 @@ class ObjectLocalizerNode(Node):
         x = lidar_map.x + c * object_lidar.x - s * object_lidar.y
         y = lidar_map.y + s * object_lidar.x + c * object_lidar.y
         return Pose2D(x=x, y=y, theta=0.0)
+
+    def _lookup_map_lidar_transform(self, stamp: float):
+        try:
+            return self.tf_buffer.lookup_transform(
+                self.target_frame,
+                self.lidar_frame,
+                Time(seconds=stamp),
+                timeout=Duration(seconds=self.tf_lookup_timeout_sec),
+            )
+        except TransformException as exc:
+            if not self.fallback_to_latest_tf:
+                raise
+
+            transform = self.tf_buffer.lookup_transform(
+                self.target_frame,
+                self.lidar_frame,
+                Time(),
+                timeout=Duration(seconds=self.tf_lookup_timeout_sec),
+            )
+            if not self._warned_latest_tf_fallback:
+                self.get_logger().warn(
+                    "TF at detection stamp was unavailable; using latest map->lidar TF "
+                    f"as fallback. Original error: {exc}"
+                )
+                self._warned_latest_tf_fallback = True
+            return transform
 
 
 def main() -> None:
