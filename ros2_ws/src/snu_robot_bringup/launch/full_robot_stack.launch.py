@@ -1,11 +1,16 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
 
-def _include_launch(package_name: str, launch_file: str, arguments: dict):
+def _include_launch(package_name: str, launch_file: str, arguments: dict, condition=None):
+    include_kwargs = {"launch_arguments": arguments.items()}
+    if condition is not None:
+        include_kwargs["condition"] = condition
+
     return IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
@@ -16,7 +21,7 @@ def _include_launch(package_name: str, launch_file: str, arguments: dict):
                 ]
             )
         ),
-        launch_arguments=arguments.items(),
+        **include_kwargs,
     )
 
 
@@ -68,6 +73,16 @@ def generate_launch_description():
         "bbox_model_path": LaunchConfiguration("bbox_model_path"),
     }
 
+    lidar_arguments = {
+        "channel_type": "serial",
+        "serial_port": LaunchConfiguration("lidar_serial_port"),
+        "serial_baudrate": LaunchConfiguration("lidar_serial_baudrate"),
+        "frame_id": LaunchConfiguration("lidar_frame"),
+        "inverted": LaunchConfiguration("lidar_inverted"),
+        "angle_compensate": LaunchConfiguration("lidar_angle_compensate"),
+        "scan_mode": LaunchConfiguration("lidar_scan_mode"),
+    }
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("shape_engine", default_value="models/shape_yolo_best_640.engine"),
@@ -83,6 +98,12 @@ def generate_launch_description():
             DeclareLaunchArgument("fps", default_value="30.0"),
             DeclareLaunchArgument("frame_width", default_value="1280"),
             DeclareLaunchArgument("frame_height", default_value="720"),
+            DeclareLaunchArgument("enable_lidar_driver", default_value="true"),
+            DeclareLaunchArgument("lidar_serial_port", default_value="/dev/ttyUSB0"),
+            DeclareLaunchArgument("lidar_serial_baudrate", default_value="460800"),
+            DeclareLaunchArgument("lidar_scan_mode", default_value="Standard"),
+            DeclareLaunchArgument("lidar_inverted", default_value="false"),
+            DeclareLaunchArgument("lidar_angle_compensate", default_value="true"),
             DeclareLaunchArgument("scan_topic", default_value="/scan"),
             DeclareLaunchArgument("odom_topic", default_value="/odom"),
             DeclareLaunchArgument("yolo_detections_topic", default_value="/shape_yolo/detections"),
@@ -110,6 +131,12 @@ def generate_launch_description():
                 "robot_object_detector_ros",
                 "jetson_shape_fruit.launch.py",
                 detector_arguments,
+            ),
+            _include_launch(
+                "sllidar_ros2",
+                "sllidar_c1_launch.py",
+                lidar_arguments,
+                condition=IfCondition(LaunchConfiguration("enable_lidar_driver")),
             ),
             _include_launch(
                 "robot_nav_stack",

@@ -14,14 +14,23 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-The workspace now includes the TensorRT YOLO ROS2 package at:
+The workspace now includes the TensorRT YOLO ROS2 package and the SLAMTEC
+RPLIDAR C1 driver package at:
 
 ```text
 src/robot_object_detector_ros
+src/sllidar_ros2
 ```
 
-The easiest runtime entry point starts both the TensorRT detector and the
-navigation stack:
+The RPLIDAR C1 is expected on `/dev/ttyUSB0`. If the driver cannot open the
+port, add your user to the `dialout` group, then log out and back in:
+
+```bash
+sudo usermod -a -G dialout $USER
+```
+
+The easiest runtime entry point starts the TensorRT detector, RPLIDAR C1
+driver, and navigation stack:
 
 ```bash
 ros2 launch snu_robot_bringup full_robot_stack.launch.py \
@@ -32,16 +41,31 @@ ros2 launch snu_robot_bringup full_robot_stack.launch.py \
   camera_index:=0 \
   frame_width:=1280 \
   frame_height:=720 \
+  enable_lidar_driver:=true \
+  lidar_serial_port:=/dev/ttyUSB0 \
+  lidar_serial_baudrate:=460800 \
+  lidar_scan_mode:=Standard \
+  lidar_frame:=lidar \
   scan_topic:=/scan \
   odom_topic:=/odom \
   arena_width_m:=4.0 \
   arena_height_m:=4.0
 ```
 
-`full_robot_stack.launch.py` forwards these engine and camera arguments into
-`jetson_shape_fruit.launch.py` once. Do not start `jetson_shape_fruit.launch.py`
-separately when using the full stack, because that would launch a second
-camera/detector pipeline.
+`full_robot_stack.launch.py` forwards the engine/camera arguments into
+`jetson_shape_fruit.launch.py` once and the LiDAR arguments into
+`sllidar_c1_launch.py` once. Do not start those launch files separately when
+using the full stack, because that would launch duplicate camera or LiDAR
+pipelines.
+
+If you want to debug the LiDAR alone:
+
+```bash
+ros2 launch sllidar_ros2 sllidar_c1_launch.py \
+  serial_port:=/dev/ttyUSB0 \
+  serial_baudrate:=460800 \
+  frame_id:=lidar
+```
 
 If you want to debug perception alone, start only the detector, using the
 engine paths that exist on the Jetson:
