@@ -1,0 +1,22 @@
+cmd_vel_to_four_wheel:
+  ros__parameters:
+    cmd_vel_topic: /cmd_vel
+    wheel_command_topic: /wheel_commands
+
+    # "skid_steer" for normal four-wheel differential/skid steering.
+    # "mecanum" only if mecanum wheels are installed.
+    drive_model: skid_steer
+
+    # "velocity" publishes rad/s wheel targets.
+    # "normalized_power" publishes -1..1 open-loop motor output estimates.
+    command_mode: velocity
+
+    wheel_radius_m: 0.035
+    track_width_m: 0.112
+    wheelbase_m: 0.0986
+    max_wheel_velocity_rad_s: 20.0
+
+    front_left_sign: 1.0
+    front_right_sign: 1.0
+    rear_left_sign: 1.0
+    rear_right_sign: 1.0
