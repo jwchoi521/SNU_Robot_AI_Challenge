@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import errno
+import fcntl
 from math import cos, isfinite, pi, sin
+import os
+import select
+import termios
 from time import sleep
 from typing import Any
 
@@ -378,26 +383,107 @@ def _open_serial(port: str, baud_rate: int, reset_wait_sec: float) -> Any:
         raise RuntimeError(
             "pyserial is not installed. Install python3-serial or run with dry_run:=true."
         ) from exc
-    # Open with DTR/RTS already low. Some ESP32 USB serial adapters fail if
-    # pyserial raises DTR during Serial(port=...) construction.
-    serial_port = serial.Serial()
-    serial_port.port = port
-    serial_port.baudrate = baud_rate
-    serial_port.timeout = 0.01
-    serial_port.rtscts = False
-    serial_port.dsrdtr = False
-    serial_port.dtr = False
-    serial_port.rts = False
-    serial_port.open()
+
     try:
-        serial_port.setDTR(False)
-        serial_port.setRTS(False)
-    except OSError:
-        pass
+        # Open with DTR/RTS already low. Some ESP32 USB serial adapters fail if
+        # pyserial raises DTR during Serial(port=...) construction.
+        serial_port = serial.Serial()
+        serial_port.port = port
+        serial_port.baudrate = baud_rate
+        serial_port.timeout = 0.01
+        serial_port.rtscts = False
+        serial_port.dsrdtr = False
+        serial_port.dtr = False
+        serial_port.rts = False
+        serial_port.open()
+        try:
+            serial_port.setDTR(False)
+            serial_port.setRTS(False)
+        except OSError:
+            pass
+    except OSError as exc:
+        if getattr(exc, "errno", None) != errno.EPIPE:
+            raise
+        serial_port = _RawSerialPort(port, baud_rate, timeout=0.01)
+
     if reset_wait_sec > 0.0:
         sleep(reset_wait_sec)
     serial_port.reset_input_buffer()
     return serial_port
+
+
+class _RawSerialPort:
+    """Small Linux serial wrapper that avoids DTR/RTS modem-control ioctls."""
+
+    def __init__(self, port: str, baud_rate: int, timeout: float = 0.01) -> None:
+        self.timeout = max(0.0, float(timeout))
+        self._read_buffer = bytearray()
+        self.fd = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        self._configure(baud_rate)
+
+    def _configure(self, baud_rate: int) -> None:
+        baud = _termios_baud(baud_rate)
+        attrs = termios.tcgetattr(self.fd)
+        attrs[0] = 0
+        attrs[1] = 0
+        attrs[2] = termios.CLOCAL | termios.CREAD | termios.CS8
+        attrs[3] = 0
+        attrs[4] = baud
+        attrs[5] = baud
+        attrs[6][termios.VMIN] = 0
+        attrs[6][termios.VTIME] = 0
+        termios.tcsetattr(self.fd, termios.TCSANOW, attrs)
+
+    @property
+    def in_waiting(self) -> int:
+        data = fcntl.ioctl(self.fd, termios.FIONREAD, b"\0\0\0\0")
+        return int.from_bytes(data, byteorder="little")
+
+    def write(self, data: bytes) -> int:
+        return os.write(self.fd, data)
+
+    def readline(self) -> bytes:
+        deadline = self.timeout
+        while b"\n" not in self._read_buffer:
+            ready, _, _ = select.select([self.fd], [], [], deadline)
+            if not ready:
+                break
+            try:
+                chunk = os.read(self.fd, 256)
+            except BlockingIOError:
+                break
+            if not chunk:
+                break
+            self._read_buffer.extend(chunk)
+            deadline = 0.0
+
+        if b"\n" in self._read_buffer:
+            index = self._read_buffer.index(ord("\n")) + 1
+            line = bytes(self._read_buffer[:index])
+            del self._read_buffer[:index]
+            return line
+
+        line = bytes(self._read_buffer)
+        self._read_buffer.clear()
+        return line
+
+    def reset_input_buffer(self) -> None:
+        self._read_buffer.clear()
+        while self.in_waiting:
+            try:
+                os.read(self.fd, min(self.in_waiting, 4096))
+            except BlockingIOError:
+                break
+
+    def close(self) -> None:
+        os.close(self.fd)
+
+
+def _termios_baud(baud_rate: int) -> int:
+    name = f"B{int(baud_rate)}"
+    if not hasattr(termios, name):
+        raise ValueError(f"unsupported baud rate for raw serial fallback: {baud_rate}")
+    return int(getattr(termios, name))
 
 
 def _parse_u_shape_encoder_line(parts: list[str]) -> list[int] | None:
