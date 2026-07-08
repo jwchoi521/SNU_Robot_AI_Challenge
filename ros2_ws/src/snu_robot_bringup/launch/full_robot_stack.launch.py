@@ -218,6 +218,7 @@ def generate_launch_description():
             "esp32_encoder_counts_per_revolution"
         ),
         "u_shape_pwm_max": LaunchConfiguration("esp32_u_shape_pwm_max"),
+        "log_serial_writes": LaunchConfiguration("esp32_log_serial_writes"),
         "publish_imu": LaunchConfiguration("esp32_publish_imu"),
         "imu_topic": LaunchConfiguration("esp32_imu_topic"),
         "imu_frame": LaunchConfiguration("esp32_imu_frame"),
@@ -299,6 +300,7 @@ def generate_launch_description():
             DeclareLaunchArgument("esp32_max_wheel_velocity_rad_s", default_value="20.0"),
             DeclareLaunchArgument("esp32_encoder_counts_per_revolution", default_value="1.0"),
             DeclareLaunchArgument("esp32_u_shape_pwm_max", default_value="120"),
+            DeclareLaunchArgument("esp32_log_serial_writes", default_value="false"),
             DeclareLaunchArgument("esp32_publish_imu", default_value="true"),
             DeclareLaunchArgument("esp32_imu_topic", default_value="/imu"),
             DeclareLaunchArgument("esp32_imu_frame", default_value="base_link"),

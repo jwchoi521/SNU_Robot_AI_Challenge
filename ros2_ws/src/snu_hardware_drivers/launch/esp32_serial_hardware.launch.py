@@ -20,6 +20,9 @@ def generate_launch_description() -> LaunchDescription:
     u_shape_pwm_max = ParameterValue(
         LaunchConfiguration("u_shape_pwm_max"), value_type=int
     )
+    log_serial_writes = ParameterValue(
+        LaunchConfiguration("log_serial_writes"), value_type=bool
+    )
     publish_imu = ParameterValue(LaunchConfiguration("publish_imu"), value_type=bool)
     imu_yaw_offset_deg = ParameterValue(
         LaunchConfiguration("imu_yaw_offset_deg"), value_type=float
@@ -54,6 +57,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("esp32_command_mode", default_value="velocity"),
             DeclareLaunchArgument("max_power", default_value="0.12"),
             DeclareLaunchArgument("u_shape_pwm_max", default_value="120"),
+            DeclareLaunchArgument("log_serial_writes", default_value="false"),
             DeclareLaunchArgument("publish_imu", default_value="true"),
             DeclareLaunchArgument("imu_topic", default_value="/imu"),
             DeclareLaunchArgument("imu_frame", default_value="base_link"),
@@ -81,6 +85,7 @@ def generate_launch_description() -> LaunchDescription:
                         "esp32_command_mode": LaunchConfiguration("esp32_command_mode"),
                         "max_power": max_power,
                         "u_shape_pwm_max": u_shape_pwm_max,
+                        "log_serial_writes": log_serial_writes,
                         "publish_imu": publish_imu,
                         "imu_topic": LaunchConfiguration("imu_topic"),
                         "imu_frame": LaunchConfiguration("imu_frame"),

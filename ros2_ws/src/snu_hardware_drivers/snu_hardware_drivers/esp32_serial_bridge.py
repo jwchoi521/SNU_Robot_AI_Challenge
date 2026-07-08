@@ -43,6 +43,7 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("read_rate_hz", 100.0)
         self.declare_parameter("max_power", 0.12)
         self.declare_parameter("u_shape_pwm_max", 120)
+        self.declare_parameter("log_serial_writes", False)
         self.declare_parameter("u_shape_stream_encoders", True)
         self.declare_parameter("publish_imu", True)
         self.declare_parameter("imu_topic", "/imu")
@@ -82,6 +83,9 @@ class Esp32SerialBridge(Node):
         self._max_power = _clamp(float(self.get_parameter("max_power").value), 0.0, 1.0)
         self._u_shape_pwm_max = int(
             _clamp(float(self.get_parameter("u_shape_pwm_max").value), 0.0, 255.0)
+        )
+        self._log_serial_writes = bool(
+            self.get_parameter("log_serial_writes").value
         )
         self._u_shape_stream_encoders = bool(
             self.get_parameter("u_shape_stream_encoders").value
@@ -134,6 +138,7 @@ class Esp32SerialBridge(Node):
         self._last_imu_yaw: float | None = None
         self._last_imu_time = self.get_clock().now()
         self._last_dry_run_log_sec = 0.0
+        self._last_serial_write_log_sec = 0.0
 
         if self._dry_run:
             self.get_logger().warn(
@@ -209,6 +214,7 @@ class Esp32SerialBridge(Node):
                 self._log_dry_run(line.strip())
                 return
             if self._serial is not None:
+                self._log_serial_write(line.strip())
                 self._serial.write(line.encode("ascii"))
             return
 
@@ -217,6 +223,7 @@ class Esp32SerialBridge(Node):
             self._log_dry_run(line.strip())
             return
         if self._serial is not None:
+            self._log_serial_write(line.strip())
             self._serial.write(line.encode("ascii"))
 
     def _u_shape_set_command(self, values: list[float]) -> str:
@@ -243,6 +250,15 @@ class Esp32SerialBridge(Node):
             return
         self._last_dry_run_log_sec = now_sec
         self.get_logger().info(f"dry_run serial write: {line}")
+
+    def _log_serial_write(self, line: str) -> None:
+        if not self._log_serial_writes:
+            return
+        now_sec = self.get_clock().now().nanoseconds * 1.0e-9
+        if now_sec - self._last_serial_write_log_sec < 0.5:
+            return
+        self._last_serial_write_log_sec = now_sec
+        self.get_logger().info(f"serial write: {line}")
 
     def _read(self) -> None:
         if self._dry_run or self._serial is None:

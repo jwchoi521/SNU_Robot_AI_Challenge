@@ -12,6 +12,7 @@ esp32_serial_bridge:
     read_rate_hz: 100.0
     max_power: 0.12
     u_shape_pwm_max: 120
+    log_serial_writes: false
     max_wheel_velocity_rad_s: 20.0
 
     # Must be calibrated from the actual motor encoder spec and gear ratio.
