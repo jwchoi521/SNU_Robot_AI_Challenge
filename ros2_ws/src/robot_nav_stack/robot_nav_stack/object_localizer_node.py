@@ -11,7 +11,7 @@ from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from .bbox_model import HomographyResidualBboxEstimator
-from .core import BBox, Detection, Pose2D, quaternion_from_yaw, yaw_from_quaternion
+from .core import BBox, Detection, Pose2D, quaternion_from_yaw, wrap_angle, yaw_from_quaternion
 
 
 class ObjectLocalizerNode(Node):
@@ -28,6 +28,7 @@ class ObjectLocalizerNode(Node):
         self.declare_parameter("detections_topic", "/detections_json")
         self.declare_parameter("object_pose_topic", "/object_pose_map")
         self.declare_parameter("target_frame", "map")
+        self.declare_parameter("source_frame", "")
         self.declare_parameter("lidar_frame", "lidar")
         self.declare_parameter("tf_lookup_timeout_sec", 0.05)
         self.declare_parameter("fallback_to_latest_tf", True)
@@ -37,7 +38,8 @@ class ObjectLocalizerNode(Node):
             raise RuntimeError("model_path parameter is required")
 
         self.target_frame = str(self.get_parameter("target_frame").value)
-        self.lidar_frame = str(self.get_parameter("lidar_frame").value)
+        source_frame = str(self.get_parameter("source_frame").value).strip()
+        self.source_frame = source_frame or str(self.get_parameter("lidar_frame").value)
         self.tf_lookup_timeout_sec = float(self.get_parameter("tf_lookup_timeout_sec").value)
         self.fallback_to_latest_tf = bool(self.get_parameter("fallback_to_latest_tf").value)
         self._warned_latest_tf_fallback = False
@@ -54,8 +56,8 @@ class ObjectLocalizerNode(Node):
     def on_detection_json(self, msg: String) -> None:
         try:
             detection = self._parse_detection(msg.data)
-            object_lidar = self.estimator.predict_lidar_pose(detection)
-            object_map = self._transform_lidar_to_map(object_lidar, detection.stamp)
+            object_source = self.estimator.predict_lidar_pose(detection)
+            object_map = self._transform_source_to_map(object_source, detection.stamp)
         except (ValueError, KeyError, TransformException) as exc:
             self.get_logger().warn(f"failed to localize object: {exc}")
             return
@@ -88,30 +90,34 @@ class ObjectLocalizerNode(Node):
             confidence=float(payload.get("confidence", 1.0)),
         )
 
-    def _transform_lidar_to_map(self, object_lidar: Pose2D, stamp: float) -> Pose2D:
-        transform = self._lookup_map_lidar_transform(stamp)
+    def _transform_source_to_map(self, object_source: Pose2D, stamp: float) -> Pose2D:
+        transform = self._lookup_map_source_transform(stamp)
         t = transform.transform.translation
         q = transform.transform.rotation
-        lidar_map = Pose2D(
+        source_map = Pose2D(
             x=t.x,
             y=t.y,
             theta=yaw_from_quaternion(q.x, q.y, q.z, q.w),
         )
 
-        # 2D transform: map_T_lidar * lidar_point.
+        # 2D transform: map_T_source * source_point.
         import math
 
-        c = math.cos(lidar_map.theta)
-        s = math.sin(lidar_map.theta)
-        x = lidar_map.x + c * object_lidar.x - s * object_lidar.y
-        y = lidar_map.y + s * object_lidar.x + c * object_lidar.y
-        return Pose2D(x=x, y=y, theta=0.0)
+        c = math.cos(source_map.theta)
+        s = math.sin(source_map.theta)
+        x = source_map.x + c * object_source.x - s * object_source.y
+        y = source_map.y + s * object_source.x + c * object_source.y
+        if math.hypot(object_source.x, object_source.y) > 1e-6:
+            theta = wrap_angle(source_map.theta + math.atan2(object_source.y, object_source.x))
+        else:
+            theta = source_map.theta
+        return Pose2D(x=x, y=y, theta=theta)
 
-    def _lookup_map_lidar_transform(self, stamp: float):
+    def _lookup_map_source_transform(self, stamp: float):
         try:
             return self.tf_buffer.lookup_transform(
                 self.target_frame,
-                self.lidar_frame,
+                self.source_frame,
                 Time(seconds=stamp),
                 timeout=Duration(seconds=self.tf_lookup_timeout_sec),
             )
@@ -121,13 +127,14 @@ class ObjectLocalizerNode(Node):
 
             transform = self.tf_buffer.lookup_transform(
                 self.target_frame,
-                self.lidar_frame,
+                self.source_frame,
                 Time(),
                 timeout=Duration(seconds=self.tf_lookup_timeout_sec),
             )
             if not self._warned_latest_tf_fallback:
                 self.get_logger().warn(
-                    "TF at detection stamp was unavailable; using latest map->lidar TF "
+                    f"TF at detection stamp was unavailable; using latest "
+                    f"{self.target_frame}->{self.source_frame} TF "
                     f"as fallback. Original error: {exc}"
                 )
                 self._warned_latest_tf_fallback = True
