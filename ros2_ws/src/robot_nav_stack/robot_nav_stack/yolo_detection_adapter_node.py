@@ -18,7 +18,7 @@ class YoloDetectionAdapterNode(Node):
         self.declare_parameter("output_topic", "/detections_json")
         self.declare_parameter("min_confidence", 0.0)
         self.declare_parameter("use_current_time_when_stamp_zero", True)
-        self.declare_parameter("stamp_mode", "auto")
+        self.declare_parameter("stamp_mode", "header")
         self.declare_parameter("max_header_stamp_offset_sec", 2.0)
 
         input_topic = str(self.get_parameter("input_topic").value)

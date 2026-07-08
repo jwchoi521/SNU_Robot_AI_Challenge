@@ -30,8 +30,8 @@ class ObjectLocalizerNode(Node):
         self.declare_parameter("target_frame", "map")
         self.declare_parameter("source_frame", "")
         self.declare_parameter("lidar_frame", "lidar")
-        self.declare_parameter("tf_lookup_timeout_sec", 0.05)
-        self.declare_parameter("fallback_to_latest_tf", True)
+        self.declare_parameter("tf_lookup_timeout_sec", 0.1)
+        self.declare_parameter("fallback_to_latest_tf", False)
 
         model_path = self.get_parameter("model_path").get_parameter_value().string_value
         if not model_path:
