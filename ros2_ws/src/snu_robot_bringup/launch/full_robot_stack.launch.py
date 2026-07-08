@@ -101,6 +101,7 @@ def generate_launch_description():
         "use_global_seed_search_on_first_scan": LaunchConfiguration(
             "use_global_seed_search_on_first_scan"
         ),
+        "use_symmetry_seeds": LaunchConfiguration("use_symmetry_seeds"),
         "global_seed_step_m": LaunchConfiguration("global_seed_step_m"),
         "global_seed_yaw_step_deg": LaunchConfiguration("global_seed_yaw_step_deg"),
         "adapter_min_confidence": LaunchConfiguration("adapter_min_confidence"),
@@ -345,6 +346,7 @@ def generate_launch_description():
             DeclareLaunchArgument("min_visible_walls", default_value="2"),
             DeclareLaunchArgument("min_rays_per_wall", default_value="10"),
             DeclareLaunchArgument("use_global_seed_search_on_first_scan", default_value="false"),
+            DeclareLaunchArgument("use_symmetry_seeds", default_value="false"),
             DeclareLaunchArgument("global_seed_step_m", default_value="0.75"),
             DeclareLaunchArgument("global_seed_yaw_step_deg", default_value="90.0"),
             DeclareLaunchArgument("adapter_min_confidence", default_value="0.0"),

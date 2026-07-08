@@ -89,6 +89,7 @@ class FourWallLocalizerNode(Node):
         self.declare_parameter("initial_step_xy_m", 0.10)
         self.declare_parameter("initial_step_yaw_deg", 5.0)
         self.declare_parameter("use_global_seed_search_on_first_scan", False)
+        self.declare_parameter("use_symmetry_seeds", False)
         self.declare_parameter("global_seed_step_m", 0.75)
         self.declare_parameter("global_seed_yaw_step_deg", 90.0)
         self.declare_parameter("prior_xy_weight", 0.03)
@@ -204,6 +205,9 @@ class FourWallLocalizerNode(Node):
                 "global_seed_search_on_first_scan": bool(
                     self.get_parameter("use_global_seed_search_on_first_scan").value
                 ),
+                "symmetry_seeds_enabled": bool(
+                    self.get_parameter("use_symmetry_seeds").value
+                ),
                 "pose_prior_active": has_pose_prior,
                 "range_score": best.range_score.score,
                 "prior_score": best.prior_score,
@@ -309,6 +313,9 @@ class FourWallLocalizerNode(Node):
                 seeds = self._global_first_scan_seeds([], pose)
                 if seeds:
                     return seeds
+            return [self._clip_pose_to_arena(pose)]
+
+        if not bool(self.get_parameter("use_symmetry_seeds").value):
             return [self._clip_pose_to_arena(pose)]
 
         min_x = self.min_x
