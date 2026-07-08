@@ -7,12 +7,13 @@ Visualization Manager:
   Class: ""
   Displays:
     - Alpha: 0.5
-      Cell Size: 1
+      Cell Size: 0.25
       Class: rviz_default_plugins/Grid
       Color: 160; 160; 164
       Enabled: true
       Name: Grid
       Plane: XY
+      Plane Cell Count: 16
     - Class: rviz_default_plugins/TF
       Enabled: true
       Frame Timeout: 15
@@ -50,29 +51,45 @@ Visualization Manager:
     - Class: rviz_default_plugins/Pose
       Color: 255; 128; 0
       Enabled: true
+      Head Length: 0.1
+      Head Radius: 0.1
       Name: Target Pose Base
       Shape: Arrow
+      Shaft Length: 0.2
+      Shaft Radius: 0.05
       Topic:
         Value: /target_pose_base
     - Class: rviz_default_plugins/Pose
       Color: 80; 180; 255
       Enabled: true
+      Head Length: 0.1
+      Head Radius: 0.1
       Name: Robot Pose Map
       Shape: Arrow
+      Shaft Length: 0.2
+      Shaft Radius: 0.05
       Topic:
         Value: /robot_pose_map
     - Class: rviz_default_plugins/Pose
       Color: 255; 230; 80
       Enabled: true
+      Head Length: 0.08
+      Head Radius: 0.06
       Name: Object Pose Map
       Shape: Arrow
+      Shaft Length: 0.12
+      Shaft Radius: 0.03
       Topic:
         Value: /object_pose_map
     - Class: rviz_default_plugins/Pose
       Color: 80; 255; 120
       Enabled: true
+      Head Length: 0.08
+      Head Radius: 0.06
       Name: BBox Goal Pose
       Shape: Arrow
+      Shaft Length: 0.16
+      Shaft Radius: 0.035
       Topic:
         Value: /bbox_goal_pose
     - Class: rviz_default_plugins/PointCloud2
@@ -104,16 +121,13 @@ Visualization Manager:
       Class: rviz_default_plugins/TF
   Views:
     Current:
-      Class: rviz_default_plugins/Orbit
-      Distance: 8
-      Focal Point:
-        X: 0
-        Y: 0
-        Z: 0
+      Angle: 0
+      Class: rviz_default_plugins/TopDownOrtho
       Name: Current View
-      Pitch: 1.2
+      Scale: 274.628
       Target Frame: map
-      Yaw: 0.7
+      X: 0
+      Y: 0
 Window Geometry:
   Height: 900
   Width: 1400
