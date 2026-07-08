@@ -378,15 +378,22 @@ def _open_serial(port: str, baud_rate: int, reset_wait_sec: float) -> Any:
         raise RuntimeError(
             "pyserial is not installed. Install python3-serial or run with dry_run:=true."
         ) from exc
-    serial_port = serial.Serial(
-        port=port,
-        baudrate=baud_rate,
-        timeout=0.01,
-        rtscts=False,
-        dsrdtr=False,
-    )
-    serial_port.setDTR(False)
-    serial_port.setRTS(False)
+    # Open with DTR/RTS already low. Some ESP32 USB serial adapters fail if
+    # pyserial raises DTR during Serial(port=...) construction.
+    serial_port = serial.Serial()
+    serial_port.port = port
+    serial_port.baudrate = baud_rate
+    serial_port.timeout = 0.01
+    serial_port.rtscts = False
+    serial_port.dsrdtr = False
+    serial_port.dtr = False
+    serial_port.rts = False
+    serial_port.open()
+    try:
+        serial_port.setDTR(False)
+        serial_port.setRTS(False)
+    except OSError:
+        pass
     if reset_wait_sec > 0.0:
         sleep(reset_wait_sec)
     serial_port.reset_input_buffer()
