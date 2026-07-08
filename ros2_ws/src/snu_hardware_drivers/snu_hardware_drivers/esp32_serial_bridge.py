@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import isfinite, pi
+from math import cos, isfinite, pi, sin
 from time import sleep
 from typing import Any
 
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import Imu, JointState
 from snu_robot_interfaces.msg import FourWheelCommand
 
 
@@ -39,6 +39,10 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("max_power", 0.12)
         self.declare_parameter("u_shape_pwm_max", 120)
         self.declare_parameter("u_shape_stream_encoders", True)
+        self.declare_parameter("publish_imu", True)
+        self.declare_parameter("imu_topic", "/imu")
+        self.declare_parameter("imu_frame", "base_link")
+        self.declare_parameter("imu_yaw_offset_deg", 0.0)
         self.declare_parameter("max_wheel_velocity_rad_s", 20.0)
         self.declare_parameter("encoder_counts_per_revolution", 1.0)
 
@@ -76,6 +80,11 @@ class Esp32SerialBridge(Node):
         )
         self._u_shape_stream_encoders = bool(
             self.get_parameter("u_shape_stream_encoders").value
+        )
+        self._publish_imu = bool(self.get_parameter("publish_imu").value)
+        self._imu_frame = str(self.get_parameter("imu_frame").value)
+        self._imu_yaw_offset_rad = (
+            float(self.get_parameter("imu_yaw_offset_deg").value) * pi / 180.0
         )
         self._max_wheel_velocity_rad_s = max(
             0.01,
@@ -117,6 +126,8 @@ class Esp32SerialBridge(Node):
         self._last_counts: list[int] | None = None
         self._last_joint_counts: list[int] | None = None
         self._last_joint_time = self.get_clock().now()
+        self._last_imu_yaw: float | None = None
+        self._last_imu_time = self.get_clock().now()
         self._last_dry_run_log_sec = 0.0
 
         if self._dry_run:
@@ -139,6 +150,15 @@ class Esp32SerialBridge(Node):
             JointState,
             str(self.get_parameter("joint_states_topic").value),
             10,
+        )
+        self._imu_publisher = (
+            self.create_publisher(
+                Imu,
+                str(self.get_parameter("imu_topic").value),
+                10,
+            )
+            if self._publish_imu
+            else None
         )
         self._command_subscription = self.create_subscription(
             FourWheelCommand,
@@ -209,6 +229,8 @@ class Esp32SerialBridge(Node):
             return
         if self._u_shape_stream_encoders:
             self._serial.write(b"ENC ON\n")
+        if self._publish_imu:
+            self._serial.write(b"IMU ON\n")
 
     def _log_dry_run(self, line: str) -> None:
         now_sec = self.get_clock().now().nanoseconds * 1.0e-9
@@ -242,8 +264,70 @@ class Esp32SerialBridge(Node):
             counts = _parse_u_shape_encoder_line(parts)
             if counts is not None:
                 self._publish_joint_states(counts)
+        elif parts[0] == "IMU":
+            self._publish_imu_sample(parts, line)
         elif parts[0] not in ("OK", "READY"):
             self.get_logger().info(f"ESP32: {line}")
+
+    def _publish_imu_sample(self, parts: list[str], line: str) -> None:
+        if self._imu_publisher is None:
+            return
+        if len(parts) < 5:
+            self.get_logger().warn(f"Invalid IMU line from ESP32: {line}")
+            return
+
+        try:
+            yaw = float(parts[2]) + self._imu_yaw_offset_rad
+            float(parts[3])
+            float(parts[4])
+        except ValueError:
+            self.get_logger().warn(f"Invalid IMU line from ESP32: {line}")
+            return
+
+        now = self.get_clock().now()
+        msg = Imu()
+        msg.header.stamp = now.to_msg()
+        msg.header.frame_id = self._imu_frame
+
+        # The U-shape firmware sends yaw zeroed at startup/ZERO_YAW. Publish a
+        # yaw-only orientation so EKF two_d_mode can use heading without needing
+        # a separate IMU frame transform.
+        half_yaw = 0.5 * _wrap_angle(yaw)
+        msg.orientation.x = 0.0
+        msg.orientation.y = 0.0
+        msg.orientation.z = sin(half_yaw)
+        msg.orientation.w = cos(half_yaw)
+        msg.orientation_covariance = [
+            999.0,
+            0.0,
+            0.0,
+            0.0,
+            999.0,
+            0.0,
+            0.0,
+            0.0,
+            0.03,
+        ]
+
+        if self._last_imu_yaw is not None:
+            dt = max(1.0e-6, (now - self._last_imu_time).nanoseconds * 1.0e-9)
+            msg.angular_velocity.z = _wrap_angle(yaw - self._last_imu_yaw) / dt
+        msg.angular_velocity_covariance = [
+            999.0,
+            0.0,
+            0.0,
+            0.0,
+            999.0,
+            0.0,
+            0.0,
+            0.0,
+            0.05,
+        ]
+        msg.linear_acceleration_covariance[0] = -1.0
+
+        self._imu_publisher.publish(msg)
+        self._last_imu_yaw = yaw
+        self._last_imu_time = now
 
     def _publish_joint_states(self, counts: list[int]) -> None:
         now = self.get_clock().now()
@@ -328,6 +412,14 @@ def _parse_u_shape_encoder_line(parts: list[str]) -> list[int] | None:
 
 def _clamp(value: float, low: float, high: float) -> float:
     return min(high, max(low, value))
+
+
+def _wrap_angle(angle: float) -> float:
+    while angle > pi:
+        angle -= 2.0 * pi
+    while angle < -pi:
+        angle += 2.0 * pi
+    return angle
 
 
 def main() -> None:

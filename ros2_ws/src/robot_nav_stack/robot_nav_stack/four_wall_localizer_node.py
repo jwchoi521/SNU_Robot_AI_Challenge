@@ -8,7 +8,7 @@ import rclpy
 from geometry_msgs.msg import PoseStamped, TransformStamped
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
-from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import Imu, LaserScan
 from std_msgs.msg import String
 from tf2_ros import TransformBroadcaster
 
@@ -56,6 +56,7 @@ class FourWallLocalizerNode(Node):
         super().__init__("four_wall_localizer_node")
         self.declare_parameter("scan_topic", "/scan")
         self.declare_parameter("odom_topic", "/odom")
+        self.declare_parameter("imu_topic", "/imu")
         self.declare_parameter("pose_topic", "/robot_pose_map")
         self.declare_parameter("status_topic", "/four_wall_localizer/status")
         self.declare_parameter("map_frame", "map")
@@ -65,13 +66,15 @@ class FourWallLocalizerNode(Node):
         self.declare_parameter("arena_width_m", 4.0)
         self.declare_parameter("arena_height_m", 4.0)
         self.declare_parameter("arena_origin", "center")
-        self.declare_parameter("initial_x_m", 0.0)
-        self.declare_parameter("initial_y_m", 0.0)
-        self.declare_parameter("initial_yaw_deg", 0.0)
+        self.declare_parameter("initial_x_m", 1.8)
+        self.declare_parameter("initial_y_m", -1.8)
+        self.declare_parameter("initial_yaw_deg", 90.0)
         self.declare_parameter("lidar_x_m", 0.0)
         self.declare_parameter("lidar_y_m", 0.0)
         self.declare_parameter("lidar_yaw_deg", 0.0)
         self.declare_parameter("use_odom_prior", True)
+        self.declare_parameter("use_imu_yaw_prior", True)
+        self.declare_parameter("max_imu_age_sec", 0.5)
         self.declare_parameter("publish_tf", False)
         self.declare_parameter("tf_mode", "map_to_base")
         self.declare_parameter("publish_lidar_tf", True)
@@ -85,7 +88,7 @@ class FourWallLocalizerNode(Node):
         self.declare_parameter("opt_iterations", 6)
         self.declare_parameter("initial_step_xy_m", 0.10)
         self.declare_parameter("initial_step_yaw_deg", 5.0)
-        self.declare_parameter("use_global_seed_search_on_first_scan", True)
+        self.declare_parameter("use_global_seed_search_on_first_scan", False)
         self.declare_parameter("global_seed_step_m", 0.75)
         self.declare_parameter("global_seed_yaw_step_deg", 90.0)
         self.declare_parameter("prior_xy_weight", 0.03)
@@ -102,15 +105,21 @@ class FourWallLocalizerNode(Node):
         self.last_pose: Pose2D | None = None
         self.last_odom_pose: Pose2D | None = None
         self.current_odom_pose: Pose2D | None = None
+        self.last_imu_yaw: float | None = None
+        self.current_imu_yaw: float | None = None
+        self.current_imu_time_sec: float | None = None
+        self._imu_prior_used = False
         self._warned_missing_odom_for_tf = False
 
         scan_topic = str(self.get_parameter("scan_topic").value)
         odom_topic = str(self.get_parameter("odom_topic").value)
+        imu_topic = str(self.get_parameter("imu_topic").value)
         pose_topic = str(self.get_parameter("pose_topic").value)
         status_topic = str(self.get_parameter("status_topic").value)
 
         self.scan_sub = self.create_subscription(LaserScan, scan_topic, self.on_scan, 10)
         self.odom_sub = self.create_subscription(Odometry, odom_topic, self.on_odom, 30)
+        self.imu_sub = self.create_subscription(Imu, imu_topic, self.on_imu, 30)
         self.pose_pub = self.create_publisher(PoseStamped, pose_topic, 10)
         self.status_pub = self.create_publisher(String, status_topic, 10)
         self.tf_broadcaster = TransformBroadcaster(self)
@@ -122,6 +131,11 @@ class FourWallLocalizerNode(Node):
             y=float(msg.pose.pose.position.y),
             theta=yaw_from_quaternion(q.x, q.y, q.z, q.w),
         )
+
+    def on_imu(self, msg: Imu) -> None:
+        q = msg.orientation
+        self.current_imu_yaw = yaw_from_quaternion(q.x, q.y, q.z, q.w)
+        self.current_imu_time_sec = self.get_clock().now().nanoseconds * 1.0e-9
 
     def on_scan(self, msg: LaserScan) -> None:
         rays = self._scan_to_base_rays(msg)
@@ -135,6 +149,7 @@ class FourWallLocalizerNode(Node):
             )
             return
 
+        self._imu_prior_used = False
         has_pose_prior = self.last_pose is not None
         prior = self._predict_prior_pose()
         seeds = self._symmetry_seeds(prior)
@@ -158,6 +173,8 @@ class FourWallLocalizerNode(Node):
 
         self.last_pose = best.pose
         self.last_odom_pose = self.current_odom_pose
+        if self.current_imu_yaw is not None:
+            self.last_imu_yaw = self.current_imu_yaw
         self._publish_pose(best.pose, msg.header.stamp)
         if bool(self.get_parameter("publish_tf").value):
             self._publish_tf(best.pose, msg.header.stamp)
@@ -170,6 +187,12 @@ class FourWallLocalizerNode(Node):
                 "x": best.pose.x,
                 "y": best.pose.y,
                 "yaw_deg": math.degrees(best.pose.theta),
+                "imu_yaw_deg": (
+                    math.degrees(self.current_imu_yaw)
+                    if self.current_imu_yaw is not None
+                    else None
+                ),
+                "imu_yaw_prior_used": self._imu_prior_used,
                 "arena_origin": self.arena_origin,
                 "tf_mode": str(self.get_parameter("tf_mode").value),
                 "arena_bounds": {
@@ -223,6 +246,7 @@ class FourWallLocalizerNode(Node):
         return rays[::stride]
 
     def _predict_prior_pose(self) -> Pose2D:
+        imu_delta = self._imu_yaw_delta_since_last_scan()
         if (
             bool(self.get_parameter("use_odom_prior").value)
             and self.last_pose is not None
@@ -236,6 +260,8 @@ class FourWallLocalizerNode(Node):
             dx_local = c_o * dx_odom - s_o * dy_odom
             dy_local = s_o * dx_odom + c_o * dy_odom
             dtheta = wrap_angle(self.current_odom_pose.theta - self.last_odom_pose.theta)
+            if imu_delta is not None:
+                dtheta = imu_delta
             c_m = math.cos(self.last_pose.theta)
             s_m = math.sin(self.last_pose.theta)
             return Pose2D(
@@ -245,6 +271,12 @@ class FourWallLocalizerNode(Node):
             )
 
         if self.last_pose is not None:
+            if imu_delta is not None:
+                return Pose2D(
+                    x=self.last_pose.x,
+                    y=self.last_pose.y,
+                    theta=wrap_angle(self.last_pose.theta + imu_delta),
+                )
             return self.last_pose
 
         return Pose2D(
@@ -253,14 +285,31 @@ class FourWallLocalizerNode(Node):
             theta=math.radians(float(self.get_parameter("initial_yaw_deg").value)),
         )
 
+    def _imu_yaw_delta_since_last_scan(self) -> float | None:
+        current = self._fresh_current_imu_yaw()
+        if current is None or self.last_imu_yaw is None:
+            return None
+        self._imu_prior_used = True
+        return wrap_angle(current - self.last_imu_yaw)
+
+    def _fresh_current_imu_yaw(self) -> float | None:
+        if not bool(self.get_parameter("use_imu_yaw_prior").value):
+            return None
+        if self.current_imu_yaw is None or self.current_imu_time_sec is None:
+            return None
+        now_sec = self.get_clock().now().nanoseconds * 1.0e-9
+        max_age = max(0.0, float(self.get_parameter("max_imu_age_sec").value))
+        if now_sec - self.current_imu_time_sec > max_age:
+            return None
+        return self.current_imu_yaw
+
     def _symmetry_seeds(self, pose: Pose2D) -> list[Pose2D]:
-        if (
-            self.last_pose is None
-            and bool(self.get_parameter("use_global_seed_search_on_first_scan").value)
-        ):
-            seeds = self._global_first_scan_seeds([], pose)
-            if seeds:
-                return seeds
+        if self.last_pose is None:
+            if bool(self.get_parameter("use_global_seed_search_on_first_scan").value):
+                seeds = self._global_first_scan_seeds([], pose)
+                if seeds:
+                    return seeds
+            return [self._clip_pose_to_arena(pose)]
 
         min_x = self.min_x
         max_x = self.max_x
@@ -304,6 +353,13 @@ class FourWallLocalizerNode(Node):
                 unique.append(clipped)
         unique.extend(self._global_first_scan_seeds(unique, pose))
         return unique
+
+    def _clip_pose_to_arena(self, pose: Pose2D) -> Pose2D:
+        return Pose2D(
+            x=min(max(pose.x, self.min_x + 0.02), self.max_x - 0.02),
+            y=min(max(pose.y, self.min_y + 0.02), self.max_y - 0.02),
+            theta=wrap_angle(pose.theta),
+        )
 
     def _global_first_scan_seeds(self, existing: list[Pose2D], prior: Pose2D) -> list[Pose2D]:
         if self.last_pose is not None:

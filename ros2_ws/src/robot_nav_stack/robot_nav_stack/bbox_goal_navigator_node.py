@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from dataclasses import dataclass
 from typing import Any
 
 import rclpy
@@ -13,6 +14,14 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 from .core import Pose2D, angle_diff, quaternion_from_yaw, yaw_from_quaternion
+
+
+@dataclass
+class TrackedTarget:
+    pose: Pose2D
+    stamp_sec: float
+    last_seen_sec: float
+    seen_count: int = 1
 
 
 class BboxGoalNavigatorNode(Node):
@@ -41,6 +50,9 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("min_goal_separation_m", 0.15)
         self.declare_parameter("min_goal_yaw_delta_deg", 12.0)
         self.declare_parameter("max_target_age_sec", 1.5)
+        self.declare_parameter("target_selection_mode", "nearest")
+        self.declare_parameter("target_association_radius_m", 0.15)
+        self.declare_parameter("max_tracked_targets", 20)
         self.declare_parameter("control_period_sec", 0.2)
         self.declare_parameter("nav_server_wait_sec", 0.05)
         self.declare_parameter("arena_width_m", 0.0)
@@ -60,6 +72,8 @@ class BboxGoalNavigatorNode(Node):
         self._robot_pose: Pose2D | None = None
         self._target_pose: Pose2D | None = None
         self._target_stamp_sec: float | None = None
+        self._tracked_targets: list[TrackedTarget] = []
+        self._selected_target_distance_m: float | None = None
         self._last_sent_goal: Pose2D | None = None
         self._goal_sequence = 0
         self._active_goal_sequence: int | None = None
@@ -105,7 +119,8 @@ class BboxGoalNavigatorNode(Node):
         self.get_logger().info(
             "bbox goal navigator listening for "
             f"{self.get_parameter('target_pose_topic').value}; "
-            f"send_nav2_goal={self._send_nav2_goal}"
+            f"send_nav2_goal={self._send_nav2_goal}; "
+            f"target_selection_mode={self._target_selection_mode()}"
         )
 
     def _on_robot_pose(self, msg: PoseStamped) -> None:
@@ -118,15 +133,25 @@ class BboxGoalNavigatorNode(Node):
                 f"{msg.header.frame_id!r}; expected {self._map_frame!r}"
             )
             return
-        self._target_pose = _pose_from_msg(msg)
-        self._target_stamp_sec = self._stamp_to_sec(msg.header.stamp)
-        if self._target_stamp_sec <= 0.0:
-            self._target_stamp_sec = self._now_sec()
+        pose = _pose_from_msg(msg)
+        stamp_sec = self._stamp_to_sec(msg.header.stamp)
+        if stamp_sec <= 0.0:
+            stamp_sec = self._now_sec()
+
+        self._upsert_tracked_target(pose, stamp_sec)
+        if self._target_selection_mode() == "latest":
+            self._target_pose = pose
+            self._target_stamp_sec = stamp_sec
 
     def _control_step(self) -> None:
         if self._robot_pose is None:
             self._publish_status("waiting_for_robot_pose")
             return
+        selected_target = self._select_target(self._robot_pose)
+        if selected_target is not None:
+            self._target_pose = selected_target.pose
+            self._target_stamp_sec = selected_target.stamp_sec
+
         if self._target_pose is None or self._target_stamp_sec is None:
             self._publish_status("waiting_for_target_pose")
             return
@@ -156,6 +181,81 @@ class BboxGoalNavigatorNode(Node):
             return
 
         self._send_goal(goal)
+
+    def _upsert_tracked_target(self, pose: Pose2D, stamp_sec: float) -> None:
+        now_sec = self._now_sec()
+        self._prune_tracked_targets(now_sec)
+
+        association_radius = max(
+            0.0,
+            float(self.get_parameter("target_association_radius_m").value),
+        )
+        best_index: int | None = None
+        best_distance = association_radius
+        for index, target in enumerate(self._tracked_targets):
+            distance = math.hypot(pose.x - target.pose.x, pose.y - target.pose.y)
+            if distance <= best_distance:
+                best_distance = distance
+                best_index = index
+
+        if best_index is None:
+            self._tracked_targets.append(
+                TrackedTarget(pose=pose, stamp_sec=stamp_sec, last_seen_sec=now_sec)
+            )
+        else:
+            target = self._tracked_targets[best_index]
+            target.pose = pose
+            target.stamp_sec = stamp_sec
+            target.last_seen_sec = now_sec
+            target.seen_count += 1
+
+        max_targets = max(1, int(self.get_parameter("max_tracked_targets").value))
+        if len(self._tracked_targets) > max_targets:
+            self._tracked_targets.sort(key=lambda target: target.last_seen_sec, reverse=True)
+            del self._tracked_targets[max_targets:]
+
+    def _select_target(self, robot: Pose2D) -> TrackedTarget | None:
+        self._prune_tracked_targets(self._now_sec())
+        if not self._tracked_targets:
+            self._selected_target_distance_m = None
+            return None
+
+        mode = self._target_selection_mode()
+        if mode == "latest":
+            selected = max(
+                self._tracked_targets,
+                key=lambda target: (target.stamp_sec, target.last_seen_sec),
+            )
+        else:
+            selected = min(
+                self._tracked_targets,
+                key=lambda target: math.hypot(
+                    target.pose.x - robot.x,
+                    target.pose.y - robot.y,
+                ),
+            )
+
+        self._selected_target_distance_m = math.hypot(
+            selected.pose.x - robot.x,
+            selected.pose.y - robot.y,
+        )
+        return selected
+
+    def _prune_tracked_targets(self, now_sec: float) -> None:
+        max_age = float(self.get_parameter("max_target_age_sec").value)
+        if max_age <= 0.0:
+            return
+        self._tracked_targets = [
+            target
+            for target in self._tracked_targets
+            if now_sec - target.stamp_sec <= max_age
+        ]
+
+    def _target_selection_mode(self) -> str:
+        mode = str(self.get_parameter("target_selection_mode").value).strip().lower()
+        if mode in ("latest", "last"):
+            return "latest"
+        return "nearest"
 
     def _compute_approach_goal(
         self,
@@ -323,7 +423,14 @@ class BboxGoalNavigatorNode(Node):
             "state": state,
             "nav_state": self._nav_state,
             "send_nav2_goal": self._send_nav2_goal,
+            "target_selection_mode": self._target_selection_mode(),
+            "tracked_target_count": len(self._tracked_targets),
         }
+        if self._selected_target_distance_m is not None:
+            payload["selected_target_distance_m"] = round(
+                float(self._selected_target_distance_m),
+                4,
+            )
         if self._robot_pose is not None:
             payload["robot"] = _pose_to_dict(self._robot_pose)
         if self._target_pose is not None:

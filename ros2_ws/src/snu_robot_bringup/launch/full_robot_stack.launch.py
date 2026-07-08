@@ -73,6 +73,7 @@ def generate_launch_description():
     nav_arguments = {
         "scan_topic": LaunchConfiguration("scan_topic"),
         "odom_topic": LaunchConfiguration("odom_topic"),
+        "imu_topic": LaunchConfiguration("imu_topic"),
         "image_topic": LaunchConfiguration("camera_topic"),
         "yolo_detections_topic": LaunchConfiguration("yolo_detections_topic"),
         "detections_topic": LaunchConfiguration("detections_topic"),
@@ -93,6 +94,8 @@ def generate_launch_description():
         "lidar_x_m": LaunchConfiguration("lidar_x_m"),
         "lidar_y_m": LaunchConfiguration("lidar_y_m"),
         "lidar_yaw_deg": LaunchConfiguration("lidar_yaw_deg"),
+        "use_imu_yaw_prior": LaunchConfiguration("use_imu_yaw_prior"),
+        "max_imu_age_sec": LaunchConfiguration("max_imu_age_sec"),
         "min_visible_walls": LaunchConfiguration("min_visible_walls"),
         "min_rays_per_wall": LaunchConfiguration("min_rays_per_wall"),
         "use_global_seed_search_on_first_scan": LaunchConfiguration(
@@ -128,6 +131,15 @@ def generate_launch_description():
         ),
         "bbox_goal_max_target_age_sec": LaunchConfiguration(
             "bbox_goal_max_target_age_sec"
+        ),
+        "bbox_goal_target_selection_mode": LaunchConfiguration(
+            "bbox_goal_target_selection_mode"
+        ),
+        "bbox_goal_target_association_radius_m": LaunchConfiguration(
+            "bbox_goal_target_association_radius_m"
+        ),
+        "bbox_goal_max_tracked_targets": LaunchConfiguration(
+            "bbox_goal_max_tracked_targets"
         ),
         "bbox_goal_margin_m": LaunchConfiguration("bbox_goal_margin_m"),
         "enable_mapping_debug": LaunchConfiguration("enable_mapping_debug"),
@@ -203,6 +215,10 @@ def generate_launch_description():
             "esp32_encoder_counts_per_revolution"
         ),
         "u_shape_pwm_max": LaunchConfiguration("esp32_u_shape_pwm_max"),
+        "publish_imu": LaunchConfiguration("esp32_publish_imu"),
+        "imu_topic": LaunchConfiguration("esp32_imu_topic"),
+        "imu_frame": LaunchConfiguration("esp32_imu_frame"),
+        "imu_yaw_offset_deg": LaunchConfiguration("esp32_imu_yaw_offset_deg"),
     }
 
     return LaunchDescription(
@@ -252,6 +268,12 @@ def generate_launch_description():
             DeclareLaunchArgument("bbox_goal_reached_tolerance_m", default_value="0.12"),
             DeclareLaunchArgument("bbox_goal_min_separation_m", default_value="0.15"),
             DeclareLaunchArgument("bbox_goal_max_target_age_sec", default_value="1.5"),
+            DeclareLaunchArgument("bbox_goal_target_selection_mode", default_value="nearest"),
+            DeclareLaunchArgument(
+                "bbox_goal_target_association_radius_m",
+                default_value="0.15",
+            ),
+            DeclareLaunchArgument("bbox_goal_max_tracked_targets", default_value="20"),
             DeclareLaunchArgument("bbox_goal_margin_m", default_value="0.20"),
             DeclareLaunchArgument("enable_nav2", default_value="false"),
             DeclareLaunchArgument("enable_slam", default_value="false"),
@@ -274,6 +296,10 @@ def generate_launch_description():
             DeclareLaunchArgument("esp32_max_wheel_velocity_rad_s", default_value="20.0"),
             DeclareLaunchArgument("esp32_encoder_counts_per_revolution", default_value="1.0"),
             DeclareLaunchArgument("esp32_u_shape_pwm_max", default_value="120"),
+            DeclareLaunchArgument("esp32_publish_imu", default_value="true"),
+            DeclareLaunchArgument("esp32_imu_topic", default_value="/imu"),
+            DeclareLaunchArgument("esp32_imu_frame", default_value="base_link"),
+            DeclareLaunchArgument("esp32_imu_yaw_offset_deg", default_value="0.0"),
             DeclareLaunchArgument("enable_sensor_tf", default_value="false"),
             DeclareLaunchArgument("enable_lidar_driver", default_value="true"),
             DeclareLaunchArgument("lidar_serial_port", default_value="/dev/ttyUSB0"),
@@ -283,6 +309,7 @@ def generate_launch_description():
             DeclareLaunchArgument("lidar_angle_compensate", default_value="true"),
             DeclareLaunchArgument("scan_topic", default_value="/scan"),
             DeclareLaunchArgument("odom_topic", default_value="/odometry/filtered"),
+            DeclareLaunchArgument("imu_topic", default_value="/imu"),
             DeclareLaunchArgument("yolo_detections_topic", default_value="/shape_yolo/detections"),
             DeclareLaunchArgument("detections_topic", default_value="/detections_json"),
             DeclareLaunchArgument("robot_pose_topic", default_value="/robot_pose_map"),
@@ -307,15 +334,17 @@ def generate_launch_description():
             DeclareLaunchArgument("arena_width_m", default_value="4.0"),
             DeclareLaunchArgument("arena_height_m", default_value="4.0"),
             DeclareLaunchArgument("arena_origin", default_value="center"),
-            DeclareLaunchArgument("initial_x_m", default_value="0.0"),
-            DeclareLaunchArgument("initial_y_m", default_value="0.0"),
-            DeclareLaunchArgument("initial_yaw_deg", default_value="0.0"),
+            DeclareLaunchArgument("initial_x_m", default_value="1.8"),
+            DeclareLaunchArgument("initial_y_m", default_value="-1.8"),
+            DeclareLaunchArgument("initial_yaw_deg", default_value="90.0"),
             DeclareLaunchArgument("lidar_x_m", default_value="0.0"),
             DeclareLaunchArgument("lidar_y_m", default_value="0.0"),
             DeclareLaunchArgument("lidar_yaw_deg", default_value="0.0"),
+            DeclareLaunchArgument("use_imu_yaw_prior", default_value="true"),
+            DeclareLaunchArgument("max_imu_age_sec", default_value="0.5"),
             DeclareLaunchArgument("min_visible_walls", default_value="2"),
             DeclareLaunchArgument("min_rays_per_wall", default_value="10"),
-            DeclareLaunchArgument("use_global_seed_search_on_first_scan", default_value="true"),
+            DeclareLaunchArgument("use_global_seed_search_on_first_scan", default_value="false"),
             DeclareLaunchArgument("global_seed_step_m", default_value="0.75"),
             DeclareLaunchArgument("global_seed_yaw_step_deg", default_value="90.0"),
             DeclareLaunchArgument("adapter_min_confidence", default_value="0.0"),

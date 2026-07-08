@@ -43,9 +43,9 @@ class RectWallLocalizerNode(Node):
         self.declare_parameter("arena_width_m", 4.0)
         self.declare_parameter("arena_height_m", 4.0)
         self.declare_parameter("arena_origin", "center")
-        self.declare_parameter("initial_x_m", 0.0)
-        self.declare_parameter("initial_y_m", 0.0)
-        self.declare_parameter("initial_yaw_deg", 0.0)
+        self.declare_parameter("initial_x_m", 1.8)
+        self.declare_parameter("initial_y_m", -1.8)
+        self.declare_parameter("initial_yaw_deg", 90.0)
         self.declare_parameter("lidar_x_m", 0.0)
         self.declare_parameter("lidar_y_m", 0.0)
         self.declare_parameter("lidar_yaw_deg", 0.0)
@@ -59,7 +59,7 @@ class RectWallLocalizerNode(Node):
         self.declare_parameter("opt_iterations", 5)
         self.declare_parameter("initial_step_xy_m", 0.08)
         self.declare_parameter("initial_step_yaw_deg", 4.0)
-        self.declare_parameter("use_global_seed_search_on_first_scan", True)
+        self.declare_parameter("use_global_seed_search_on_first_scan", False)
         self.declare_parameter("global_seed_step_m", 0.75)
         self.declare_parameter("global_seed_yaw_step_deg", 90.0)
         self.declare_parameter("prior_xy_weight", 0.20)
@@ -211,13 +211,12 @@ class RectWallLocalizerNode(Node):
         )
 
     def _symmetry_seeds(self, pose: Pose2D) -> list[Pose2D]:
-        if (
-            self.last_pose is None
-            and bool(self.get_parameter("use_global_seed_search_on_first_scan").value)
-        ):
-            seeds = self._global_first_scan_seeds([], pose)
-            if seeds:
-                return seeds
+        if self.last_pose is None:
+            if bool(self.get_parameter("use_global_seed_search_on_first_scan").value):
+                seeds = self._global_first_scan_seeds([], pose)
+                if seeds:
+                    return seeds
+            return [self._clip_pose_to_arena(pose)]
 
         min_x = self.min_x
         max_x = self.max_x
@@ -261,6 +260,13 @@ class RectWallLocalizerNode(Node):
                 unique.append(clipped)
         unique.extend(self._global_first_scan_seeds(unique, pose))
         return unique
+
+    def _clip_pose_to_arena(self, pose: Pose2D) -> Pose2D:
+        return Pose2D(
+            x=min(max(pose.x, self.min_x + 0.02), self.max_x - 0.02),
+            y=min(max(pose.y, self.min_y + 0.02), self.max_y - 0.02),
+            theta=wrap_angle(pose.theta),
+        )
 
     def _global_first_scan_seeds(self, existing: list[Pose2D], prior: Pose2D) -> list[Pose2D]:
         if self.last_pose is not None:
