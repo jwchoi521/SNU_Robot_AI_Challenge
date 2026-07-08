@@ -41,7 +41,7 @@ class ObjectLocalizerNode(Node):
         self.declare_parameter("tf_lookup_timeout_sec", 0.0)
         self.declare_parameter("fallback_to_latest_tf", False)
         self.declare_parameter("latest_tf_max_extrapolation_sec", 3.0)
-        self.declare_parameter("pending_detection_timeout_sec", 0.3)
+        self.declare_parameter("pending_detection_timeout_sec", 0.5)
         self.declare_parameter("pending_tf_retry_period_sec", 0.05)
         self.declare_parameter("max_pending_detections", 10)
 

@@ -17,6 +17,8 @@ class YoloDetectionAdapterNode(Node):
         self.declare_parameter("input_topic", "/shape_yolo/detections")
         self.declare_parameter("output_topic", "/detections_json")
         self.declare_parameter("min_confidence", 0.0)
+        self.declare_parameter("max_detections_per_frame", 0)
+        self.declare_parameter("max_output_hz", 0.0)
         self.declare_parameter("use_current_time_when_stamp_zero", True)
         self.declare_parameter("stamp_mode", "header")
         self.declare_parameter("max_header_stamp_offset_sec", 2.0)
@@ -24,6 +26,10 @@ class YoloDetectionAdapterNode(Node):
         input_topic = str(self.get_parameter("input_topic").value)
         output_topic = str(self.get_parameter("output_topic").value)
         self.min_confidence = float(self.get_parameter("min_confidence").value)
+        self.max_detections_per_frame = int(
+            self.get_parameter("max_detections_per_frame").value
+        )
+        self.max_output_hz = float(self.get_parameter("max_output_hz").value)
         self.use_current_time_when_stamp_zero = bool(
             self.get_parameter("use_current_time_when_stamp_zero").value
         )
@@ -33,6 +39,7 @@ class YoloDetectionAdapterNode(Node):
         )
         self._warned_bad_stamp = False
         self._warned_unknown_stamp_mode = False
+        self._last_publish_sec: float | None = None
 
         self.sub = self.create_subscription(
             Detection2DArray,
@@ -44,15 +51,34 @@ class YoloDetectionAdapterNode(Node):
 
         self.get_logger().info(
             f"adapting {input_topic} Detection2DArray messages to {output_topic} JSON "
-            f"(stamp_mode={self.stamp_mode})"
+            f"(stamp_mode={self.stamp_mode}, min_confidence={self.min_confidence:.2f}, "
+            f"max_detections_per_frame={self.max_detections_per_frame}, "
+            f"max_output_hz={self.max_output_hz:.2f})"
         )
 
     def on_detections(self, msg: Detection2DArray) -> None:
         stamp = self._select_stamp_seconds(msg.header.stamp)
+        min_confidence = float(self.get_parameter("min_confidence").value)
+        max_detections = int(self.get_parameter("max_detections_per_frame").value)
+        max_output_hz = float(self.get_parameter("max_output_hz").value)
+        now_sec = self._now_seconds()
+        if (
+            max_output_hz > 0.0
+            and self._last_publish_sec is not None
+            and now_sec - self._last_publish_sec < 1.0 / max_output_hz
+        ):
+            return
 
-        for detection in msg.detections:
+        candidates = sorted(
+            msg.detections,
+            key=lambda detection: float(detection.confidence),
+            reverse=True,
+        )
+        published = 0
+
+        for detection in candidates:
             confidence = float(detection.confidence)
-            if confidence < self.min_confidence:
+            if confidence < min_confidence:
                 continue
 
             x1 = float(detection.x1)
@@ -85,13 +111,22 @@ class YoloDetectionAdapterNode(Node):
             out = String()
             out.data = json.dumps(payload, separators=(",", ":"))
             self.pub.publish(out)
+            published += 1
+            if max_detections > 0 and published >= max_detections:
+                break
+
+        if published > 0:
+            self._last_publish_sec = now_sec
 
     @staticmethod
     def _stamp_to_seconds(stamp) -> float:
         return float(stamp.sec) + float(stamp.nanosec) * 1e-9
 
+    def _now_seconds(self) -> float:
+        return self.get_clock().now().nanoseconds * 1e-9
+
     def _select_stamp_seconds(self, header_stamp) -> float:
-        now = self.get_clock().now().nanoseconds * 1e-9
+        now = self._now_seconds()
         header = self._stamp_to_seconds(header_stamp)
         mode = self.stamp_mode
 
