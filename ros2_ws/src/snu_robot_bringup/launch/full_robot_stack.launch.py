@@ -110,6 +110,11 @@ def generate_launch_description():
         "max_header_stamp_offset_sec": LaunchConfiguration("max_header_stamp_offset_sec"),
         "tf_lookup_timeout_sec": LaunchConfiguration("tf_lookup_timeout_sec"),
         "fallback_to_latest_tf": LaunchConfiguration("fallback_to_latest_tf"),
+        "latest_tf_max_extrapolation_sec": LaunchConfiguration(
+            "latest_tf_max_extrapolation_sec"
+        ),
+        "pending_detection_timeout_sec": LaunchConfiguration("pending_detection_timeout_sec"),
+        "max_pending_detections": LaunchConfiguration("max_pending_detections"),
         "enable_distance_overlay": LaunchConfiguration("enable_distance_overlay"),
         "enable_bbox_goal_navigation": LaunchConfiguration("enable_bbox_goal_navigation"),
         "enable_semantic_obstacle_cloud": LaunchConfiguration(
@@ -256,7 +261,7 @@ def generate_launch_description():
                 "distance_annotated_topic",
                 default_value="/cube_fruit/annotated_image",
             ),
-            DeclareLaunchArgument("enable_distance_overlay", default_value="true"),
+            DeclareLaunchArgument("enable_distance_overlay", default_value="false"),
             DeclareLaunchArgument("enable_bbox_goal_navigation", default_value="false"),
             DeclareLaunchArgument("enable_semantic_obstacle_cloud", default_value="true"),
             DeclareLaunchArgument("bbox_goal_target_topic", default_value="/object_pose_map"),
@@ -357,8 +362,11 @@ def generate_launch_description():
             DeclareLaunchArgument("adapter_min_confidence", default_value="0.0"),
             DeclareLaunchArgument("detection_stamp_mode", default_value="header"),
             DeclareLaunchArgument("max_header_stamp_offset_sec", default_value="2.0"),
-            DeclareLaunchArgument("tf_lookup_timeout_sec", default_value="0.1"),
+            DeclareLaunchArgument("tf_lookup_timeout_sec", default_value="0.0"),
             DeclareLaunchArgument("fallback_to_latest_tf", default_value="false"),
+            DeclareLaunchArgument("latest_tf_max_extrapolation_sec", default_value="3.0"),
+            DeclareLaunchArgument("pending_detection_timeout_sec", default_value="0.3"),
+            DeclareLaunchArgument("max_pending_detections", default_value="10"),
             DeclareLaunchArgument("enable_mapping_debug", default_value="true"),
             DeclareLaunchArgument("mapping_debug_period_sec", default_value="1.0"),
             DeclareLaunchArgument(

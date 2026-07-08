@@ -173,6 +173,10 @@ For Nav2 driving with wheel odometry/EKF, use `wall_tf_mode:=map_to_odom`,
   - Input: `/detections_json` (`std_msgs/String`)
   - Output: `/object_pose_map` (`geometry_msgs/PoseStamped`)
   - Uses homography + residual model from `bbox_pose_ml.py`.
+  - Looks up `map -> object_source_frame` at the original detection stamp.
+    If that stamp is newer than the latest localization TF, the node queues
+    the detection and retries exact TF lookup for `pending_detection_timeout_sec`
+    instead of projecting with the latest TF.
 
 - `distance_annotator_node`
   - Input: `/camera/image_raw`, `/shape_yolo/detections`,

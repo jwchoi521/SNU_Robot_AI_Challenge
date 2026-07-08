@@ -63,9 +63,12 @@ def generate_launch_description():
             DeclareLaunchArgument("adapter_min_confidence", default_value="0.0"),
             DeclareLaunchArgument("detection_stamp_mode", default_value="header"),
             DeclareLaunchArgument("max_header_stamp_offset_sec", default_value="2.0"),
-            DeclareLaunchArgument("tf_lookup_timeout_sec", default_value="0.1"),
+            DeclareLaunchArgument("tf_lookup_timeout_sec", default_value="0.0"),
             DeclareLaunchArgument("fallback_to_latest_tf", default_value="false"),
-            DeclareLaunchArgument("enable_distance_overlay", default_value="true"),
+            DeclareLaunchArgument("latest_tf_max_extrapolation_sec", default_value="3.0"),
+            DeclareLaunchArgument("pending_detection_timeout_sec", default_value="0.3"),
+            DeclareLaunchArgument("max_pending_detections", default_value="10"),
+            DeclareLaunchArgument("enable_distance_overlay", default_value="false"),
             DeclareLaunchArgument("enable_bbox_goal_navigation", default_value="false"),
             DeclareLaunchArgument("enable_semantic_obstacle_cloud", default_value="true"),
             DeclareLaunchArgument("bbox_goal_target_topic", default_value="/object_pose_map"),
@@ -177,6 +180,13 @@ def generate_launch_description():
                         "lidar_frame": LaunchConfiguration("lidar_frame"),
                         "tf_lookup_timeout_sec": _float_arg("tf_lookup_timeout_sec"),
                         "fallback_to_latest_tf": _bool_arg("fallback_to_latest_tf"),
+                        "latest_tf_max_extrapolation_sec": _float_arg(
+                            "latest_tf_max_extrapolation_sec"
+                        ),
+                        "pending_detection_timeout_sec": _float_arg(
+                            "pending_detection_timeout_sec"
+                        ),
+                        "max_pending_detections": _int_arg("max_pending_detections"),
                     }
                 ],
             ),
