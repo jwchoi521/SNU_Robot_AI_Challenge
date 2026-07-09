@@ -63,7 +63,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("imu_frame", default_value="base_link"),
             DeclareLaunchArgument("imu_yaw_offset_deg", default_value="0.0"),
             DeclareLaunchArgument("max_wheel_velocity_rad_s", default_value="20.0"),
-            DeclareLaunchArgument("encoder_counts_per_revolution", default_value="1.0"),
+            DeclareLaunchArgument("encoder_counts_per_revolution", default_value="141.72"),
             DeclareLaunchArgument("front_left_motor_sign", default_value="1.0"),
             DeclareLaunchArgument("front_right_motor_sign", default_value="1.0"),
             DeclareLaunchArgument("rear_left_motor_sign", default_value="1.0"),

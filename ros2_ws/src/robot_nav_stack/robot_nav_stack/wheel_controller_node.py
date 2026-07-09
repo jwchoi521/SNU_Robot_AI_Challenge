@@ -41,7 +41,7 @@ class WheelControllerNode(Node):
     def __init__(self) -> None:
         super().__init__("wheel_controller_node")
         self.declare_parameter("wheel_radius_m", 0.033)
-        self.declare_parameter("track_width_m", 0.30)
+        self.declare_parameter("track_width_m", 0.235)
         self.declare_parameter("voltage_limit", 12.0)
         self.declare_parameter("kp", 2.0)
         self.declare_parameter("ki", 0.2)
