@@ -92,6 +92,15 @@ const int SET_MAX_CORRECTION = 35;
 const float SET_INTEGRAL_LIMIT = 250.0f;
 const uint32_t SET_DEBUG_INTERVAL_MS = 250;
 
+const uint32_t SET1_CONTROL_INTERVAL_MS = 25;
+const float SET1_FEED_FORWARD_PWM_PER_CPS = 0.042f;
+const float SET1_WHEEL_KP = 0.045f;
+const float SET1_WHEEL_KI = 0.35f;
+const int SET1_MAX_CORRECTION = 90;
+const float SET1_INTEGRAL_LIMIT = 250.0f;
+const float SET1_MAX_TARGET_CPS = 2834.0f;  // 20 rad/s * 141.7 counts/rad.
+const uint32_t SET1_DEBUG_INTERVAL_MS = 250;
+
 const int I2C_SDA_PIN = 21;
 const int I2C_SCL_PIN = 22;
 const uint32_t IMU_REPORT_INTERVAL_US = 20000;
@@ -128,6 +137,13 @@ uint32_t nextSetDebugMs = 0;
 int setBaseTargets[MOTOR_COUNT] = {0, 0, 0, 0};
 int32_t setLastTicks[MOTOR_COUNT] = {0, 0, 0, 0};
 float setIntegral[MOTOR_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f};
+bool set1VelocityControlActive = false;
+uint32_t lastSet1ControlMs = 0;
+uint32_t nextSet1ControlMs = 0;
+uint32_t nextSet1DebugMs = 0;
+float set1TargetCps[MOTOR_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f};
+float set1Integral[MOTOR_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f};
+int32_t set1LastTicks[MOTOR_COUNT] = {0, 0, 0, 0};
 bool straightRunActive = false;
 uint32_t straightRunStopAtMs = 0;
 uint32_t nextStraightControlMs = 0;
@@ -326,6 +342,23 @@ void setAllTargets(int fl, int fr, int bl, int br) {
   }
 }
 
+float clampFloat(float value, float low, float high) {
+  if (value < low) return low;
+  if (value > high) return high;
+  return value;
+}
+
+int roundFloatToInt(float value) {
+  return value >= 0.0f ? (int)(value + 0.5f) : (int)(value - 0.5f);
+}
+
+float fixedWheelScaleForIndex(int index) {
+  if (index == 0) return FIXED_WHEEL_SCALE_FL;
+  if (index == 1) return FIXED_WHEEL_SCALE_FR;
+  if (index == 2) return FIXED_WHEEL_SCALE_BL;
+  return FIXED_WHEEL_SCALE_BR;
+}
+
 void resetSetPwmControlState() {
   setPwmControlActive = false;
   nextSetControlMs = 0;
@@ -337,9 +370,22 @@ void resetSetPwmControlState() {
   }
 }
 
+void resetSet1VelocityControlState() {
+  set1VelocityControlActive = false;
+  lastSet1ControlMs = 0;
+  nextSet1ControlMs = 0;
+  nextSet1DebugMs = 0;
+  for (int i = 0; i < MOTOR_COUNT; i++) {
+    set1TargetCps[i] = 0.0f;
+    set1Integral[i] = 0.0f;
+    set1LastTicks[i] = 0;
+  }
+}
+
 void forceStopAllMotors() {
   timedRunActive = false;
   resetSetPwmControlState();
+  resetSet1VelocityControlState();
   straightRunActive = false;
   for (int i = 0; i < MOTOR_COUNT; i++) {
     motors[i].targetPwm = 0;
@@ -407,6 +453,7 @@ void applyFixedWheelCompensation(
 void startSetClosedLoop(int fl, int fr, int bl, int br) {
   timedRunActive = false;
   straightRunActive = false;
+  resetSet1VelocityControlState();
   setPwmControlActive = true;
   nextSetControlMs = millis() + SET_CONTROL_INTERVAL_MS;
   nextSetDebugMs = millis() + SET_DEBUG_INTERVAL_MS;
@@ -504,6 +551,131 @@ void updateSetClosedLoop() {
       Serial.print(motors[i].name);
       Serial.print('=');
       Serial.print(setBaseTargets[i]);
+    }
+    for (int i = 0; i < MOTOR_COUNT; i++) {
+      Serial.print(" corr");
+      Serial.print(motors[i].name);
+      Serial.print('=');
+      Serial.print(wheelCorrection[i]);
+    }
+    for (int i = 0; i < MOTOR_COUNT; i++) {
+      Serial.print(" pwm");
+      Serial.print(motors[i].name);
+      Serial.print('=');
+      Serial.print(wheelPwm[i]);
+    }
+    Serial.println();
+  }
+}
+
+int set1FeedForwardPwm(int index, float targetCps) {
+  if (fabsf(targetCps) < 1.0f) {
+    return 0;
+  }
+  float pwm = targetCps * SET1_FEED_FORWARD_PWM_PER_CPS * fixedWheelScaleForIndex(index);
+  return clampPwm(roundFloatToInt(pwm));
+}
+
+void startSet1VelocityClosedLoop(float flCps, float frCps, float blCps, float brCps) {
+  timedRunActive = false;
+  straightRunActive = false;
+  resetSetPwmControlState();
+  set1VelocityControlActive = true;
+
+  float values[] = {flCps, frCps, blCps, brCps};
+  for (int i = 0; i < MOTOR_COUNT; i++) {
+    set1TargetCps[i] = clampFloat(values[i], -SET1_MAX_TARGET_CPS, SET1_MAX_TARGET_CPS);
+    set1Integral[i] = 0.0f;
+  }
+
+  uint32_t now = millis();
+  lastSet1ControlMs = now;
+  nextSet1ControlMs = now + SET1_CONTROL_INTERVAL_MS;
+  nextSet1DebugMs = now + SET1_DEBUG_INTERVAL_MS;
+  readEncoderTicks(set1LastTicks);
+
+  int initialPwm[MOTOR_COUNT];
+  for (int i = 0; i < MOTOR_COUNT; i++) {
+    initialPwm[i] = set1FeedForwardPwm(i, set1TargetCps[i]);
+  }
+  setAllTargets(initialPwm[0], initialPwm[1], initialPwm[2], initialPwm[3]);
+  Serial.println("OK SET1");
+  printStatus();
+}
+
+void updateSet1VelocityClosedLoop() {
+  if (!set1VelocityControlActive) return;
+
+  uint32_t now = millis();
+  if ((int32_t)(now - nextSet1ControlMs) < 0) return;
+
+  float dtSec = (now - lastSet1ControlMs) * 0.001f;
+  if (dtSec <= 0.0f) {
+    dtSec = SET1_CONTROL_INTERVAL_MS * 0.001f;
+  }
+  lastSet1ControlMs = now;
+  nextSet1ControlMs = now + SET1_CONTROL_INTERVAL_MS;
+
+  int32_t ticks[MOTOR_COUNT];
+  int32_t wheelDelta[MOTOR_COUNT];
+  float measuredCps[MOTOR_COUNT];
+  readEncoderTicks(ticks);
+  for (int i = 0; i < MOTOR_COUNT; i++) {
+    wheelDelta[i] = ticks[i] - set1LastTicks[i];
+    set1LastTicks[i] = ticks[i];
+    measuredCps[i] = (float)wheelDelta[i] / dtSec;
+  }
+
+  int wheelPwm[MOTOR_COUNT];
+  int wheelCorrection[MOTOR_COUNT];
+  for (int i = 0; i < MOTOR_COUNT; i++) {
+    wheelCorrection[i] = 0;
+    if (fabsf(set1TargetCps[i]) < 1.0f) {
+      set1Integral[i] = 0.0f;
+      wheelPwm[i] = 0;
+      continue;
+    }
+
+    float error = set1TargetCps[i] - measuredCps[i];
+    set1Integral[i] = clampFloat(
+      set1Integral[i] + error * dtSec,
+      -SET1_INTEGRAL_LIMIT,
+      SET1_INTEGRAL_LIMIT
+    );
+    float correction = error * SET1_WHEEL_KP + set1Integral[i] * SET1_WHEEL_KI;
+    wheelCorrection[i] = constrain(
+      roundFloatToInt(correction),
+      -SET1_MAX_CORRECTION,
+      SET1_MAX_CORRECTION
+    );
+
+    int feedForward = set1FeedForwardPwm(i, set1TargetCps[i]);
+    wheelPwm[i] = clampPwm(feedForward + wheelCorrection[i]);
+  }
+
+  setAllTargets(wheelPwm[0], wheelPwm[1], wheelPwm[2], wheelPwm[3]);
+
+  if ((int32_t)(now - nextSet1DebugMs) >= 0) {
+    nextSet1DebugMs = now + SET1_DEBUG_INTERVAL_MS;
+    Serial.print("SET1_DBG dt=");
+    Serial.print(dtSec, 3);
+    for (int i = 0; i < MOTOR_COUNT; i++) {
+      Serial.print(" target");
+      Serial.print(motors[i].name);
+      Serial.print('=');
+      Serial.print(set1TargetCps[i], 1);
+    }
+    for (int i = 0; i < MOTOR_COUNT; i++) {
+      Serial.print(" measured");
+      Serial.print(motors[i].name);
+      Serial.print('=');
+      Serial.print(measuredCps[i], 1);
+    }
+    for (int i = 0; i < MOTOR_COUNT; i++) {
+      Serial.print(" d");
+      Serial.print(motors[i].name);
+      Serial.print('=');
+      Serial.print(wheelDelta[i]);
     }
     for (int i = 0; i < MOTOR_COUNT; i++) {
       Serial.print(" corr");
@@ -1189,6 +1361,21 @@ void handleCommand(String line) {
     return;
   }
 
+  if (strcmp(command, "SET1") == 0) {
+    bool ok = true;
+    float fl = readFloatToken(cursor, ok);
+    float fr = readFloatToken(cursor, ok);
+    float bl = readFloatToken(cursor, ok);
+    float br = readFloatToken(cursor, ok);
+    if (!ok) {
+      Serial.println("ERR SET1 needs: SET1 <fl_cps> <fr_cps> <bl_cps> <br_cps>");
+      return;
+    }
+
+    startSet1VelocityClosedLoop(fl, fr, bl, br);
+    return;
+  }
+
   if (strcmp(command, "DRIVE") == 0 || strcmp(command, "RUN") == 0) {
     bool ok = true;
     int base = readIntToken(cursor, ok);
@@ -1206,6 +1393,7 @@ void handleCommand(String line) {
     }
 
     resetSetPwmControlState();
+    resetSet1VelocityControlState();
     int fl, fr, bl, br;
     computeScaledWheelPwm(base, flScale, frScale, blScale, brScale, fl, fr, bl, br);
     straightRunActive = false;
@@ -1228,6 +1416,7 @@ void handleCommand(String line) {
     }
 
     resetSetPwmControlState();
+    resetSet1VelocityControlState();
     startStraightRun(base, durationMs);
     return;
   }
@@ -1318,7 +1507,7 @@ void handleCommand(String line) {
   }
 
   if (strcmp(command, "HELP") == 0) {
-    Serial.println("Commands: PING | STOP | SET <fl> <fr> <bl> <br> (fixed+PI) | DRIVE <base> <fl_s> <fr_s> <bl_s> <br_s> | RUN <base> <fl_s> <fr_s> <bl_s> <br_s> <ms> | STRAIGHT <base> <ms> | ENC? | ENC RESET | ENC ON|OFF | ENC TEST <base> <ms> | IMU ON|OFF | ZERO_YAW | GATE OPEN|CLOSE|? | SERVO LEFT <deg> | SERVO RIGHT <deg> | SERVO BOTH <left_deg> <right_deg> | SERVO TEST | CARGO? | CARGO RESET | BATCH <0|1|2> | CAPACITY <1..3> | AUTO_GATE ON|OFF | UNLOAD");
+    Serial.println("Commands: PING | STOP | SET <fl> <fr> <bl> <br> (fixed+PI) | SET1 <fl_cps> <fr_cps> <bl_cps> <br_cps> | DRIVE <base> <fl_s> <fr_s> <bl_s> <br_s> | RUN <base> <fl_s> <fr_s> <bl_s> <br_s> <ms> | STRAIGHT <base> <ms> | ENC? | ENC RESET | ENC ON|OFF | ENC TEST <base> <ms> | IMU ON|OFF | ZERO_YAW | GATE OPEN|CLOSE|? | SERVO LEFT <deg> | SERVO RIGHT <deg> | SERVO BOTH <left_deg> <right_deg> | SERVO TEST | CARGO? | CARGO RESET | BATCH <0|1|2> | CAPACITY <1..3> | AUTO_GATE ON|OFF | UNLOAD");
     return;
   }
 
@@ -1373,6 +1562,7 @@ void setup() {
 
 void loop() {
   readSerialCommands();
+  updateSet1VelocityClosedLoop();
   updateSetClosedLoop();
   updateStraightRun();
   updateMotorRamp();

@@ -182,6 +182,15 @@ class Esp32SerialBridge(Node):
 
     def _on_command(self, msg: FourWheelCommand) -> None:
         self._last_command_time = self.get_clock().now()
+        if self._uses_u_shape_encoder_velocity():
+            values = []
+            for wheel in self._wheels:
+                raw_value = float(getattr(msg, wheel.field))
+                wheel_rad_s = self._wheel_velocity_rad_s(raw_value, msg.command_mode)
+                values.append(wheel_rad_s * wheel.motor_sign * self._counts_per_revolution / (2.0 * pi))
+            self._send_serial_line(self._u_shape_set1_command(values))
+            return
+
         values = []
         for wheel in self._wheels:
             raw_value = float(getattr(msg, wheel.field))
@@ -201,6 +210,26 @@ class Esp32SerialBridge(Node):
             return _clamp(value, -1.0, 1.0)
         self.get_logger().warn(f"Unknown wheel command mode {command_mode}; stopping")
         return 0.0
+
+    def _wheel_velocity_rad_s(self, value: float, command_mode: int) -> float:
+        if not isfinite(value):
+            return 0.0
+        if command_mode == FourWheelCommand.VELOCITY_RAD_S:
+            return _clamp(value, -self._max_wheel_velocity_rad_s, self._max_wheel_velocity_rad_s)
+        if command_mode == FourWheelCommand.NORMALIZED_POWER:
+            return _clamp(value, -1.0, 1.0) * self._max_wheel_velocity_rad_s
+        self.get_logger().warn(f"Unknown wheel command mode {command_mode}; stopping")
+        return 0.0
+
+    def _uses_u_shape_encoder_velocity(self) -> bool:
+        if self._esp32_protocol not in ("u_shape", "u_shape_pwm", "u_shape_robot"):
+            return False
+        return self._esp32_command_mode in (
+            "encoder_velocity",
+            "counts_per_sec",
+            "count_velocity",
+            "set1",
+        )
 
     def _serial_command_prefix(self) -> str:
         if self._esp32_command_mode in ("velocity", "closed_loop", "closed_loop_velocity"):
@@ -226,6 +255,14 @@ class Esp32SerialBridge(Node):
             self._log_serial_write(line.strip())
             self._serial.write(line.encode("ascii"))
 
+    def _send_serial_line(self, line: str) -> None:
+        if self._dry_run:
+            self._log_dry_run(line.strip())
+            return
+        if self._serial is not None:
+            self._log_serial_write(line.strip())
+            self._serial.write(line.encode("ascii"))
+
     def _u_shape_set_command(self, values: list[float]) -> str:
         scale = self._u_shape_pwm_max / max(self._max_power, 1.0e-6)
         pwm = [
@@ -233,6 +270,14 @@ class Esp32SerialBridge(Node):
             for value in values
         ]
         return "SET " + " ".join(str(value) for value in pwm) + "\n"
+
+    def _u_shape_set1_command(self, values: list[float]) -> str:
+        max_counts_per_sec = self._max_wheel_velocity_rad_s * self._counts_per_revolution / (2.0 * pi)
+        counts_per_sec = [
+            int(round(_clamp(value, -max_counts_per_sec, max_counts_per_sec)))
+            for value in values
+        ]
+        return "SET1 " + " ".join(str(value) for value in counts_per_sec) + "\n"
 
     def _configure_firmware_after_open(self) -> None:
         if self._serial is None:
@@ -383,11 +428,17 @@ class Esp32SerialBridge(Node):
     def _stop_if_timed_out(self) -> None:
         age = (self.get_clock().now() - self._last_command_time).nanoseconds * 1.0e-9
         if age > self._command_timeout_sec:
+            if self._uses_u_shape_encoder_velocity():
+                self._send_serial_line(self._u_shape_set1_command([0.0, 0.0, 0.0, 0.0]))
+                return
             self._send_wheel_command(self._serial_command_prefix(), [0.0, 0.0, 0.0, 0.0])
 
     def destroy_node(self) -> bool:
         if self._serial is not None:
-            self._send_wheel_command(self._serial_command_prefix(), [0.0, 0.0, 0.0, 0.0])
+            if self._uses_u_shape_encoder_velocity():
+                self._send_serial_line(self._u_shape_set1_command([0.0, 0.0, 0.0, 0.0]))
+            else:
+                self._send_wheel_command(self._serial_command_prefix(), [0.0, 0.0, 0.0, 0.0])
             self._serial.close()
         return super().destroy_node()
 

@@ -307,7 +307,7 @@ def generate_launch_description():
             DeclareLaunchArgument("esp32_baud_rate", default_value="115200"),
             DeclareLaunchArgument("esp32_serial_reset_wait_sec", default_value="2.0"),
             DeclareLaunchArgument("esp32_protocol", default_value="u_shape"),
-            DeclareLaunchArgument("esp32_command_mode", default_value="pwm"),
+            DeclareLaunchArgument("esp32_command_mode", default_value="encoder_velocity"),
             DeclareLaunchArgument("esp32_max_power", default_value="0.35"),
             DeclareLaunchArgument("esp32_max_wheel_velocity_rad_s", default_value="20.0"),
             DeclareLaunchArgument("esp32_encoder_counts_per_revolution", default_value="890.3"),
