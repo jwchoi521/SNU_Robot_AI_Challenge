@@ -50,7 +50,7 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("imu_frame", "base_link")
         self.declare_parameter("imu_yaw_offset_deg", 0.0)
         self.declare_parameter("max_wheel_velocity_rad_s", 20.0)
-        self.declare_parameter("encoder_counts_per_revolution", 1.0)
+        self.declare_parameter("encoder_counts_per_revolution", 890.3)
 
         self.declare_parameter("front_left_joint", "front_left_wheel_joint")
         self.declare_parameter("front_right_joint", "front_right_wheel_joint")

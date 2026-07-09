@@ -47,7 +47,7 @@ class GpioEncoderJointState(Node):
         self.declare_parameter("joint_states_topic", "/joint_states")
         self.declare_parameter("publish_rate_hz", 20.0)
         self.declare_parameter("poll_rate_hz", 500.0)
-        self.declare_parameter("encoder_counts_per_revolution", 1.0)
+        self.declare_parameter("encoder_counts_per_revolution", 890.3)
 
         self.declare_parameter("front_left_joint", "front_left_wheel_joint")
         self.declare_parameter("front_right_joint", "front_right_wheel_joint")

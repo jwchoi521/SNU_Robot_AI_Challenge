@@ -36,7 +36,8 @@ constexpr unsigned long CONTROL_PERIOD_MS = 20;
 
 // Closed-loop velocity controller. These values are intentionally conservative
 // and should be tuned on the lifted robot before floor driving.
-constexpr float MAX_TARGET_COUNTS_PER_SEC = 1200.0f;
+// Measured encoder scale: 141.7 counts/rad, so 20 rad/s ~= 2834 counts/s.
+constexpr float MAX_TARGET_COUNTS_PER_SEC = 2834.0f;
 constexpr float VELOCITY_FEED_FORWARD = 0.35f;
 constexpr float VELOCITY_KP = 0.0005f;
 constexpr float VELOCITY_KI = 0.00008f;
