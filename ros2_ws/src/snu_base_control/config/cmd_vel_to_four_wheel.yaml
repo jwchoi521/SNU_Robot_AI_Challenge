@@ -12,8 +12,8 @@ cmd_vel_to_four_wheel:
     command_mode: velocity
 
     wheel_radius_m: 0.033
-    track_width_m: 0.235
-    wheelbase_m: 0.0986
+    track_width_m: 0.30
+    wheelbase_m: 0.235
     max_wheel_velocity_rad_s: 20.0
 
     front_left_sign: 1.0

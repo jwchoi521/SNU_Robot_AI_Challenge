@@ -11,8 +11,8 @@ four_wheel_odometry:
     drive_model: skid_steer
 
     wheel_radius_m: 0.033
-    track_width_m: 0.235
-    wheelbase_m: 0.0986
+    track_width_m: 0.30
+    wheelbase_m: 0.235
 
     front_left_joint: front_left_wheel_joint
     front_right_joint: front_right_wheel_joint

@@ -322,7 +322,7 @@ def generate_launch_description():
                 parameters=[
                     {
                         "wheel_radius_m": 0.033,
-                        "track_width_m": 0.235,
+                        "track_width_m": 0.30,
                     }
                 ],
             ),
