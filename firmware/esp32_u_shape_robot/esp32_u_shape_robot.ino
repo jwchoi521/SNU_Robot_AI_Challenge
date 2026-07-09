@@ -598,6 +598,11 @@ float readFloatToken(char *&cursor, bool &ok) {
   return value;
 }
 
+const float FIXED_WHEEL_SCALE_FL = 1.17f;
+const float FIXED_WHEEL_SCALE_FR = 0.89f;
+const float FIXED_WHEEL_SCALE_BL = 1.11f;
+const float FIXED_WHEEL_SCALE_BR = 0.89f;
+
 void computeScaledWheelPwm(
   int base,
   float flScale,
@@ -609,10 +614,14 @@ void computeScaledWheelPwm(
   int &bl,
   int &br
 ) {
-  fl = clampPwm((int)(base * flScale));
-  fr = clampPwm((int)(base * frScale));
-  bl = clampPwm((int)(base * blScale));
-  br = clampPwm((int)(base * brScale));
+  (void)flScale;
+  (void)frScale;
+  (void)blScale;
+  (void)brScale;
+  fl = clampPwm((int)(base * FIXED_WHEEL_SCALE_FL));
+  fr = clampPwm((int)(base * FIXED_WHEEL_SCALE_FR));
+  bl = clampPwm((int)(base * FIXED_WHEEL_SCALE_BL));
+  br = clampPwm((int)(base * FIXED_WHEEL_SCALE_BR));
 }
 
 float wrapPi(float angle) {
