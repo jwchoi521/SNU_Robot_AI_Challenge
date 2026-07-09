@@ -93,6 +93,7 @@ const float SET_INTEGRAL_LIMIT = 250.0f;
 const uint32_t SET_DEBUG_INTERVAL_MS = 250;
 
 const uint32_t SET1_CONTROL_INTERVAL_MS = 25;
+const int SET1_STATIC_FRICTION_PWM = 35;
 const float SET1_FEED_FORWARD_PWM_PER_CPS = 0.042f;
 const float SET1_WHEEL_KP = 0.045f;
 const float SET1_WHEEL_KI = 0.35f;
@@ -572,7 +573,10 @@ int set1FeedForwardPwm(int index, float targetCps) {
   if (fabsf(targetCps) < 1.0f) {
     return 0;
   }
-  float pwm = targetCps * SET1_FEED_FORWARD_PWM_PER_CPS * fixedWheelScaleForIndex(index);
+  float direction = targetCps > 0.0f ? 1.0f : -1.0f;
+  float staticPwm = direction * SET1_STATIC_FRICTION_PWM;
+  float velocityPwm = targetCps * SET1_FEED_FORWARD_PWM_PER_CPS;
+  float pwm = (staticPwm + velocityPwm) * fixedWheelScaleForIndex(index);
   return clampPwm(roundFloatToInt(pwm));
 }
 
