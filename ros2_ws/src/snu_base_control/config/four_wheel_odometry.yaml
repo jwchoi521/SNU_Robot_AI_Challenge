@@ -10,9 +10,9 @@ four_wheel_odometry:
     # Use "mecanum" only if the robot uses mecanum wheels and wheel signs are calibrated.
     drive_model: skid_steer
 
-    wheel_radius_m: 0.035
-    track_width_m: 0.112
-    wheelbase_m: 0.0986
+    wheel_radius_m: 0.033
+    track_width_m: 0.30
+    wheelbase_m: 0.235
 
     front_left_joint: front_left_wheel_joint
     front_right_joint: front_right_wheel_joint
