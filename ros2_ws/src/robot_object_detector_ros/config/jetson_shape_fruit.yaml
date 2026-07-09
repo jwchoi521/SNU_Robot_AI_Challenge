@@ -15,6 +15,7 @@ shape_yolo_node:
     conf_threshold: 0.25
     nms_iou_threshold: 0.7
     class_agnostic_nms: false
+    inference_fps: 0.0
 
 cube_fruit_classifier_node:
   ros__parameters:

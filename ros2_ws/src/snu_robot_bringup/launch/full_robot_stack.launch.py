@@ -66,6 +66,7 @@ def generate_launch_description():
         "classifications_topic": LaunchConfiguration("classifications_topic"),
         "classifier_annotated_topic": LaunchConfiguration("classifier_annotated_topic"),
         "fps": LaunchConfiguration("fps"),
+        "inference_fps": LaunchConfiguration("inference_fps"),
         "frame_width": LaunchConfiguration("frame_width"),
         "frame_height": LaunchConfiguration("frame_height"),
     }
@@ -254,6 +255,7 @@ def generate_launch_description():
             DeclareLaunchArgument("camera_pipeline", default_value=""),
             DeclareLaunchArgument("camera_topic", default_value="/camera/image_raw"),
             DeclareLaunchArgument("fps", default_value="30.0"),
+            DeclareLaunchArgument("inference_fps", default_value="0.0"),
             DeclareLaunchArgument("frame_width", default_value="1280"),
             DeclareLaunchArgument("frame_height", default_value="720"),
             DeclareLaunchArgument(

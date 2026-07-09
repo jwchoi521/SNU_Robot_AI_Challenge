@@ -16,6 +16,7 @@ def generate_launch_description():
     classifications_topic = LaunchConfiguration("classifications_topic")
     classifier_annotated_topic = LaunchConfiguration("classifier_annotated_topic")
     fps = LaunchConfiguration("fps")
+    inference_fps = LaunchConfiguration("inference_fps")
     frame_width = LaunchConfiguration("frame_width")
     frame_height = LaunchConfiguration("frame_height")
 
@@ -57,6 +58,11 @@ def generate_launch_description():
                 default_value="/cube_fruit/annotated_image",
             ),
             DeclareLaunchArgument("fps", default_value="30.0"),
+            DeclareLaunchArgument(
+                "inference_fps",
+                default_value="0.0",
+                description="Maximum YOLO inference rate in Hz. 0 means infer every camera frame.",
+            ),
             DeclareLaunchArgument("frame_width", default_value="1280"),
             DeclareLaunchArgument("frame_height", default_value="720"),
             Node(
@@ -97,6 +103,7 @@ def generate_launch_description():
                         ],
                         "conf_threshold": 0.25,
                         "nms_iou_threshold": 0.7,
+                        "inference_fps": ParameterValue(inference_fps, value_type=float),
                     }
                 ],
             ),
