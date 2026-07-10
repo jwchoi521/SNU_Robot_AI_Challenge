@@ -1004,6 +1004,8 @@ bool enableRotationVector() {
   return true;
 }
 
+uint32_t lastImuRetryMs = 0;
+
 void setupImu() {
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
 
@@ -1020,7 +1022,20 @@ void setupImu() {
 }
 
 void updateImu() {
-  if (!imuReady) return;
+  if (!imuReady) {
+    if (millis() - lastImuRetryMs >= 2000) {
+      lastImuRetryMs = millis();
+      if (bno08x.begin_I2C(BNO08x_I2CADDR_DEFAULT, &Wire) || bno08x.begin_I2C(0x4B, &Wire)) {
+        imuReady = enableRotationVector();
+        if (imuReady) {
+          Serial.println("OK IMU READY");
+        }
+      } else {
+        Serial.println("WARN IMU not found");
+      }
+    }
+    return;
+  }
 
   if (bno08x.wasReset()) {
     enableRotationVector();
