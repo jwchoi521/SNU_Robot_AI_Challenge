@@ -81,12 +81,7 @@ class ObjectLocalizerNode(Node):
     def on_detection_json(self, msg: String) -> None:
         try:
             detection = self._parse_detection(msg.data)
-            raw_object_source = self.estimator.predict_lidar_pose(detection)
-            object_source = Pose2D(
-                x=raw_object_source.y,
-                y=-raw_object_source.x,
-                theta=raw_object_source.theta,
-            )
+            object_source = self.estimator.predict_lidar_pose(detection)
         except (ValueError, KeyError) as exc:
             self.get_logger().warn(f"failed to localize object: {exc}")
             return
