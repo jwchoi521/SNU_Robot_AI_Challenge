@@ -283,7 +283,7 @@ def generate_launch_description():
                 parameters=[
                     {
                         "input_topic": LaunchConfiguration("object_pose_topic"),
-                        "output_topic": "/semantic_obstacle_cloud",
+                        "output_topic": "/semantic_obstacles",
                         "frame_id": LaunchConfiguration("map_frame"),
                         "obstacle_radius_m": 0.04,
                         "point_spacing_m": 0.02,
@@ -304,7 +304,7 @@ def generate_launch_description():
                         "robot_pose_topic": LaunchConfiguration("robot_pose_topic"),
                         "object_pose_topic": LaunchConfiguration("object_pose_topic"),
                         "approach_goal_topic": "/approach_goal",
-                        "semantic_cloud_topic": "/semantic_obstacle_cloud",
+                        "semantic_cloud_topic": "/semantic_obstacles",
                         "localizer_status_topic": "/four_wall_localizer/status",
                         "detections_topic": LaunchConfiguration("detections_topic"),
                         "debug_topic": LaunchConfiguration("mapping_debug_topic"),

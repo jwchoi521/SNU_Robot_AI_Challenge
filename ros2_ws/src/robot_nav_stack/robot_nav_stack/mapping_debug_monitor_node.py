@@ -28,7 +28,7 @@ class MappingDebugMonitorNode(Node):
         self.declare_parameter("robot_pose_topic", "/robot_pose_map")
         self.declare_parameter("object_pose_topic", "/object_pose_map")
         self.declare_parameter("approach_goal_topic", "/approach_goal")
-        self.declare_parameter("semantic_cloud_topic", "/semantic_obstacle_cloud")
+        self.declare_parameter("semantic_cloud_topic", "/semantic_obstacles")
         self.declare_parameter("localizer_status_topic", "/four_wall_localizer/status")
         self.declare_parameter("detections_topic", "/detections_json")
         self.declare_parameter("debug_topic", "/robot_nav_stack/debug_state")

@@ -59,7 +59,7 @@ local_costmap:
           marking: true
           data_type: "LaserScan"
         semantic_cloud:
-          topic: /semantic_obstacle_cloud
+          topic: /semantic_obstacles
           max_obstacle_height: 1.0
           min_obstacle_height: -0.1
           obstacle_max_range: 6.0
@@ -95,7 +95,7 @@ global_costmap:
           marking: true
           data_type: "LaserScan"
         semantic_cloud:
-          topic: /semantic_obstacle_cloud
+          topic: /semantic_obstacles
           max_obstacle_height: 1.0
           min_obstacle_height: -0.1
           obstacle_max_range: 8.0

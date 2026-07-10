@@ -24,7 +24,7 @@ class SemanticObstacleCloudNode(Node):
 
     Nav2 costmap obstacle layers naturally accept LaserScan/PointCloud2 data.
     Our perception stack produces object poses, so this node expands each pose
-    into a small disk of points and publishes it as `/semantic_obstacle_cloud`.
+    into a small disk of points and publishes it as `/semantic_obstacles`.
 
     Use `clearing: false` for this source in Nav2. Object detections are sparse,
     so they are good at marking obstacles but should not clear free space.
@@ -33,7 +33,7 @@ class SemanticObstacleCloudNode(Node):
     def __init__(self) -> None:
         super().__init__("semantic_obstacle_cloud_node")
         self.declare_parameter("input_topic", "/object_pose_map")
-        self.declare_parameter("output_topic", "/semantic_obstacle_cloud")
+        self.declare_parameter("output_topic", "/semantic_obstacles")
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("obstacle_radius_m", 0.04)
         self.declare_parameter("point_spacing_m", 0.02)

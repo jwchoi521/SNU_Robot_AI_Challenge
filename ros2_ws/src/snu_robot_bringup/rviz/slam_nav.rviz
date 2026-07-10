@@ -99,7 +99,7 @@ Visualization Manager:
       Size (m): 0.08
       Style: Spheres
       Topic:
-        Value: /semantic_obstacle_cloud
+        Value: /semantic_obstacles
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
