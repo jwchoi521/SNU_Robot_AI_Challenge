@@ -21,12 +21,12 @@ controller_server:
     controller_plugins: ["FollowPath"]
     goal_checker_plugins: ["goal_checker"]
     goal_checker:
-      plugin: "nav2_controller/SimpleGoalChecker"
+      plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.12
       yaw_goal_tolerance: 0.17
       stateful: true
     FollowPath:
-      plugin: "nav2_regulated_pure_pursuit_controller/RegulatedPurePursuitController"
+      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
       desired_linear_vel: 0.45
       lookahead_dist: 0.55
       min_lookahead_dist: 0.35
@@ -50,7 +50,7 @@ local_costmap:
       footprint: "[[0.16, 0.165], [0.16, -0.165], [-0.16, -0.165], [-0.16, 0.165]]"
       plugins: ["obstacle_layer", "inflation_layer"]
       obstacle_layer:
-        plugin: "nav2_costmap_2d/ObstacleLayer"
+        plugin: "nav2_costmap_2d::ObstacleLayer"
         observation_sources: scan semantic_cloud
         scan:
           topic: /scan
@@ -68,7 +68,7 @@ local_costmap:
           marking: true
           data_type: "PointCloud2"
       inflation_layer:
-        plugin: "nav2_costmap_2d/InflationLayer"
+        plugin: "nav2_costmap_2d::InflationLayer"
         inflation_radius: 0.25
         cost_scaling_factor: 3.0
 
@@ -84,9 +84,9 @@ global_costmap:
       footprint: "[[0.16, 0.165], [0.16, -0.165], [-0.16, -0.165], [-0.16, 0.165]]"
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       static_layer:
-        plugin: "nav2_costmap_2d/StaticLayer"
+        plugin: "nav2_costmap_2d::StaticLayer"
       obstacle_layer:
-        plugin: "nav2_costmap_2d/ObstacleLayer"
+        plugin: "nav2_costmap_2d::ObstacleLayer"
         observation_sources: scan semantic_cloud
         scan:
           topic: /scan
@@ -104,6 +104,6 @@ global_costmap:
           marking: true
           data_type: "PointCloud2"
       inflation_layer:
-        plugin: "nav2_costmap_2d/InflationLayer"
+        plugin: "nav2_costmap_2d::InflationLayer"
         inflation_radius: 0.30
         cost_scaling_factor: 3.0
