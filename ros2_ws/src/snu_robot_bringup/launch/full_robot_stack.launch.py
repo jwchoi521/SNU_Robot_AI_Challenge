@@ -135,6 +135,10 @@ def generate_launch_description():
         "enable_semantic_obstacle_cloud": LaunchConfiguration(
             "enable_semantic_obstacle_cloud"
         ),
+        "semantic_obstacle_ttl_sec": LaunchConfiguration("semantic_obstacle_ttl_sec"),
+        "semantic_obstacle_association_radius_m": LaunchConfiguration(
+            "semantic_obstacle_association_radius_m"
+        ),
         "bbox_goal_target_topic": LaunchConfiguration("bbox_goal_target_topic"),
         "bbox_goal_pose_topic": LaunchConfiguration("bbox_goal_pose_topic"),
         "bbox_goal_status_topic": LaunchConfiguration("bbox_goal_status_topic"),
@@ -281,6 +285,11 @@ def generate_launch_description():
             DeclareLaunchArgument("enable_distance_overlay", default_value="false"),
             DeclareLaunchArgument("enable_bbox_goal_navigation", default_value="false"),
             DeclareLaunchArgument("enable_semantic_obstacle_cloud", default_value="true"),
+            DeclareLaunchArgument("semantic_obstacle_ttl_sec", default_value="0.75"),
+            DeclareLaunchArgument(
+                "semantic_obstacle_association_radius_m",
+                default_value="0.12",
+            ),
             DeclareLaunchArgument("bbox_goal_target_topic", default_value="/object_pose_map"),
             DeclareLaunchArgument("bbox_goal_pose_topic", default_value="/bbox_goal_pose"),
             DeclareLaunchArgument(

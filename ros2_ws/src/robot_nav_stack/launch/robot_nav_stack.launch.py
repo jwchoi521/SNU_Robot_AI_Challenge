@@ -76,6 +76,11 @@ def generate_launch_description():
             DeclareLaunchArgument("enable_distance_overlay", default_value="false"),
             DeclareLaunchArgument("enable_bbox_goal_navigation", default_value="false"),
             DeclareLaunchArgument("enable_semantic_obstacle_cloud", default_value="true"),
+            DeclareLaunchArgument("semantic_obstacle_ttl_sec", default_value="0.75"),
+            DeclareLaunchArgument(
+                "semantic_obstacle_association_radius_m",
+                default_value="0.12",
+            ),
             DeclareLaunchArgument("bbox_goal_target_topic", default_value="/object_pose_map"),
             DeclareLaunchArgument("bbox_goal_pose_topic", default_value="/bbox_goal_pose"),
             DeclareLaunchArgument(
@@ -287,8 +292,10 @@ def generate_launch_description():
                         "frame_id": LaunchConfiguration("map_frame"),
                         "obstacle_radius_m": 0.04,
                         "point_spacing_m": 0.02,
-                        "ttl_sec": 15.0,
-                        "association_radius_m": 0.12,
+                        "ttl_sec": _float_arg("semantic_obstacle_ttl_sec"),
+                        "association_radius_m": _float_arg(
+                            "semantic_obstacle_association_radius_m"
+                        ),
                         "position_smoothing_alpha": 0.35,
                         "publish_hz": 10.0,
                     }

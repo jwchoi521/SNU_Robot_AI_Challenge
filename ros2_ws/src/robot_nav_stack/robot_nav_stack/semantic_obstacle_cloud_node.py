@@ -37,7 +37,7 @@ class SemanticObstacleCloudNode(Node):
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("obstacle_radius_m", 0.04)
         self.declare_parameter("point_spacing_m", 0.02)
-        self.declare_parameter("ttl_sec", 15.0)
+        self.declare_parameter("ttl_sec", 0.75)
         self.declare_parameter("association_radius_m", 0.12)
         self.declare_parameter("position_smoothing_alpha", 0.35)
         self.declare_parameter("publish_hz", 10.0)
@@ -55,9 +55,7 @@ class SemanticObstacleCloudNode(Node):
         self.timer = self.create_timer(1.0 / max(publish_hz, 0.1), self.publish_cloud)
 
     def on_object_pose(self, msg: PoseStamped) -> None:
-        stamp = self._stamp_to_sec(msg.header.stamp)
-        if stamp <= 0.0:
-            stamp = self.get_clock().now().nanoseconds * 1e-9
+        stamp = self.get_clock().now().nanoseconds * 1e-9
 
         self._prune()
         x = float(msg.pose.position.x)
@@ -151,11 +149,6 @@ class SemanticObstacleCloudNode(Node):
         cloud.is_dense = True
         cloud.data = b"".join(struct.pack("<fff", *point) for point in points)
         return cloud
-
-    @staticmethod
-    def _stamp_to_sec(stamp) -> float:
-        return float(stamp.sec) + float(stamp.nanosec) * 1e-9
-
 
 def main() -> None:
     rclpy.init()
