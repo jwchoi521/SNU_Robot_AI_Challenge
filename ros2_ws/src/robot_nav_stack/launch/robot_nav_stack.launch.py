@@ -81,8 +81,20 @@ def generate_launch_description():
                 "semantic_obstacle_association_radius_m",
                 default_value="0.12",
             ),
+            DeclareLaunchArgument(
+                "semantic_obstacle_exclude_radius_m",
+                default_value="0.35",
+            ),
+            DeclareLaunchArgument(
+                "semantic_obstacle_exclude_max_age_sec",
+                default_value="2.0",
+            ),
             DeclareLaunchArgument("bbox_goal_target_topic", default_value="/object_pose_map"),
             DeclareLaunchArgument("bbox_goal_pose_topic", default_value="/bbox_goal_pose"),
+            DeclareLaunchArgument(
+                "bbox_goal_selected_target_topic",
+                default_value="/bbox_goal_target_pose",
+            ),
             DeclareLaunchArgument(
                 "bbox_goal_status_topic",
                 default_value="/bbox_goal_navigator/status",
@@ -245,6 +257,9 @@ def generate_launch_description():
                         "target_pose_topic": LaunchConfiguration("bbox_goal_target_topic"),
                         "robot_pose_topic": LaunchConfiguration("robot_pose_topic"),
                         "computed_goal_topic": LaunchConfiguration("bbox_goal_pose_topic"),
+                        "selected_target_pose_topic": LaunchConfiguration(
+                            "bbox_goal_selected_target_topic"
+                        ),
                         "status_topic": LaunchConfiguration("bbox_goal_status_topic"),
                         "nav_action_name": LaunchConfiguration("bbox_goal_nav_action_name"),
                         "map_frame": LaunchConfiguration("map_frame"),
@@ -289,12 +304,21 @@ def generate_launch_description():
                     {
                         "input_topic": LaunchConfiguration("object_pose_topic"),
                         "output_topic": "/semantic_obstacles",
+                        "exclude_pose_topic": LaunchConfiguration(
+                            "bbox_goal_selected_target_topic"
+                        ),
                         "frame_id": LaunchConfiguration("map_frame"),
                         "obstacle_radius_m": 0.04,
                         "point_spacing_m": 0.02,
                         "ttl_sec": _float_arg("semantic_obstacle_ttl_sec"),
                         "association_radius_m": _float_arg(
                             "semantic_obstacle_association_radius_m"
+                        ),
+                        "exclude_radius_m": _float_arg(
+                            "semantic_obstacle_exclude_radius_m"
+                        ),
+                        "exclude_pose_max_age_sec": _float_arg(
+                            "semantic_obstacle_exclude_max_age_sec"
                         ),
                         "position_smoothing_alpha": 0.35,
                         "publish_hz": 10.0,

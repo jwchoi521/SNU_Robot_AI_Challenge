@@ -34,25 +34,54 @@ class SemanticObstacleCloudNode(Node):
         super().__init__("semantic_obstacle_cloud_node")
         self.declare_parameter("input_topic", "/object_pose_map")
         self.declare_parameter("output_topic", "/semantic_obstacles")
+        self.declare_parameter("exclude_pose_topic", "/bbox_goal_target_pose")
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("obstacle_radius_m", 0.04)
         self.declare_parameter("point_spacing_m", 0.02)
         self.declare_parameter("ttl_sec", 0.75)
         self.declare_parameter("association_radius_m", 0.12)
+        self.declare_parameter("exclude_radius_m", 0.35)
+        self.declare_parameter("exclude_pose_max_age_sec", 2.0)
         self.declare_parameter("position_smoothing_alpha", 0.35)
         self.declare_parameter("publish_hz", 10.0)
         self.declare_parameter("z_m", 0.05)
 
         self.frame_id = str(self.get_parameter("frame_id").value)
         self.obstacles: list[TimedObstacle] = []
+        self.excluded_pose: tuple[float, float, float] | None = None
+        self._warned_exclude_frame = False
 
         input_topic = str(self.get_parameter("input_topic").value)
         output_topic = str(self.get_parameter("output_topic").value)
+        exclude_topic = str(self.get_parameter("exclude_pose_topic").value).strip()
         publish_hz = float(self.get_parameter("publish_hz").value)
 
         self.sub = self.create_subscription(PoseStamped, input_topic, self.on_object_pose, 20)
+        self.exclude_sub = (
+            self.create_subscription(PoseStamped, exclude_topic, self.on_exclude_pose, 10)
+            if exclude_topic
+            else None
+        )
         self.pub = self.create_publisher(PointCloud2, output_topic, 10)
         self.timer = self.create_timer(1.0 / max(publish_hz, 0.1), self.publish_cloud)
+
+    def on_exclude_pose(self, msg: PoseStamped) -> None:
+        if msg.header.frame_id and msg.header.frame_id != self.frame_id:
+            if not self._warned_exclude_frame:
+                self.get_logger().warn(
+                    "ignoring semantic obstacle exclusion pose in frame "
+                    f"{msg.header.frame_id!r}; expected {self.frame_id!r}"
+                )
+                self._warned_exclude_frame = True
+            return
+
+        stamp = self.get_clock().now().nanoseconds * 1e-9
+        self.excluded_pose = (
+            float(msg.pose.position.x),
+            float(msg.pose.position.y),
+            stamp,
+        )
+        self._prune()
 
     def on_object_pose(self, msg: PoseStamped) -> None:
         stamp = self.get_clock().now().nanoseconds * 1e-9
@@ -60,6 +89,9 @@ class SemanticObstacleCloudNode(Node):
         self._prune()
         x = float(msg.pose.position.x)
         y = float(msg.pose.position.y)
+        if self._is_excluded(x, y, stamp):
+            return
+
         z = float(self.get_parameter("z_m").value)
         match = self._nearest_obstacle(x, y)
         if match is not None:
@@ -98,18 +130,39 @@ class SemanticObstacleCloudNode(Node):
     def _prune(self) -> None:
         now = self.get_clock().now().nanoseconds * 1e-9
         ttl = float(self.get_parameter("ttl_sec").value)
-        self.obstacles = [obs for obs in self.obstacles if now - obs.stamp_sec <= ttl]
+        self.obstacles = [
+            obs
+            for obs in self.obstacles
+            if now - obs.stamp_sec <= ttl and not self._is_excluded(obs.x, obs.y, now)
+        ]
 
     def _nearest_obstacle(self, x: float, y: float) -> TimedObstacle | None:
         association_radius = max(0.0, float(self.get_parameter("association_radius_m").value))
         best: TimedObstacle | None = None
         best_dist = association_radius
         for obstacle in self.obstacles:
+            if self._is_excluded(obstacle.x, obstacle.y):
+                continue
             dist = math.hypot(x - obstacle.x, y - obstacle.y)
             if dist <= best_dist:
                 best = obstacle
                 best_dist = dist
         return best
+
+    def _is_excluded(self, x: float, y: float, now_sec: float | None = None) -> bool:
+        if self.excluded_pose is None:
+            return False
+        radius = max(0.0, float(self.get_parameter("exclude_radius_m").value))
+        if radius <= 0.0:
+            return False
+        now = now_sec
+        if now is None:
+            now = self.get_clock().now().nanoseconds * 1e-9
+        exclude_x, exclude_y, exclude_stamp = self.excluded_pose
+        max_age = float(self.get_parameter("exclude_pose_max_age_sec").value)
+        if max_age > 0.0 and now - exclude_stamp > max_age:
+            return False
+        return math.hypot(x - exclude_x, y - exclude_y) <= radius
 
     @staticmethod
     def _clamp(value: float, low: float, high: float) -> float:
@@ -149,6 +202,7 @@ class SemanticObstacleCloudNode(Node):
         cloud.is_dense = True
         cloud.data = b"".join(struct.pack("<fff", *point) for point in points)
         return cloud
+
 
 def main() -> None:
     rclpy.init()

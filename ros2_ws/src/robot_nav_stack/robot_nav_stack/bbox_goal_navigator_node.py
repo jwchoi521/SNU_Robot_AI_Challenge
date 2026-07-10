@@ -39,6 +39,7 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("target_pose_topic", "/object_pose_map")
         self.declare_parameter("robot_pose_topic", "/robot_pose_map")
         self.declare_parameter("computed_goal_topic", "/bbox_goal_pose")
+        self.declare_parameter("selected_target_pose_topic", "/bbox_goal_target_pose")
         self.declare_parameter("status_topic", "/bbox_goal_navigator/status")
         self.declare_parameter("mission_event_topic", "/mission/event")
         self.declare_parameter("nav_action_name", "navigate_to_pose")
@@ -89,6 +90,11 @@ class BboxGoalNavigatorNode(Node):
         self._goal_pub = self.create_publisher(
             PoseStamped,
             str(self.get_parameter("computed_goal_topic").value),
+            10,
+        )
+        self._selected_target_pub = self.create_publisher(
+            PoseStamped,
+            str(self.get_parameter("selected_target_pose_topic").value),
             10,
         )
         self._status_pub = self.create_publisher(
@@ -162,6 +168,7 @@ class BboxGoalNavigatorNode(Node):
             self._publish_status("target_stale", target_age_sec=target_age)
             return
 
+        self._publish_selected_target_pose(self._target_pose)
         goal = self._compute_approach_goal(self._robot_pose, self._target_pose)
         if goal is None:
             self._publish_status("target_goal_reached")
@@ -396,6 +403,9 @@ class BboxGoalNavigatorNode(Node):
 
     def _publish_goal_pose(self, goal: Pose2D) -> None:
         self._goal_pub.publish(self._make_pose_stamped(goal))
+
+    def _publish_selected_target_pose(self, target: Pose2D) -> None:
+        self._selected_target_pub.publish(self._make_pose_stamped(target))
 
     def _make_pose_stamped(self, pose: Pose2D) -> PoseStamped:
         msg = PoseStamped()

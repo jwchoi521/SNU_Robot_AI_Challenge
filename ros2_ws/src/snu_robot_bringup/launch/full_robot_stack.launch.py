@@ -139,8 +139,17 @@ def generate_launch_description():
         "semantic_obstacle_association_radius_m": LaunchConfiguration(
             "semantic_obstacle_association_radius_m"
         ),
+        "semantic_obstacle_exclude_radius_m": LaunchConfiguration(
+            "semantic_obstacle_exclude_radius_m"
+        ),
+        "semantic_obstacle_exclude_max_age_sec": LaunchConfiguration(
+            "semantic_obstacle_exclude_max_age_sec"
+        ),
         "bbox_goal_target_topic": LaunchConfiguration("bbox_goal_target_topic"),
         "bbox_goal_pose_topic": LaunchConfiguration("bbox_goal_pose_topic"),
+        "bbox_goal_selected_target_topic": LaunchConfiguration(
+            "bbox_goal_selected_target_topic"
+        ),
         "bbox_goal_status_topic": LaunchConfiguration("bbox_goal_status_topic"),
         "bbox_goal_nav_action_name": LaunchConfiguration("bbox_goal_nav_action_name"),
         "bbox_goal_send_nav2_goal": LaunchConfiguration("bbox_goal_send_nav2_goal"),
@@ -290,8 +299,20 @@ def generate_launch_description():
                 "semantic_obstacle_association_radius_m",
                 default_value="0.12",
             ),
+            DeclareLaunchArgument(
+                "semantic_obstacle_exclude_radius_m",
+                default_value="0.35",
+            ),
+            DeclareLaunchArgument(
+                "semantic_obstacle_exclude_max_age_sec",
+                default_value="2.0",
+            ),
             DeclareLaunchArgument("bbox_goal_target_topic", default_value="/object_pose_map"),
             DeclareLaunchArgument("bbox_goal_pose_topic", default_value="/bbox_goal_pose"),
+            DeclareLaunchArgument(
+                "bbox_goal_selected_target_topic",
+                default_value="/bbox_goal_target_pose",
+            ),
             DeclareLaunchArgument(
                 "bbox_goal_status_topic",
                 default_value="/bbox_goal_navigator/status",
