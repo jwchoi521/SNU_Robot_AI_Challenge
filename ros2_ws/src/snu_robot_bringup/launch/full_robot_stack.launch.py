@@ -54,6 +54,13 @@ def generate_launch_description():
             "slam_toolbox_online_async.yaml",
         ]
     )
+    ekf_params_default = PathJoinSubstitution(
+        [
+            FindPackageShare("snu_robot_bringup"),
+            "config",
+            "ekf.yaml",
+        ]
+    )
 
     detector_arguments = {
         "shape_engine": LaunchConfiguration("shape_engine"),
@@ -214,6 +221,7 @@ def generate_launch_description():
 
     ekf_arguments = {
         "use_sim_time": LaunchConfiguration("use_sim_time"),
+        "params_file": LaunchConfiguration("ekf_params_file"),
     }
 
     esp32_arguments = {
@@ -302,6 +310,7 @@ def generate_launch_description():
             DeclareLaunchArgument("enable_known_map_server", default_value="false"),
             DeclareLaunchArgument("known_map", default_value=known_map_default),
             DeclareLaunchArgument("slam_params_file", default_value=slam_params_default),
+            DeclareLaunchArgument("ekf_params_file", default_value=ekf_params_default),
             DeclareLaunchArgument("enable_wheel_command_mapper", default_value="false"),
             DeclareLaunchArgument("enable_esp32_serial_bridge", default_value="false"),
             DeclareLaunchArgument("esp32_dry_run", default_value="true"),
