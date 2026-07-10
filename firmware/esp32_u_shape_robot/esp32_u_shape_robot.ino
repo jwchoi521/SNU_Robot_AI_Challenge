@@ -159,6 +159,7 @@ Adafruit_BNO08x bno08x(-1);
 sh2_SensorValue_t sensorValue;
 bool imuReady = false;
 bool imuStreaming = false;
+bool imuRequested = false;
 bool haveImuSample = false;
 uint32_t nextImuPrintMs = 0;
 float yawZeroRad = 0.0f;
@@ -1029,6 +1030,11 @@ void updateImu() {
         imuReady = enableRotationVector();
         if (imuReady) {
           Serial.println("OK IMU READY");
+          if (imuRequested && !imuStreaming) {
+            imuStreaming = true;
+            nextImuPrintMs = millis();
+            Serial.println("OK IMU ON");
+          }
         }
       } else {
         Serial.println("WARN IMU not found");
@@ -1458,12 +1464,14 @@ void handleCommand(String line) {
     }
     uppercaseToken(mode);
     if (strcmp(mode, "ON") == 0) {
+      imuRequested = true;
       imuStreaming = imuReady;
       nextImuPrintMs = millis();
       Serial.println(imuReady ? "OK IMU ON" : "ERR IMU not ready");
       return;
     }
     if (strcmp(mode, "OFF") == 0) {
+      imuRequested = false;
       imuStreaming = false;
       Serial.println("OK IMU OFF");
       return;
