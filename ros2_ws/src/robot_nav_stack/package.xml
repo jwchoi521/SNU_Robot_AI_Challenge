@@ -18,6 +18,7 @@
   <exec_depend>action_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>
+  <exec_depend>snu_robot_interfaces</exec_depend>
   <exec_depend>message_filters</exec_depend>
   <depend>robot_object_detector_ros</depend>
   <exec_depend>tf2_ros</exec_depend>

@@ -41,7 +41,10 @@ find_library(TENSORRT_PLUGIN_LIBRARY
 )
 
 if(NOT TENSORRT_INCLUDE_DIR OR NOT TENSORRT_LIBRARY OR NOT TENSORRT_PLUGIN_LIBRARY)
-  message(FATAL_ERROR "TensorRT headers/library were not found. Install JetPack TensorRT development packages.")
+  message(WARNING "TensorRT headers/library were not found. Skipping C++ nodes (messages will still build).")
+  set(TENSORRT_FOUND FALSE)
+else()
+  set(TENSORRT_FOUND TRUE)
 endif()
 
 rosidl_generate_interfaces(${PROJECT_NAME}
@@ -52,6 +55,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES std_msgs
 )
 
+if(TENSORRT_FOUND)
 include_directories(
   include
   ${OpenCV_INCLUDE_DIRS}
@@ -100,6 +104,7 @@ install(TARGETS
   cube_fruit_classifier_node
   DESTINATION lib/${PROJECT_NAME}
 )
+endif()
 
 install(DIRECTORY
   launch

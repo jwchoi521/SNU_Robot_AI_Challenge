@@ -11,6 +11,7 @@ from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from snu_robot_interfaces.msg import GripperCommand
 from std_msgs.msg import String
 
 from .core import Pose2D, angle_diff, quaternion_from_yaw, yaw_from_quaternion
@@ -42,10 +43,12 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("selected_target_pose_topic", "/bbox_goal_target_pose")
         self.declare_parameter("status_topic", "/bbox_goal_navigator/status")
         self.declare_parameter("mission_event_topic", "/mission/event")
+        self.declare_parameter("gripper_command_topic", "/gripper/command")
         self.declare_parameter("nav_action_name", "navigate_to_pose")
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("send_nav2_goal", True)
         self.declare_parameter("publish_mission_events", True)
+        self.declare_parameter("control_gripper_gate", True)
         self.declare_parameter("approach_distance_m", 0.0)
         self.declare_parameter("goal_reached_tolerance_m", 0.12)
         self.declare_parameter("min_goal_separation_m", 0.15)
@@ -66,6 +69,9 @@ class BboxGoalNavigatorNode(Node):
         self._publish_mission_events = bool(
             self.get_parameter("publish_mission_events").value
         )
+        self._control_gripper_gate = bool(
+            self.get_parameter("control_gripper_gate").value
+        )
         self._nav_server_wait_sec = float(
             self.get_parameter("nav_server_wait_sec").value
         )
@@ -79,6 +85,7 @@ class BboxGoalNavigatorNode(Node):
         self._goal_sequence = 0
         self._active_goal_sequence: int | None = None
         self._nav_state = "idle"
+        self._gate_state = "closed"
         self._last_status: dict[str, Any] = {}
         self._warned_nav_server_unavailable = False
 
@@ -105,6 +112,11 @@ class BboxGoalNavigatorNode(Node):
         self._mission_event_pub = self.create_publisher(
             String,
             str(self.get_parameter("mission_event_topic").value),
+            10,
+        )
+        self._gripper_pub = self.create_publisher(
+            GripperCommand,
+            str(self.get_parameter("gripper_command_topic").value),
             10,
         )
         self.create_subscription(
@@ -171,11 +183,13 @@ class BboxGoalNavigatorNode(Node):
         self._publish_selected_target_pose(self._target_pose)
         goal = self._compute_approach_goal(self._robot_pose, self._target_pose)
         if goal is None:
+            self._send_gripper(GripperCommand.CLOSE, "target_goal_reached")
             self._publish_status("target_goal_reached")
             return
 
         self._publish_goal_pose(goal)
         if not self._send_nav2_goal:
+            self._send_gripper(GripperCommand.OPEN, "published_goal_only")
             self._publish_status("published_goal_only", goal=goal, target_age_sec=target_age)
             return
 
@@ -353,6 +367,7 @@ class BboxGoalNavigatorNode(Node):
         self._active_goal_sequence = sequence
         self._last_sent_goal = goal
         self._nav_state = "sending_goal"
+        self._send_gripper(GripperCommand.OPEN, "approach_started")
         self._publish_status("sending_goal", goal=goal)
 
         future = self._nav_client.send_goal_async(goal_msg)
@@ -368,12 +383,14 @@ class BboxGoalNavigatorNode(Node):
         except Exception as exc:  # noqa: BLE001 - report action-client failures.
             self._nav_state = "goal_send_failed"
             self._last_sent_goal = None
+            self._send_gripper(GripperCommand.CLOSE, "goal_send_failed")
             self._publish_status("goal_send_failed", error=str(exc), goal=goal)
             return
 
         if not goal_handle.accepted:
             self._nav_state = "goal_rejected"
             self._last_sent_goal = None
+            self._send_gripper(GripperCommand.CLOSE, "goal_rejected")
             self._publish_status("goal_rejected", goal=goal)
             return
 
@@ -392,6 +409,7 @@ class BboxGoalNavigatorNode(Node):
             result = future.result()
         except Exception as exc:  # noqa: BLE001 - report action-client failures.
             self._nav_state = "goal_result_failed"
+            self._send_gripper(GripperCommand.CLOSE, "goal_result_failed")
             self._publish_status("goal_result_failed", error=str(exc), goal=goal)
             return
 
@@ -400,6 +418,12 @@ class BboxGoalNavigatorNode(Node):
         self._publish_status(status_name, goal=goal)
         if result.status == GoalStatus.STATUS_SUCCEEDED:
             self._publish_mission_event("target_reached")
+            self._send_gripper(GripperCommand.CLOSE, "target_reached")
+        elif result.status in (
+            GoalStatus.STATUS_ABORTED,
+            GoalStatus.STATUS_CANCELED,
+        ):
+            self._send_gripper(GripperCommand.CLOSE, status_name)
 
     def _publish_goal_pose(self, goal: Pose2D) -> None:
         self._goal_pub.publish(self._make_pose_stamped(goal))
@@ -428,6 +452,20 @@ class BboxGoalNavigatorNode(Node):
         msg.data = event
         self._mission_event_pub.publish(msg)
 
+    def _send_gripper(self, command: int, reason: str) -> None:
+        if not self._control_gripper_gate:
+            return
+        desired_state = "open" if command == GripperCommand.OPEN else "closed"
+        if self._gate_state == desired_state:
+            return
+        msg = GripperCommand()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.command = command
+        msg.effort = 0.5
+        self._gripper_pub.publish(msg)
+        self._gate_state = desired_state
+        self.get_logger().info(f"gripper gate {desired_state}: {reason}")
+
     def _publish_status(self, state: str, **extra: Any) -> None:
         payload: dict[str, Any] = {
             "state": state,
@@ -435,6 +473,7 @@ class BboxGoalNavigatorNode(Node):
             "send_nav2_goal": self._send_nav2_goal,
             "target_selection_mode": self._target_selection_mode(),
             "tracked_target_count": len(self._tracked_targets),
+            "gate_state": self._gate_state,
         }
         if self._selected_target_distance_m is not None:
             payload["selected_target_distance_m"] = round(

@@ -14,7 +14,7 @@ import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, JointState
-from snu_robot_interfaces.msg import FourWheelCommand
+from snu_robot_interfaces.msg import FourWheelCommand, GripperCommand
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,8 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("u_shape_pwm_max", 120)
         self.declare_parameter("log_serial_writes", False)
         self.declare_parameter("u_shape_stream_encoders", True)
+        self.declare_parameter("gripper_command_topic", "/gripper/command")
+        self.declare_parameter("close_gate_on_start", True)
         self.declare_parameter("publish_imu", True)
         self.declare_parameter("imu_topic", "/imu")
         self.declare_parameter("imu_frame", "base_link")
@@ -89,6 +91,9 @@ class Esp32SerialBridge(Node):
         )
         self._u_shape_stream_encoders = bool(
             self.get_parameter("u_shape_stream_encoders").value
+        )
+        self._close_gate_on_start = bool(
+            self.get_parameter("close_gate_on_start").value
         )
         self._publish_imu = bool(self.get_parameter("publish_imu").value)
         self._imu_frame = str(self.get_parameter("imu_frame").value)
@@ -176,6 +181,12 @@ class Esp32SerialBridge(Node):
             self._on_command,
             10,
         )
+        self._gripper_subscription = self.create_subscription(
+            GripperCommand,
+            str(self.get_parameter("gripper_command_topic").value),
+            self._on_gripper_command,
+            10,
+        )
         read_rate_hz = float(self.get_parameter("read_rate_hz").value)
         self._read_timer = self.create_timer(1.0 / max(1.0, read_rate_hz), self._read)
         self._watchdog_timer = self.create_timer(0.05, self._stop_if_timed_out)
@@ -200,6 +211,16 @@ class Esp32SerialBridge(Node):
             )
             values.append(_clamp(normalized, -self._max_power, self._max_power))
         self._send_wheel_command(self._serial_command_prefix(), values)
+
+    def _on_gripper_command(self, msg: GripperCommand) -> None:
+        if msg.command == GripperCommand.OPEN:
+            self._send_gate_command("OPEN")
+        elif msg.command == GripperCommand.CLOSE:
+            self._send_gate_command("CLOSE")
+        elif msg.command == GripperCommand.STOP:
+            self._send_gate_command("CLOSE")
+        else:
+            self.get_logger().warn(f"Unsupported gripper command: {msg.command}")
 
     def _normalize(self, value: float, command_mode: int) -> float:
         if not isfinite(value):
@@ -263,6 +284,14 @@ class Esp32SerialBridge(Node):
             self._log_serial_write(line.strip())
             self._serial.write(line.encode("ascii"))
 
+    def _send_gate_command(self, action: str) -> None:
+        if self._esp32_protocol not in ("u_shape", "u_shape_pwm", "u_shape_robot"):
+            self.get_logger().warn(
+                f"Ignoring gate {action}; esp32_protocol={self._esp32_protocol!r}"
+            )
+            return
+        self._send_serial_line(f"GATE {action}\n")
+
     def _u_shape_set_command(self, values: list[float]) -> str:
         scale = self._u_shape_pwm_max / max(self._max_power, 1.0e-6)
         pwm = [
@@ -288,6 +317,9 @@ class Esp32SerialBridge(Node):
             self._serial.write(b"ENC ON\n")
         if self._publish_imu:
             self._serial.write(b"IMU ON\n")
+        if self._close_gate_on_start:
+            # Start every real run with the front gate closed before Nav2 moves.
+            self._send_serial_line("GATE CLOSE\n")
 
     def _log_dry_run(self, line: str) -> None:
         now_sec = self.get_clock().now().nanoseconds * 1.0e-9

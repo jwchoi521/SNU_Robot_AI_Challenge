@@ -1,4 +1,4 @@
-Panels:
+﻿Panels:
   - Class: rviz_common/Displays
     Name: Displays
   - Class: rviz_common/Views
@@ -86,6 +86,28 @@ Visualization Manager:
       Enabled: true
       Head Length: 0.08
       Head Radius: 0.06
+      Name: Target Object Pose
+      Shape: Arrow
+      Shaft Length: 0.12
+      Shaft Radius: 0.03
+      Topic:
+        Value: /target_object_pose_map
+    - Class: rviz_default_plugins/Pose
+      Color: 255; 80; 80
+      Enabled: true
+      Head Length: 0.08
+      Head Radius: 0.06
+      Name: Obstacle Object Pose
+      Shape: Arrow
+      Shaft Length: 0.12
+      Shaft Radius: 0.03
+      Topic:
+        Value: /obstacle_object_pose_map
+    - Class: rviz_default_plugins/Pose
+      Color: 80; 255; 120
+      Enabled: true
+      Head Length: 0.08
+      Head Radius: 0.06
       Name: BBox Goal Pose
       Shape: Arrow
       Shaft Length: 0.16
@@ -99,7 +121,23 @@ Visualization Manager:
       Size (m): 0.08
       Style: Spheres
       Topic:
-        Value: /semantic_obstacles
+        Value: /semantic_obstacle_cloud
+    - Alpha: 0.7
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Global Costmap
+      Topic:
+        Value: /global_costmap/costmap
+    - Alpha: 0.7
+      Class: rviz_default_plugins/Map
+      Color Scheme: costmap
+      Draw Behind: false
+      Enabled: true
+      Name: Local Costmap
+      Topic:
+        Value: /local_costmap/costmap
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -116,6 +154,10 @@ Visualization Manager:
     - Class: rviz_default_plugins/SetGoal
       Topic:
         Value: /goal_pose
+    - Class: rviz_default_plugins/PublishPoint
+      Topic:
+        Value: /clicked_point
+    - Class: nav2_rviz_plugins/GoalTool
   Transformation:
     Current:
       Class: rviz_default_plugins/TF

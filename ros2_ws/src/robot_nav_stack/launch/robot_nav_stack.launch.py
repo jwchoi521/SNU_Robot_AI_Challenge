@@ -1,4 +1,4 @@
-from launch import LaunchDescription
+﻿from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
@@ -38,6 +38,12 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("robot_pose_topic", default_value="/robot_pose_map"),
             DeclareLaunchArgument("object_pose_topic", default_value="/object_pose_map"),
+            # target은 목표점 토픽, obstacle은 costmap 입력 토픽으로 따로 보낸다.
+            DeclareLaunchArgument("target_object_pose_topic", default_value="/target_object_pose_map"),
+            DeclareLaunchArgument("obstacle_object_pose_topic", default_value="/obstacle_object_pose_map"),
+            DeclareLaunchArgument("target_shape", default_value=""),
+            DeclareLaunchArgument("target_fruit", default_value=""),
+            DeclareLaunchArgument("no_fruit_class", default_value="none"),
             DeclareLaunchArgument("map_frame", default_value="map"),
             DeclareLaunchArgument("odom_frame", default_value="odom"),
             DeclareLaunchArgument("base_frame", default_value="base_link"),
@@ -73,28 +79,26 @@ def generate_launch_description():
             DeclareLaunchArgument("latest_tf_max_extrapolation_sec", default_value="3.0"),
             DeclareLaunchArgument("pending_detection_timeout_sec", default_value="0.2"),
             DeclareLaunchArgument("max_pending_detections", default_value="3"),
+            DeclareLaunchArgument("stabilize_objects", default_value="true"),
+            DeclareLaunchArgument("object_association_radius_m", default_value="0.35"),
+            DeclareLaunchArgument("object_update_alpha", default_value="0.0"),
+            DeclareLaunchArgument("max_tracked_objects", default_value="20"),
             DeclareLaunchArgument("enable_distance_overlay", default_value="false"),
             DeclareLaunchArgument("enable_bbox_goal_navigation", default_value="false"),
             DeclareLaunchArgument("enable_semantic_obstacle_cloud", default_value="true"),
-            DeclareLaunchArgument("semantic_obstacle_ttl_sec", default_value="0.75"),
             DeclareLaunchArgument(
-                "semantic_obstacle_association_radius_m",
-                default_value="0.12",
+                "semantic_obstacle_topic",
+                default_value="/semantic_obstacle_cloud",
             ),
+            DeclareLaunchArgument("semantic_obstacle_radius_m", default_value="0.05"),
+            DeclareLaunchArgument("semantic_obstacle_point_spacing_m", default_value="0.01"),
+            DeclareLaunchArgument("semantic_obstacle_ttl_sec", default_value="15.0"),
             DeclareLaunchArgument(
-                "semantic_obstacle_exclude_radius_m",
-                default_value="0.35",
+                "semantic_obstacle_clear_costmaps_on_expiry",
+                default_value="true",
             ),
-            DeclareLaunchArgument(
-                "semantic_obstacle_exclude_max_age_sec",
-                default_value="2.0",
-            ),
-            DeclareLaunchArgument("bbox_goal_target_topic", default_value="/object_pose_map"),
+            DeclareLaunchArgument("bbox_goal_target_topic", default_value="/target_object_pose_map"),
             DeclareLaunchArgument("bbox_goal_pose_topic", default_value="/bbox_goal_pose"),
-            DeclareLaunchArgument(
-                "bbox_goal_selected_target_topic",
-                default_value="/bbox_goal_target_pose",
-            ),
             DeclareLaunchArgument(
                 "bbox_goal_status_topic",
                 default_value="/bbox_goal_navigator/status",
@@ -102,8 +106,11 @@ def generate_launch_description():
             DeclareLaunchArgument("bbox_goal_nav_action_name", default_value="navigate_to_pose"),
             DeclareLaunchArgument("bbox_goal_send_nav2_goal", default_value="true"),
             DeclareLaunchArgument("bbox_goal_publish_mission_events", default_value="true"),
+            DeclareLaunchArgument("bbox_goal_control_gripper_gate", default_value="true"),
+            DeclareLaunchArgument("gripper_command_topic", default_value="/gripper/command"),
+            # target 중심으로 들어가야 하므로 기본 접근 거리는 0m로 둔다.
             DeclareLaunchArgument("bbox_goal_approach_distance_m", default_value="0.0"),
-            DeclareLaunchArgument("bbox_goal_reached_tolerance_m", default_value="0.12"),
+            DeclareLaunchArgument("bbox_goal_reached_tolerance_m", default_value="0.05"),
             DeclareLaunchArgument("bbox_goal_min_separation_m", default_value="0.15"),
             DeclareLaunchArgument("bbox_goal_max_target_age_sec", default_value="1.5"),
             DeclareLaunchArgument("bbox_goal_target_selection_mode", default_value="nearest"),
@@ -192,6 +199,8 @@ def generate_launch_description():
                         "use_current_time_when_stamp_zero": True,
                         "stamp_mode": LaunchConfiguration("detection_stamp_mode"),
                         "max_header_stamp_offset_sec": _float_arg("max_header_stamp_offset_sec"),
+                        "classifications_topic": LaunchConfiguration("classifications_topic"),
+                        "no_fruit_class": LaunchConfiguration("no_fruit_class"),
                     }
                 ],
             ),
@@ -204,6 +213,15 @@ def generate_launch_description():
                         "model_path": LaunchConfiguration("bbox_model_path"),
                         "detections_topic": LaunchConfiguration("detections_topic"),
                         "object_pose_topic": LaunchConfiguration("object_pose_topic"),
+                        "target_object_pose_topic": LaunchConfiguration(
+                            "target_object_pose_topic"
+                        ),
+                        "obstacle_object_pose_topic": LaunchConfiguration(
+                            "obstacle_object_pose_topic"
+                        ),
+                        "target_shape": LaunchConfiguration("target_shape"),
+                        "target_fruit": LaunchConfiguration("target_fruit"),
+                        "no_fruit_class": LaunchConfiguration("no_fruit_class"),
                         "target_frame": LaunchConfiguration("map_frame"),
                         "source_frame": LaunchConfiguration("object_source_frame"),
                         "lidar_frame": LaunchConfiguration("lidar_frame"),
@@ -216,6 +234,12 @@ def generate_launch_description():
                             "pending_detection_timeout_sec"
                         ),
                         "max_pending_detections": _int_arg("max_pending_detections"),
+                        "stabilize_objects": _bool_arg("stabilize_objects"),
+                        "object_association_radius_m": _float_arg(
+                            "object_association_radius_m"
+                        ),
+                        "object_update_alpha": _float_arg("object_update_alpha"),
+                        "max_tracked_objects": _int_arg("max_tracked_objects"),
                     }
                 ],
             ),
@@ -232,7 +256,7 @@ def generate_launch_description():
                         "classifications_topic": LaunchConfiguration("classifications_topic"),
                         "annotated_topic": LaunchConfiguration("distance_annotated_topic"),
                         "cube_class_id": 0,
-                        "no_fruit_class": "none",
+                        "no_fruit_class": LaunchConfiguration("no_fruit_class"),
                     }
                 ],
             ),
@@ -257,15 +281,18 @@ def generate_launch_description():
                         "target_pose_topic": LaunchConfiguration("bbox_goal_target_topic"),
                         "robot_pose_topic": LaunchConfiguration("robot_pose_topic"),
                         "computed_goal_topic": LaunchConfiguration("bbox_goal_pose_topic"),
-                        "selected_target_pose_topic": LaunchConfiguration(
-                            "bbox_goal_selected_target_topic"
-                        ),
                         "status_topic": LaunchConfiguration("bbox_goal_status_topic"),
                         "nav_action_name": LaunchConfiguration("bbox_goal_nav_action_name"),
                         "map_frame": LaunchConfiguration("map_frame"),
                         "send_nav2_goal": _bool_arg("bbox_goal_send_nav2_goal"),
                         "publish_mission_events": _bool_arg(
                             "bbox_goal_publish_mission_events"
+                        ),
+                        "control_gripper_gate": _bool_arg(
+                            "bbox_goal_control_gripper_gate"
+                        ),
+                        "gripper_command_topic": LaunchConfiguration(
+                            "gripper_command_topic"
                         ),
                         "approach_distance_m": _float_arg(
                             "bbox_goal_approach_distance_m"
@@ -302,26 +329,21 @@ def generate_launch_description():
                 condition=IfCondition(LaunchConfiguration("enable_semantic_obstacle_cloud")),
                 parameters=[
                     {
-                        "input_topic": LaunchConfiguration("object_pose_topic"),
-                        "output_topic": "/semantic_obstacles",
-                        "exclude_pose_topic": LaunchConfiguration(
-                            "bbox_goal_selected_target_topic"
-                        ),
+                        # 선택된 target은 장애물 cloud에 넣지 않는다.
+                        "input_topic": LaunchConfiguration("obstacle_object_pose_topic"),
+                        "output_topic": LaunchConfiguration("semantic_obstacle_topic"),
                         "frame_id": LaunchConfiguration("map_frame"),
-                        "obstacle_radius_m": 0.04,
-                        "point_spacing_m": 0.02,
+                        "obstacle_radius_m": _float_arg("semantic_obstacle_radius_m"),
+                        "point_spacing_m": _float_arg("semantic_obstacle_point_spacing_m"),
                         "ttl_sec": _float_arg("semantic_obstacle_ttl_sec"),
-                        "association_radius_m": _float_arg(
-                            "semantic_obstacle_association_radius_m"
-                        ),
-                        "exclude_radius_m": _float_arg(
-                            "semantic_obstacle_exclude_radius_m"
-                        ),
-                        "exclude_pose_max_age_sec": _float_arg(
-                            "semantic_obstacle_exclude_max_age_sec"
-                        ),
-                        "position_smoothing_alpha": 0.35,
+                        "association_radius_m": 0.12,
+                        # ObjectLocalizer already stabilizes map positions.  Holding
+                        # the registered center avoids stale costmap trails.
+                        "position_smoothing_alpha": 0.0,
                         "publish_hz": 10.0,
+                        "clear_costmaps_on_expiry": _bool_arg(
+                            "semantic_obstacle_clear_costmaps_on_expiry"
+                        ),
                     }
                 ],
             ),
@@ -335,7 +357,9 @@ def generate_launch_description():
                         "robot_pose_topic": LaunchConfiguration("robot_pose_topic"),
                         "object_pose_topic": LaunchConfiguration("object_pose_topic"),
                         "approach_goal_topic": "/approach_goal",
-                        "semantic_cloud_topic": "/semantic_obstacles",
+                        "semantic_cloud_topic": LaunchConfiguration(
+                            "semantic_obstacle_topic"
+                        ),
                         "localizer_status_topic": "/four_wall_localizer/status",
                         "detections_topic": LaunchConfiguration("detections_topic"),
                         "debug_topic": LaunchConfiguration("mapping_debug_topic"),

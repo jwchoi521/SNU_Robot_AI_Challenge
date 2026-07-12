@@ -23,6 +23,9 @@ def generate_launch_description() -> LaunchDescription:
     log_serial_writes = ParameterValue(
         LaunchConfiguration("log_serial_writes"), value_type=bool
     )
+    close_gate_on_start = ParameterValue(
+        LaunchConfiguration("close_gate_on_start"), value_type=bool
+    )
     publish_imu = ParameterValue(LaunchConfiguration("publish_imu"), value_type=bool)
     imu_yaw_offset_deg = ParameterValue(
         LaunchConfiguration("imu_yaw_offset_deg"), value_type=float
@@ -58,6 +61,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("max_power", default_value="0.12"),
             DeclareLaunchArgument("u_shape_pwm_max", default_value="120"),
             DeclareLaunchArgument("log_serial_writes", default_value="false"),
+            DeclareLaunchArgument("gripper_command_topic", default_value="/gripper/command"),
+            DeclareLaunchArgument("close_gate_on_start", default_value="true"),
             DeclareLaunchArgument("publish_imu", default_value="true"),
             DeclareLaunchArgument("imu_topic", default_value="/imu"),
             DeclareLaunchArgument("imu_frame", default_value="base_link"),
@@ -86,6 +91,10 @@ def generate_launch_description() -> LaunchDescription:
                         "max_power": max_power,
                         "u_shape_pwm_max": u_shape_pwm_max,
                         "log_serial_writes": log_serial_writes,
+                        "gripper_command_topic": LaunchConfiguration(
+                            "gripper_command_topic"
+                        ),
+                        "close_gate_on_start": close_gate_on_start,
                         "publish_imu": publish_imu,
                         "imu_topic": LaunchConfiguration("imu_topic"),
                         "imu_frame": LaunchConfiguration("imu_frame"),

@@ -1,4 +1,4 @@
-from launch import LaunchDescription
+﻿from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -89,6 +89,11 @@ def generate_launch_description():
         "distance_annotated_topic": LaunchConfiguration("distance_annotated_topic"),
         "robot_pose_topic": LaunchConfiguration("robot_pose_topic"),
         "object_pose_topic": LaunchConfiguration("object_pose_topic"),
+        "target_object_pose_topic": LaunchConfiguration("target_object_pose_topic"),
+        "obstacle_object_pose_topic": LaunchConfiguration("obstacle_object_pose_topic"),
+        "target_shape": LaunchConfiguration("target_shape"),
+        "target_fruit": LaunchConfiguration("target_fruit"),
+        "no_fruit_class": LaunchConfiguration("no_fruit_class"),
         "map_frame": LaunchConfiguration("map_frame"),
         "odom_frame": LaunchConfiguration("odom_frame"),
         "base_frame": LaunchConfiguration("base_frame"),
@@ -130,32 +135,38 @@ def generate_launch_description():
         ),
         "pending_detection_timeout_sec": LaunchConfiguration("pending_detection_timeout_sec"),
         "max_pending_detections": LaunchConfiguration("max_pending_detections"),
+        "stabilize_objects": LaunchConfiguration("stabilize_objects"),
+        "object_association_radius_m": LaunchConfiguration("object_association_radius_m"),
+        "object_update_alpha": LaunchConfiguration("object_update_alpha"),
+        "max_tracked_objects": LaunchConfiguration("max_tracked_objects"),
         "enable_distance_overlay": LaunchConfiguration("enable_distance_overlay"),
         "enable_bbox_goal_navigation": LaunchConfiguration("enable_bbox_goal_navigation"),
         "enable_semantic_obstacle_cloud": LaunchConfiguration(
             "enable_semantic_obstacle_cloud"
         ),
+        "semantic_obstacle_topic": LaunchConfiguration("semantic_obstacle_topic"),
+        "semantic_obstacle_radius_m": LaunchConfiguration(
+            "semantic_obstacle_radius_m"
+        ),
+        "semantic_obstacle_point_spacing_m": LaunchConfiguration(
+            "semantic_obstacle_point_spacing_m"
+        ),
         "semantic_obstacle_ttl_sec": LaunchConfiguration("semantic_obstacle_ttl_sec"),
-        "semantic_obstacle_association_radius_m": LaunchConfiguration(
-            "semantic_obstacle_association_radius_m"
-        ),
-        "semantic_obstacle_exclude_radius_m": LaunchConfiguration(
-            "semantic_obstacle_exclude_radius_m"
-        ),
-        "semantic_obstacle_exclude_max_age_sec": LaunchConfiguration(
-            "semantic_obstacle_exclude_max_age_sec"
+        "semantic_obstacle_clear_costmaps_on_expiry": LaunchConfiguration(
+            "semantic_obstacle_clear_costmaps_on_expiry"
         ),
         "bbox_goal_target_topic": LaunchConfiguration("bbox_goal_target_topic"),
         "bbox_goal_pose_topic": LaunchConfiguration("bbox_goal_pose_topic"),
-        "bbox_goal_selected_target_topic": LaunchConfiguration(
-            "bbox_goal_selected_target_topic"
-        ),
         "bbox_goal_status_topic": LaunchConfiguration("bbox_goal_status_topic"),
         "bbox_goal_nav_action_name": LaunchConfiguration("bbox_goal_nav_action_name"),
         "bbox_goal_send_nav2_goal": LaunchConfiguration("bbox_goal_send_nav2_goal"),
         "bbox_goal_publish_mission_events": LaunchConfiguration(
             "bbox_goal_publish_mission_events"
         ),
+        "bbox_goal_control_gripper_gate": LaunchConfiguration(
+            "bbox_goal_control_gripper_gate"
+        ),
+        "gripper_command_topic": LaunchConfiguration("gripper_command_topic"),
         "bbox_goal_approach_distance_m": LaunchConfiguration(
             "bbox_goal_approach_distance_m"
         ),
@@ -219,6 +230,7 @@ def generate_launch_description():
         "use_sim_time": LaunchConfiguration("use_sim_time"),
         "autostart": LaunchConfiguration("nav2_autostart"),
         "params_file": LaunchConfiguration("nav2_params_file"),
+        "nav2_inflation_radius": LaunchConfiguration("nav2_inflation_radius"),
     }
     known_map_arguments = {
         "use_sim_time": LaunchConfiguration("use_sim_time"),
@@ -253,6 +265,8 @@ def generate_launch_description():
         ),
         "u_shape_pwm_max": LaunchConfiguration("esp32_u_shape_pwm_max"),
         "log_serial_writes": LaunchConfiguration("esp32_log_serial_writes"),
+        "gripper_command_topic": LaunchConfiguration("gripper_command_topic"),
+        "close_gate_on_start": LaunchConfiguration("esp32_close_gate_on_start"),
         "publish_imu": LaunchConfiguration("esp32_publish_imu"),
         "imu_topic": LaunchConfiguration("esp32_imu_topic"),
         "imu_frame": LaunchConfiguration("esp32_imu_frame"),
@@ -294,25 +308,19 @@ def generate_launch_description():
             DeclareLaunchArgument("enable_distance_overlay", default_value="false"),
             DeclareLaunchArgument("enable_bbox_goal_navigation", default_value="false"),
             DeclareLaunchArgument("enable_semantic_obstacle_cloud", default_value="true"),
-            DeclareLaunchArgument("semantic_obstacle_ttl_sec", default_value="0.75"),
             DeclareLaunchArgument(
-                "semantic_obstacle_association_radius_m",
-                default_value="0.12",
+                "semantic_obstacle_topic",
+                default_value="/semantic_obstacle_cloud",
             ),
+            DeclareLaunchArgument("semantic_obstacle_radius_m", default_value="0.05"),
+            DeclareLaunchArgument("semantic_obstacle_point_spacing_m", default_value="0.01"),
+            DeclareLaunchArgument("semantic_obstacle_ttl_sec", default_value="15.0"),
             DeclareLaunchArgument(
-                "semantic_obstacle_exclude_radius_m",
-                default_value="0.35",
+                "semantic_obstacle_clear_costmaps_on_expiry",
+                default_value="true",
             ),
-            DeclareLaunchArgument(
-                "semantic_obstacle_exclude_max_age_sec",
-                default_value="2.0",
-            ),
-            DeclareLaunchArgument("bbox_goal_target_topic", default_value="/object_pose_map"),
+            DeclareLaunchArgument("bbox_goal_target_topic", default_value="/target_object_pose_map"),
             DeclareLaunchArgument("bbox_goal_pose_topic", default_value="/bbox_goal_pose"),
-            DeclareLaunchArgument(
-                "bbox_goal_selected_target_topic",
-                default_value="/bbox_goal_target_pose",
-            ),
             DeclareLaunchArgument(
                 "bbox_goal_status_topic",
                 default_value="/bbox_goal_navigator/status",
@@ -320,8 +328,10 @@ def generate_launch_description():
             DeclareLaunchArgument("bbox_goal_nav_action_name", default_value="navigate_to_pose"),
             DeclareLaunchArgument("bbox_goal_send_nav2_goal", default_value="true"),
             DeclareLaunchArgument("bbox_goal_publish_mission_events", default_value="true"),
+            DeclareLaunchArgument("bbox_goal_control_gripper_gate", default_value="true"),
+            DeclareLaunchArgument("gripper_command_topic", default_value="/gripper/command"),
             DeclareLaunchArgument("bbox_goal_approach_distance_m", default_value="0.0"),
-            DeclareLaunchArgument("bbox_goal_reached_tolerance_m", default_value="0.12"),
+            DeclareLaunchArgument("bbox_goal_reached_tolerance_m", default_value="0.05"),
             DeclareLaunchArgument("bbox_goal_min_separation_m", default_value="0.15"),
             DeclareLaunchArgument("bbox_goal_max_target_age_sec", default_value="1.5"),
             DeclareLaunchArgument("bbox_goal_target_selection_mode", default_value="nearest"),
@@ -335,8 +345,11 @@ def generate_launch_description():
             DeclareLaunchArgument("enable_slam", default_value="false"),
             DeclareLaunchArgument("enable_base_odometry", default_value="false"),
             DeclareLaunchArgument("enable_ekf", default_value="false"),
+            DeclareLaunchArgument("enable_camera", default_value="true"),
             DeclareLaunchArgument("nav2_autostart", default_value="true"),
             DeclareLaunchArgument("nav2_params_file", default_value=nav2_params_default),
+            # 실험 중 장애물 회피 여유를 launch 옵션으로 바로 조절한다.
+            DeclareLaunchArgument("nav2_inflation_radius", default_value="0.16"),
             DeclareLaunchArgument("enable_known_map_server", default_value="false"),
             DeclareLaunchArgument("known_map", default_value=known_map_default),
             DeclareLaunchArgument("slam_params_file", default_value=slam_params_default),
@@ -354,6 +367,7 @@ def generate_launch_description():
             DeclareLaunchArgument("esp32_encoder_counts_per_revolution", default_value="890.3"),
             DeclareLaunchArgument("esp32_u_shape_pwm_max", default_value="120"),
             DeclareLaunchArgument("esp32_log_serial_writes", default_value="false"),
+            DeclareLaunchArgument("esp32_close_gate_on_start", default_value="true"),
             DeclareLaunchArgument("esp32_publish_imu", default_value="true"),
             DeclareLaunchArgument("esp32_imu_topic", default_value="/imu"),
             DeclareLaunchArgument("esp32_imu_frame", default_value="base_link"),
@@ -372,6 +386,12 @@ def generate_launch_description():
             DeclareLaunchArgument("detections_topic", default_value="/detections_json"),
             DeclareLaunchArgument("robot_pose_topic", default_value="/robot_pose_map"),
             DeclareLaunchArgument("object_pose_topic", default_value="/object_pose_map"),
+            DeclareLaunchArgument("target_object_pose_topic", default_value="/target_object_pose_map"),
+            DeclareLaunchArgument("obstacle_object_pose_topic", default_value="/obstacle_object_pose_map"),
+            # 예: target_shape:=cube_any target_fruit:=apple 이면 apple cube만 목표로 본다.
+            DeclareLaunchArgument("target_shape", default_value=""),
+            DeclareLaunchArgument("target_fruit", default_value=""),
+            DeclareLaunchArgument("no_fruit_class", default_value="none"),
             DeclareLaunchArgument("map_frame", default_value="map"),
             DeclareLaunchArgument("odom_frame", default_value="odom"),
             DeclareLaunchArgument("base_frame", default_value="base_link"),
@@ -420,6 +440,10 @@ def generate_launch_description():
             DeclareLaunchArgument("latest_tf_max_extrapolation_sec", default_value="3.0"),
             DeclareLaunchArgument("pending_detection_timeout_sec", default_value="0.2"),
             DeclareLaunchArgument("max_pending_detections", default_value="3"),
+            DeclareLaunchArgument("stabilize_objects", default_value="true"),
+            DeclareLaunchArgument("object_association_radius_m", default_value="0.35"),
+            DeclareLaunchArgument("object_update_alpha", default_value="0.0"),
+            DeclareLaunchArgument("max_tracked_objects", default_value="20"),
             DeclareLaunchArgument("enable_mapping_debug", default_value="true"),
             DeclareLaunchArgument("mapping_debug_period_sec", default_value="1.0"),
             DeclareLaunchArgument(
@@ -434,6 +458,7 @@ def generate_launch_description():
                 "robot_object_detector_ros",
                 "jetson_shape_fruit.launch.py",
                 detector_arguments,
+                condition=IfCondition(LaunchConfiguration("enable_camera")),
             ),
             _include_launch(
                 "sllidar_ros2",

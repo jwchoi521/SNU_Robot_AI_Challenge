@@ -22,8 +22,8 @@ controller_server:
     goal_checker_plugins: ["goal_checker"]
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.12
-      yaw_goal_tolerance: 0.17
+      xy_goal_tolerance: 0.05
+      yaw_goal_tolerance: 0.05
       stateful: true
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
@@ -46,8 +46,8 @@ local_costmap:
       width: 5
       height: 5
       resolution: 0.05
-      # Measured outer chassis footprint: length 0.32m, width 0.33m.
-      footprint: "[[0.16, 0.165], [0.16, -0.165], [-0.16, -0.165], [-0.16, 0.165]]"
+      # U-shaped chassis footprint used by the object-capture tests.
+      footprint: "[[0.16, 0.165], [-0.16, 0.165], [-0.16, -0.165], [0.16, -0.165], [0.16, -0.08], [0.0, -0.08], [0.0, 0.08], [0.16, 0.08]]"
       plugins: ["obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -62,14 +62,14 @@ local_costmap:
           topic: /semantic_obstacles
           max_obstacle_height: 1.0
           min_obstacle_height: -0.1
-          obstacle_max_range: 6.0
-          raytrace_max_range: 6.0
+          obstacle_max_range: 10.0
+          raytrace_max_range: 10.0
           clearing: false
           marking: true
           data_type: "PointCloud2"
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.25
+        inflation_radius: 0.16
         cost_scaling_factor: 3.0
 
 global_costmap:
@@ -80,8 +80,8 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       resolution: 0.05
-      # Measured outer chassis footprint: length 0.32m, width 0.33m.
-      footprint: "[[0.16, 0.165], [0.16, -0.165], [-0.16, -0.165], [-0.16, 0.165]]"
+      # U-shaped chassis footprint used by the object-capture tests.
+      footprint: "[[0.16, 0.165], [-0.16, 0.165], [-0.16, -0.165], [0.16, -0.165], [0.16, -0.08], [0.0, -0.08], [0.0, 0.08], [0.16, 0.08]]"
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
@@ -98,12 +98,12 @@ global_costmap:
           topic: /semantic_obstacles
           max_obstacle_height: 1.0
           min_obstacle_height: -0.1
-          obstacle_max_range: 8.0
-          raytrace_max_range: 8.0
+          obstacle_max_range: 10.0
+          raytrace_max_range: 10.0
           clearing: false
           marking: true
           data_type: "PointCloud2"
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        inflation_radius: 0.30
+        inflation_radius: 0.16
         cost_scaling_factor: 3.0

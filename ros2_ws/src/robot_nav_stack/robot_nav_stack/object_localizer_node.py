@@ -22,6 +22,15 @@ class PendingLocalization:
     enqueued_sec: float
 
 
+@dataclass
+class TrackedMapObject:
+    object_type: str
+    pose: Pose2D
+    first_seen_sec: float
+    last_seen_sec: float
+    seen_count: int = 1
+
+
 class ObjectLocalizerNode(Node):
     """Convert camera detections into map-frame object poses.
 
@@ -35,6 +44,12 @@ class ObjectLocalizerNode(Node):
         self.declare_parameter("model_path", "")
         self.declare_parameter("detections_topic", "/detections_json")
         self.declare_parameter("object_pose_topic", "/object_pose_map")
+        # 잡아야 할 target과 피해야 할 obstacle을 서로 다른 토픽으로 분리한다.
+        self.declare_parameter("target_object_pose_topic", "/target_object_pose_map")
+        self.declare_parameter("obstacle_object_pose_topic", "/obstacle_object_pose_map")
+        self.declare_parameter("target_shape", "")
+        self.declare_parameter("target_fruit", "")
+        self.declare_parameter("no_fruit_class", "none")
         self.declare_parameter("target_frame", "map")
         self.declare_parameter("source_frame", "")
         self.declare_parameter("lidar_frame", "lidar")
@@ -44,6 +59,10 @@ class ObjectLocalizerNode(Node):
         self.declare_parameter("pending_detection_timeout_sec", 0.5)
         self.declare_parameter("pending_tf_retry_period_sec", 0.05)
         self.declare_parameter("max_pending_detections", 10)
+        self.declare_parameter("stabilize_objects", True)
+        self.declare_parameter("object_association_radius_m", 0.35)
+        self.declare_parameter("object_update_alpha", 0.0)
+        self.declare_parameter("max_tracked_objects", 20)
 
         model_path = self.get_parameter("model_path").get_parameter_value().string_value
         if not model_path:
@@ -66,6 +85,7 @@ class ObjectLocalizerNode(Node):
         )
         self.pending_detections: list[PendingLocalization] = []
         self._warned_pending_tf_wait = False
+        self.tracked_objects: list[TrackedMapObject] = []
         self.estimator = HomographyResidualBboxEstimator(model_path)
 
         self.tf_buffer = Buffer()
@@ -73,10 +93,22 @@ class ObjectLocalizerNode(Node):
 
         detections_topic = str(self.get_parameter("detections_topic").value)
         object_pose_topic = str(self.get_parameter("object_pose_topic").value)
+        target_object_pose_topic = str(self.get_parameter("target_object_pose_topic").value)
+        obstacle_object_pose_topic = str(self.get_parameter("obstacle_object_pose_topic").value)
+        self.target_shape = self._clean_name(str(self.get_parameter("target_shape").value))
+        self.target_fruit = self._clean_name(str(self.get_parameter("target_fruit").value))
+        self.no_fruit_class = self._clean_name(str(self.get_parameter("no_fruit_class").value))
         self.sub = self.create_subscription(String, detections_topic, self.on_detection_json, 10)
         self.pub = self.create_publisher(PoseStamped, object_pose_topic, 10)
+        self.target_pub = self.create_publisher(PoseStamped, target_object_pose_topic, 10)
+        self.obstacle_pub = self.create_publisher(PoseStamped, obstacle_object_pose_topic, 10)
         retry_period = max(0.01, float(self.get_parameter("pending_tf_retry_period_sec").value))
         self.retry_timer = self.create_timer(retry_period, self._retry_pending_detections)
+        self.get_logger().info(
+            f"object pose split: all={object_pose_topic}, target={target_object_pose_topic}, "
+            f"obstacle={obstacle_object_pose_topic}, target_shape={self.target_shape!r}, "
+            f"target_fruit={self.target_fruit!r}"
+        )
 
     def on_detection_json(self, msg: String) -> None:
         try:
@@ -101,6 +133,7 @@ class ObjectLocalizerNode(Node):
         self._publish_object_pose(detection, object_map)
 
     def _publish_object_pose(self, detection: Detection, object_map: Pose2D) -> None:
+        object_map = self._stabilize_object_pose(detection, object_map)
         out = PoseStamped()
         out.header.frame_id = self.target_frame
         out.header.stamp = Time(seconds=detection.stamp).to_msg()
@@ -113,6 +146,79 @@ class ObjectLocalizerNode(Node):
         out.pose.orientation.z = qz
         out.pose.orientation.w = qw
         self.pub.publish(out)
+        # target은 Nav2 목표 후보로, obstacle은 semantic costmap 입력으로 보낸다.
+        role = self._detection_role(detection)
+        if role in ("unfiltered", "target"):
+            self.target_pub.publish(out)
+        if role in ("unfiltered", "obstacle"):
+            self.obstacle_pub.publish(out)
+
+    def _stabilize_object_pose(self, detection: Detection, object_map: Pose2D) -> Pose2D:
+        if not bool(self.get_parameter("stabilize_objects").value):
+            return object_map
+
+        now_sec = self._now_sec()
+        association_radius = max(
+            0.0,
+            float(self.get_parameter("object_association_radius_m").value),
+        )
+        object_key = self._tracking_key(detection)
+        best_track: TrackedMapObject | None = None
+        best_distance = association_radius
+        for track in self.tracked_objects:
+            if track.object_type != object_key:
+                continue
+            distance = self._distance_xy(track.pose, object_map)
+            if distance <= best_distance:
+                best_distance = distance
+                best_track = track
+
+        if best_track is None:
+            track = TrackedMapObject(
+                object_type=object_key,
+                pose=object_map,
+                first_seen_sec=now_sec,
+                last_seen_sec=now_sec,
+            )
+            self.tracked_objects.append(track)
+            self._trim_tracked_objects()
+            return track.pose
+
+        alpha = min(
+            1.0,
+            max(0.0, float(self.get_parameter("object_update_alpha").value)),
+        )
+        if alpha > 0.0:
+            best_track.pose = Pose2D(
+                x=(1.0 - alpha) * best_track.pose.x + alpha * object_map.x,
+                y=(1.0 - alpha) * best_track.pose.y + alpha * object_map.y,
+                theta=wrap_angle(
+                    best_track.pose.theta
+                    + alpha * wrap_angle(object_map.theta - best_track.pose.theta)
+                ),
+            )
+        best_track.last_seen_sec = now_sec
+        best_track.seen_count += 1
+        return best_track.pose
+
+    # cube_any 안에서 fruit 종류가 다른 물체가 같은 track으로 섞이지 않게 한다.
+    def _tracking_key(self, detection: Detection) -> str:
+        fruit_kind = self._clean_name(detection.fruit_kind)
+        object_type = self._clean_name(detection.object_type)
+        return f"{object_type}:{fruit_kind}" if fruit_kind else object_type
+
+    def _trim_tracked_objects(self) -> None:
+        max_tracked = max(1, int(self.get_parameter("max_tracked_objects").value))
+        if len(self.tracked_objects) <= max_tracked:
+            return
+        self.tracked_objects.sort(key=lambda track: track.last_seen_sec, reverse=True)
+        del self.tracked_objects[max_tracked:]
+
+    @staticmethod
+    def _distance_xy(a: Pose2D, b: Pose2D) -> float:
+        import math
+
+        return math.hypot(a.x - b.x, a.y - b.y)
 
     def _retry_pending_detections(self) -> None:
         if not self.pending_detections:
@@ -191,7 +297,37 @@ class ObjectLocalizerNode(Node):
             ),
             object_type=str(payload["object_type"]),
             confidence=float(payload.get("confidence", 1.0)),
+            class_id=int(payload.get("class_id", -1)),
+            fruit_kind=self._clean_name(str(payload.get("fruit_kind", ""))),
+            fruit_confidence=float(payload.get("fruit_confidence", 0.0)),
         )
+
+    # launch 옵션 target_shape/target_fruit 기준으로 target/obstacle/unknown을 결정한다.
+    def _detection_role(self, detection: Detection) -> str:
+        if not self.target_shape and not self.target_fruit:
+            return "unfiltered"
+
+        object_type = self._clean_name(detection.object_type)
+        fruit_kind = self._clean_name(detection.fruit_kind)
+
+        if self.target_shape and object_type != self.target_shape:
+            return "obstacle"
+
+        if self.target_fruit and (not self.target_shape or self.target_shape == "cube_any"):
+            # cube_any 미션에서는 fruit 미확정 cube도 집을 후보(target)로 둔다.
+            if self.target_shape == "cube_any" and (
+                not fruit_kind or fruit_kind == self.no_fruit_class
+            ):
+                return "target"
+            if not fruit_kind or fruit_kind == self.no_fruit_class:
+                return "unknown"
+            return "target" if fruit_kind == self.target_fruit else "obstacle"
+
+        return "target"
+
+    @staticmethod
+    def _clean_name(value: str) -> str:
+        return value.strip().lower()
 
     def _transform_source_to_map(self, object_source: Pose2D, stamp: float) -> Pose2D:
         transform = self._lookup_map_source_transform(stamp)

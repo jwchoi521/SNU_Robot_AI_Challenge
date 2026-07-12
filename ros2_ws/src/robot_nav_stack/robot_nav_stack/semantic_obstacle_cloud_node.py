@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import math
 import struct
@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import rclpy
 from geometry_msgs.msg import PoseStamped
+from nav2_msgs.srv import ClearEntireCostmap
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2, PointField
 
@@ -24,7 +25,7 @@ class SemanticObstacleCloudNode(Node):
 
     Nav2 costmap obstacle layers naturally accept LaserScan/PointCloud2 data.
     Our perception stack produces object poses, so this node expands each pose
-    into a small disk of points and publishes it as `/semantic_obstacles`.
+    into a small disk of points and publishes it as `/semantic_obstacle_cloud`.
 
     Use `clearing: false` for this source in Nav2. Object detections are sparse,
     so they are good at marking obstacles but should not clear free space.
@@ -32,66 +33,62 @@ class SemanticObstacleCloudNode(Node):
 
     def __init__(self) -> None:
         super().__init__("semantic_obstacle_cloud_node")
-        self.declare_parameter("input_topic", "/object_pose_map")
-        self.declare_parameter("output_topic", "/semantic_obstacles")
-        self.declare_parameter("exclude_pose_topic", "/bbox_goal_target_pose")
+        # target이 아닌 물체만 입력받아 Nav2 costmap 장애물로 만든다.
+        self.declare_parameter("input_topic", "/obstacle_object_pose_map")
+        self.declare_parameter("output_topic", "/semantic_obstacle_cloud")
         self.declare_parameter("frame_id", "map")
-        self.declare_parameter("obstacle_radius_m", 0.04)
-        self.declare_parameter("point_spacing_m", 0.02)
-        self.declare_parameter("ttl_sec", 0.75)
+        self.declare_parameter("obstacle_radius_m", 0.05)
+        self.declare_parameter("point_spacing_m", 0.01)
+        self.declare_parameter("ttl_sec", 15.0)
         self.declare_parameter("association_radius_m", 0.12)
-        self.declare_parameter("exclude_radius_m", 0.35)
-        self.declare_parameter("exclude_pose_max_age_sec", 2.0)
         self.declare_parameter("position_smoothing_alpha", 0.35)
         self.declare_parameter("publish_hz", 10.0)
         self.declare_parameter("z_m", 0.05)
+        self.declare_parameter("clear_costmaps_on_expiry", True)
+        self.declare_parameter("clear_costmap_cooldown_sec", 1.0)
+        self.declare_parameter(
+            "local_clear_service",
+            "/local_costmap/clear_entirely_local_costmap",
+        )
+        self.declare_parameter(
+            "global_clear_service",
+            "/global_costmap/clear_entirely_global_costmap",
+        )
 
         self.frame_id = str(self.get_parameter("frame_id").value)
         self.obstacles: list[TimedObstacle] = []
-        self.excluded_pose: tuple[float, float, float] | None = None
-        self._warned_exclude_frame = False
+        self._last_clear_request_sec = float("-inf")
+        self._warned_clear_services_unavailable = False
+        self._clear_futures = []
 
         input_topic = str(self.get_parameter("input_topic").value)
         output_topic = str(self.get_parameter("output_topic").value)
-        exclude_topic = str(self.get_parameter("exclude_pose_topic").value).strip()
         publish_hz = float(self.get_parameter("publish_hz").value)
 
         self.sub = self.create_subscription(PoseStamped, input_topic, self.on_object_pose, 20)
-        self.exclude_sub = (
-            self.create_subscription(PoseStamped, exclude_topic, self.on_exclude_pose, 10)
-            if exclude_topic
-            else None
-        )
         self.pub = self.create_publisher(PointCloud2, output_topic, 10)
+        self._clear_clients = [
+            self.create_client(
+                ClearEntireCostmap,
+                str(self.get_parameter("local_clear_service").value),
+            ),
+            self.create_client(
+                ClearEntireCostmap,
+                str(self.get_parameter("global_clear_service").value),
+            ),
+        ]
+        self._pending_clear_client_indices: set[int] = set()
         self.timer = self.create_timer(1.0 / max(publish_hz, 0.1), self.publish_cloud)
 
-    def on_exclude_pose(self, msg: PoseStamped) -> None:
-        if msg.header.frame_id and msg.header.frame_id != self.frame_id:
-            if not self._warned_exclude_frame:
-                self.get_logger().warn(
-                    "ignoring semantic obstacle exclusion pose in frame "
-                    f"{msg.header.frame_id!r}; expected {self.frame_id!r}"
-                )
-                self._warned_exclude_frame = True
-            return
-
-        stamp = self.get_clock().now().nanoseconds * 1e-9
-        self.excluded_pose = (
-            float(msg.pose.position.x),
-            float(msg.pose.position.y),
-            stamp,
-        )
-        self._prune()
-
     def on_object_pose(self, msg: PoseStamped) -> None:
-        stamp = self.get_clock().now().nanoseconds * 1e-9
+        stamp = self._stamp_to_sec(msg.header.stamp)
+        if stamp <= 0.0:
+            stamp = self.get_clock().now().nanoseconds * 1e-9
 
-        self._prune()
+        if self._prune():
+            self._schedule_costmap_clear()
         x = float(msg.pose.position.x)
         y = float(msg.pose.position.y)
-        if self._is_excluded(x, y, stamp):
-            return
-
         z = float(self.get_parameter("z_m").value)
         match = self._nearest_obstacle(x, y)
         if match is not None:
@@ -113,7 +110,11 @@ class SemanticObstacleCloudNode(Node):
         )
 
     def publish_cloud(self) -> None:
-        self._prune()
+        if self._prune():
+            self._schedule_costmap_clear()
+        elif self._pending_clear_client_indices:
+            self._request_costmap_clear()
+        self._clear_futures = [future for future in self._clear_futures if not future.done()]
         now_msg = self.get_clock().now().to_msg()
         points: list[tuple[float, float, float]] = []
         radius = float(self.get_parameter("obstacle_radius_m").value)
@@ -127,48 +128,69 @@ class SemanticObstacleCloudNode(Node):
         cloud.header.frame_id = self.frame_id
         self.pub.publish(cloud)
 
-    def _prune(self) -> None:
+    def _prune(self) -> bool:
         now = self.get_clock().now().nanoseconds * 1e-9
         ttl = float(self.get_parameter("ttl_sec").value)
-        self.obstacles = [
-            obs
-            for obs in self.obstacles
-            if now - obs.stamp_sec <= ttl and not self._is_excluded(obs.x, obs.y, now)
-        ]
+        if ttl <= 0.0:
+            return False
+        before = len(self.obstacles)
+        self.obstacles = [obs for obs in self.obstacles if now - obs.stamp_sec <= ttl]
+        return len(self.obstacles) != before
+
+    def _schedule_costmap_clear(self) -> None:
+        if not bool(self.get_parameter("clear_costmaps_on_expiry").value):
+            return
+        self._pending_clear_client_indices.update(range(len(self._clear_clients)))
+        self._request_costmap_clear()
+
+    def _request_costmap_clear(self) -> None:
+        if not self._pending_clear_client_indices:
+            return
+
+        now = self.get_clock().now().nanoseconds * 1e-9
+        cooldown = max(
+            0.0,
+            float(self.get_parameter("clear_costmap_cooldown_sec").value),
+        )
+        if now - self._last_clear_request_sec < cooldown:
+            return
+
+        requested = False
+        for index in list(self._pending_clear_client_indices):
+            client = self._clear_clients[index]
+            if client.service_is_ready():
+                self._clear_futures.append(client.call_async(ClearEntireCostmap.Request()))
+                self._pending_clear_client_indices.discard(index)
+                requested = True
+
+        if requested:
+            self._last_clear_request_sec = now
+            self.get_logger().info("clearing Nav2 costmaps after semantic obstacle expiry")
+        if not self._pending_clear_client_indices:
+            self._warned_clear_services_unavailable = False
+        elif not self._warned_clear_services_unavailable:
+            self._warned_clear_services_unavailable = True
+            self.get_logger().warn(
+                "semantic obstacle expired, but Nav2 clear-costmap services are unavailable"
+            )
 
     def _nearest_obstacle(self, x: float, y: float) -> TimedObstacle | None:
         association_radius = max(0.0, float(self.get_parameter("association_radius_m").value))
         best: TimedObstacle | None = None
         best_dist = association_radius
         for obstacle in self.obstacles:
-            if self._is_excluded(obstacle.x, obstacle.y):
-                continue
             dist = math.hypot(x - obstacle.x, y - obstacle.y)
             if dist <= best_dist:
                 best = obstacle
                 best_dist = dist
         return best
 
-    def _is_excluded(self, x: float, y: float, now_sec: float | None = None) -> bool:
-        if self.excluded_pose is None:
-            return False
-        radius = max(0.0, float(self.get_parameter("exclude_radius_m").value))
-        if radius <= 0.0:
-            return False
-        now = now_sec
-        if now is None:
-            now = self.get_clock().now().nanoseconds * 1e-9
-        exclude_x, exclude_y, exclude_stamp = self.excluded_pose
-        max_age = float(self.get_parameter("exclude_pose_max_age_sec").value)
-        if max_age > 0.0 and now - exclude_stamp > max_age:
-            return False
-        return math.hypot(x - exclude_x, y - exclude_y) <= radius
-
     @staticmethod
     def _clamp(value: float, low: float, high: float) -> float:
         return max(low, min(high, value))
 
     @staticmethod
+    # 물체 중심을 반지름만큼 점 구름으로 펼쳐 Nav2가 실제 크기의 장애물로 보게 한다.
     def _disk_points(
         cx: float,
         cy: float,
@@ -176,15 +198,32 @@ class SemanticObstacleCloudNode(Node):
         radius: float,
         spacing: float,
     ) -> list[tuple[float, float, float]]:
-        spacing = max(spacing, 0.02)
+        radius = max(0.0, radius)
+        spacing = max(spacing, 0.005)
         cells = int(math.ceil(radius / spacing))
-        points = [(cx, cy, z)]
+        points: list[tuple[float, float, float]] = []
         for iy in range(-cells, cells + 1):
             for ix in range(-cells, cells + 1):
                 x = cx + ix * spacing
                 y = cy + iy * spacing
                 if math.hypot(x - cx, y - cy) <= radius:
                     points.append((x, y, z))
+
+        # Include the exact circumference.  A grid whose spacing does not divide
+        # the radius otherwise represents 5 cm as only about 4-4.5 cm.
+        if radius > 0.0:
+            samples = max(16, int(math.ceil(2.0 * math.pi * radius / spacing)))
+            for index in range(samples):
+                angle = 2.0 * math.pi * index / samples
+                points.append(
+                    (
+                        cx + radius * math.cos(angle),
+                        cy + radius * math.sin(angle),
+                        z,
+                    )
+                )
+        elif not points:
+            points.append((cx, cy, z))
         return points
 
     def _make_cloud(self, points: list[tuple[float, float, float]]) -> PointCloud2:
@@ -202,6 +241,10 @@ class SemanticObstacleCloudNode(Node):
         cloud.is_dense = True
         cloud.data = b"".join(struct.pack("<fff", *point) for point in points)
         return cloud
+
+    @staticmethod
+    def _stamp_to_sec(stamp) -> float:
+        return float(stamp.sec) + float(stamp.nanosec) * 1e-9
 
 
 def main() -> None:
