@@ -33,9 +33,9 @@ controller_server:
 
     FollowPath:
       plugin: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
-      desired_linear_vel: 0.16
-      lookahead_dist: 0.30
-      min_lookahead_dist: 0.15
+      desired_linear_vel: 0.10
+      lookahead_dist: 0.20
+      min_lookahead_dist: 0.10
       max_lookahead_dist: 0.55
       lookahead_time: 1.5
       rotate_to_heading_angular_vel: 1.5
@@ -50,7 +50,7 @@ controller_server:
       regulated_linear_scaling_min_radius: 0.6
       regulated_linear_scaling_min_speed: 0.05
       use_rotate_to_heading: true
-      rotate_to_heading_min_angle: 0.785
+      rotate_to_heading_min_angle: 0.25
       max_angular_accel: 3.0
       max_robot_pose_search_dist: 10.0
 
