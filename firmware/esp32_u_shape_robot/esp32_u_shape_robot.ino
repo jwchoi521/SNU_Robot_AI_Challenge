@@ -101,6 +101,17 @@ const int SET1_MAX_CORRECTION = 90;
 const float SET1_INTEGRAL_LIMIT = 250.0f;
 const float SET1_MAX_TARGET_CPS = 2834.0f;  // 20 rad/s * 141.7 counts/rad.
 const uint32_t SET1_DEBUG_INTERVAL_MS = 250;
+const bool SET1_IMU_YAW_FEEDBACK_ENABLED = true;
+const float SET1_WHEEL_RADIUS_M = 0.033f;
+const float SET1_TRACK_WIDTH_M = 0.30f;
+const float SET1_ENCODER_COUNTS_PER_REV = 890.3f;
+const float SET1_IMU_YAW_RATE_SIGN = 1.0f;
+const uint32_t SET1_IMU_YAW_RATE_TIMEOUT_MS = 250;
+const float SET1_YAW_FEEDBACK_KP = 0.6f;
+const float SET1_YAW_FEEDBACK_KI = 0.0f;
+const float SET1_YAW_FEEDBACK_INTEGRAL_LIMIT = 0.5f;
+const float SET1_YAW_FEEDBACK_MAX_CORRECTION_RAD_S = 0.35f;
+const float SET1_YAW_RATE_ERROR_DEADBAND_RAD_S = 0.02f;
 
 const int I2C_SDA_PIN = 21;
 const int I2C_SCL_PIN = 22;
@@ -145,6 +156,7 @@ uint32_t nextSet1DebugMs = 0;
 float set1TargetCps[MOTOR_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f};
 float set1Integral[MOTOR_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f};
 int32_t set1LastTicks[MOTOR_COUNT] = {0, 0, 0, 0};
+float set1YawFeedbackIntegral = 0.0f;
 bool straightRunActive = false;
 uint32_t straightRunStopAtMs = 0;
 uint32_t nextStraightControlMs = 0;
@@ -161,9 +173,15 @@ bool imuReady = false;
 bool imuStreaming = false;
 bool imuRequested = false;
 bool haveImuSample = false;
+bool haveImuYawRateReference = false;
+bool haveImuYawRateSample = false;
 uint32_t nextImuPrintMs = 0;
+uint32_t latestImuSampleMs = 0;
+uint32_t lastYawRateUs = 0;
 float yawZeroRad = 0.0f;
 float latestYawRad = 0.0f;
+float latestImuWzRadS = 0.0f;
+float lastYawRateYawRad = 0.0f;
 float latestPitchRad = 0.0f;
 float latestRollRad = 0.0f;
 float latestQi = 0.0f;
@@ -381,6 +399,7 @@ void resetSet1VelocityControlState() {
   lastSet1ControlMs = 0;
   nextSet1ControlMs = 0;
   nextSet1DebugMs = 0;
+  set1YawFeedbackIntegral = 0.0f;
   for (int i = 0; i < MOTOR_COUNT; i++) {
     set1TargetCps[i] = 0.0f;
     set1Integral[i] = 0.0f;
@@ -635,17 +654,68 @@ void updateSet1VelocityClosedLoop() {
     measuredCps[i] = (float)wheelDelta[i] / dtSec;
   }
 
+  float adjustedTargetCps[MOTOR_COUNT];
+  bool hasWheelTarget = false;
+  for (int i = 0; i < MOTOR_COUNT; i++) {
+    adjustedTargetCps[i] = set1TargetCps[i];
+    if (fabsf(set1TargetCps[i]) >= 1.0f) {
+      hasWheelTarget = true;
+    }
+  }
+
+  float targetWzRadS = yawRateFromWheelCps(set1TargetCps);
+  float imuWzRadS = 0.0f;
+  float yawErrorRadS = 0.0f;
+  float yawCorrectionRadS = 0.0f;
+  float yawCorrectionCps = 0.0f;
+  bool yawFeedbackActive = false;
+
+  if (SET1_IMU_YAW_FEEDBACK_ENABLED && hasWheelTarget && haveImuYawRateSample) {
+    uint32_t imuAgeMs = now - latestImuSampleMs;
+    if (imuAgeMs <= SET1_IMU_YAW_RATE_TIMEOUT_MS) {
+      imuWzRadS = SET1_IMU_YAW_RATE_SIGN * latestImuWzRadS;
+      yawErrorRadS = targetWzRadS - imuWzRadS;
+      if (fabsf(yawErrorRadS) < SET1_YAW_RATE_ERROR_DEADBAND_RAD_S) {
+        yawErrorRadS = 0.0f;
+      }
+
+      set1YawFeedbackIntegral = clampFloat(
+        set1YawFeedbackIntegral + yawErrorRadS * dtSec,
+        -SET1_YAW_FEEDBACK_INTEGRAL_LIMIT,
+        SET1_YAW_FEEDBACK_INTEGRAL_LIMIT
+      );
+      yawCorrectionRadS = yawErrorRadS * SET1_YAW_FEEDBACK_KP
+          + set1YawFeedbackIntegral * SET1_YAW_FEEDBACK_KI;
+      yawCorrectionRadS = clampFloat(
+        yawCorrectionRadS,
+        -SET1_YAW_FEEDBACK_MAX_CORRECTION_RAD_S,
+        SET1_YAW_FEEDBACK_MAX_CORRECTION_RAD_S
+      );
+      yawCorrectionCps = yawRateCorrectionToSideCps(yawCorrectionRadS);
+
+      adjustedTargetCps[0] = clampFloat(set1TargetCps[0] - yawCorrectionCps, -SET1_MAX_TARGET_CPS, SET1_MAX_TARGET_CPS);
+      adjustedTargetCps[1] = clampFloat(set1TargetCps[1] + yawCorrectionCps, -SET1_MAX_TARGET_CPS, SET1_MAX_TARGET_CPS);
+      adjustedTargetCps[2] = clampFloat(set1TargetCps[2] - yawCorrectionCps, -SET1_MAX_TARGET_CPS, SET1_MAX_TARGET_CPS);
+      adjustedTargetCps[3] = clampFloat(set1TargetCps[3] + yawCorrectionCps, -SET1_MAX_TARGET_CPS, SET1_MAX_TARGET_CPS);
+      yawFeedbackActive = true;
+    } else {
+      set1YawFeedbackIntegral = 0.0f;
+    }
+  } else {
+    set1YawFeedbackIntegral = 0.0f;
+  }
+
   int wheelPwm[MOTOR_COUNT];
   int wheelCorrection[MOTOR_COUNT];
   for (int i = 0; i < MOTOR_COUNT; i++) {
     wheelCorrection[i] = 0;
-    if (fabsf(set1TargetCps[i]) < 1.0f) {
+    if (fabsf(adjustedTargetCps[i]) < 1.0f) {
       set1Integral[i] = 0.0f;
       wheelPwm[i] = 0;
       continue;
     }
 
-    float error = set1TargetCps[i] - measuredCps[i];
+    float error = adjustedTargetCps[i] - measuredCps[i];
     set1Integral[i] = clampFloat(
       set1Integral[i] + error * dtSec,
       -SET1_INTEGRAL_LIMIT,
@@ -658,7 +728,7 @@ void updateSet1VelocityClosedLoop() {
       SET1_MAX_CORRECTION
     );
 
-    int feedForward = set1FeedForwardPwm(i, set1TargetCps[i]);
+    int feedForward = set1FeedForwardPwm(i, adjustedTargetCps[i]);
     wheelPwm[i] = clampPwm(feedForward + wheelCorrection[i]);
   }
 
@@ -673,6 +743,12 @@ void updateSet1VelocityClosedLoop() {
       Serial.print(motors[i].name);
       Serial.print('=');
       Serial.print(set1TargetCps[i], 1);
+    }
+    for (int i = 0; i < MOTOR_COUNT; i++) {
+      Serial.print(" adj");
+      Serial.print(motors[i].name);
+      Serial.print('=');
+      Serial.print(adjustedTargetCps[i], 1);
     }
     for (int i = 0; i < MOTOR_COUNT; i++) {
       Serial.print(" measured");
@@ -698,6 +774,18 @@ void updateSet1VelocityClosedLoop() {
       Serial.print('=');
       Serial.print(wheelPwm[i]);
     }
+    Serial.print(" target_wz=");
+    Serial.print(targetWzRadS, 3);
+    Serial.print(" imu_wz=");
+    Serial.print(imuWzRadS, 3);
+    Serial.print(" yaw_err=");
+    Serial.print(yawErrorRadS, 3);
+    Serial.print(" yaw_corr=");
+    Serial.print(yawCorrectionRadS, 3);
+    Serial.print(" yaw_corr_cps=");
+    Serial.print(yawCorrectionCps, 1);
+    Serial.print(" yaw_fb=");
+    Serial.print(yawFeedbackActive ? 1 : 0);
     Serial.println();
   }
 }
@@ -986,6 +1074,57 @@ float wrapPi(float angle) {
   return angle;
 }
 
+float cpsToRadPerSec(float countsPerSec) {
+  return countsPerSec * TWO_PI / SET1_ENCODER_COUNTS_PER_REV;
+}
+
+float radPerSecToCps(float radPerSec) {
+  return radPerSec * SET1_ENCODER_COUNTS_PER_REV / TWO_PI;
+}
+
+float yawRateFromWheelCps(const float *wheelCps) {
+  float leftRadS = 0.5f * (cpsToRadPerSec(wheelCps[0]) + cpsToRadPerSec(wheelCps[2]));
+  float rightRadS = 0.5f * (cpsToRadPerSec(wheelCps[1]) + cpsToRadPerSec(wheelCps[3]));
+  return (rightRadS - leftRadS) * SET1_WHEEL_RADIUS_M / SET1_TRACK_WIDTH_M;
+}
+
+float yawRateCorrectionToSideCps(float yawRateCorrectionRadS) {
+  float sideRadS = yawRateCorrectionRadS * SET1_TRACK_WIDTH_M / (2.0f * SET1_WHEEL_RADIUS_M);
+  return radPerSecToCps(sideRadS);
+}
+
+void resetImuYawRateEstimator() {
+  haveImuYawRateReference = false;
+  haveImuYawRateSample = false;
+  latestImuWzRadS = 0.0f;
+  lastYawRateUs = micros();
+  lastYawRateYawRad = latestYawRad;
+}
+
+void updateImuYawRate(float yawRad) {
+  uint32_t nowUs = micros();
+
+  if (!haveImuYawRateReference) {
+    lastYawRateYawRad = yawRad;
+    lastYawRateUs = nowUs;
+    latestImuWzRadS = 0.0f;
+    haveImuYawRateReference = true;
+    haveImuYawRateSample = false;
+    return;
+  }
+
+  float dtSec = (nowUs - lastYawRateUs) * 1.0e-6f;
+  if (dtSec <= 0.001f) {
+    return;
+  }
+
+  latestImuWzRadS = wrapPi(yawRad - lastYawRateYawRad) / dtSec;
+  lastYawRateYawRad = yawRad;
+  lastYawRateUs = nowUs;
+  latestImuSampleMs = millis();
+  haveImuYawRateSample = true;
+}
+
 void quatToEuler(float qr, float qi, float qj, float qk, float &yaw, float &pitch, float &roll) {
   float sinrCosp = 2.0f * (qr * qi + qj * qk);
   float cosrCosp = 1.0f - 2.0f * (qi * qi + qj * qj);
@@ -1049,6 +1188,7 @@ void updateImu() {
 
   if (bno08x.wasReset()) {
     enableRotationVector();
+    resetImuYawRateEstimator();
   }
 
   if (bno08x.getSensorEvent(&sensorValue) && sensorValue.sensorId == SH2_ROTATION_VECTOR) {
@@ -1063,6 +1203,7 @@ void updateImu() {
       yawZeroRad = yawRaw;
     }
     latestYawRad = wrapPi(yawRaw - yawZeroRad);
+    updateImuYawRate(latestYawRad);
     haveImuSample = true;
   }
 
@@ -1488,6 +1629,7 @@ void handleCommand(String line) {
     if (haveImuSample) {
       yawZeroRad += latestYawRad;
       latestYawRad = 0.0f;
+      resetImuYawRateEstimator();
     }
     Serial.println("OK ZERO_YAW");
     return;
