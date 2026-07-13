@@ -93,7 +93,7 @@ const float SET_INTEGRAL_LIMIT = 250.0f;
 const uint32_t SET_DEBUG_INTERVAL_MS = 250;
 
 const uint32_t SET1_CONTROL_INTERVAL_MS = 25;
-const int SET1_STATIC_FRICTION_PWM = 35;
+const int SET1_STATIC_FRICTION_PWM = 50;
 const float SET1_FEED_FORWARD_PWM_PER_CPS = 0.042f;
 const float SET1_WHEEL_KP = 0.045f;
 const float SET1_WHEEL_KI = 0.35f;
@@ -242,7 +242,11 @@ void IRAM_ATTR handleBrEncoderA() {
 void readEncoderTicks(int32_t *outTicks) {
   noInterrupts();
   for (int i = 0; i < MOTOR_COUNT; i++) {
-    outTicks[i] = encoderTicks[i];
+    // Multiply by 1.3 to compensate for the robot physically moving 1.3x faster
+    // than the target speed (likely due to a wheel size or gear ratio mismatch).
+    // This scales up the perceived encoder counts, so the PID loop outputs a slower PWM,
+    // and ROS2 receives the exact requested counts, keeping odometry perfectly accurate.
+    outTicks[i] = (int32_t)(encoderTicks[i] * 1.3f);
   }
   interrupts();
 }
