@@ -530,7 +530,7 @@ def generate_launch_description():
                     {
                         "robot_pose_topic": LaunchConfiguration("robot_pose_topic"),
                         "object_pose_topic": LaunchConfiguration("object_pose_topic"),
-                        "approach_goal_topic": "/approach_goal",
+                        "approach_goal_topic": LaunchConfiguration("bbox_goal_pose_topic"),
                         "semantic_cloud_topic": LaunchConfiguration(
                             "semantic_obstacle_topic"
                         ),
