@@ -89,8 +89,16 @@ def generate_launch_description():
         "distance_annotated_topic": LaunchConfiguration("distance_annotated_topic"),
         "robot_pose_topic": LaunchConfiguration("robot_pose_topic"),
         "object_pose_topic": LaunchConfiguration("object_pose_topic"),
+        "object_pose_raw_topic": LaunchConfiguration("object_pose_raw_topic"),
+        "object_pose_raw_json_topic": LaunchConfiguration("object_pose_raw_json_topic"),
         "target_object_pose_topic": LaunchConfiguration("target_object_pose_topic"),
         "obstacle_object_pose_topic": LaunchConfiguration("obstacle_object_pose_topic"),
+        "target_object_pose_raw_topic": LaunchConfiguration(
+            "target_object_pose_raw_topic"
+        ),
+        "obstacle_object_pose_raw_topic": LaunchConfiguration(
+            "obstacle_object_pose_raw_topic"
+        ),
         "target_shape": LaunchConfiguration("target_shape"),
         "target_fruit": LaunchConfiguration("target_fruit"),
         "no_fruit_class": LaunchConfiguration("no_fruit_class"),
@@ -139,6 +147,62 @@ def generate_launch_description():
         "object_association_radius_m": LaunchConfiguration("object_association_radius_m"),
         "object_update_alpha": LaunchConfiguration("object_update_alpha"),
         "max_tracked_objects": LaunchConfiguration("max_tracked_objects"),
+        "enable_object_track_fusion": LaunchConfiguration("enable_object_track_fusion"),
+        "object_track_status_topic": LaunchConfiguration("object_track_status_topic"),
+        "object_track_remove_pose_topic": LaunchConfiguration(
+            "object_track_remove_pose_topic"
+        ),
+        "object_track_mission_event_topic": LaunchConfiguration(
+            "object_track_mission_event_topic"
+        ),
+        "object_track_class_aware_association": LaunchConfiguration(
+            "object_track_class_aware_association"
+        ),
+        "object_track_association_radius_m": LaunchConfiguration(
+            "object_track_association_radius_m"
+        ),
+        "object_track_use_dynamic_association_radius": LaunchConfiguration(
+            "object_track_use_dynamic_association_radius"
+        ),
+        "object_track_association_base_radius_m": LaunchConfiguration(
+            "object_track_association_base_radius_m"
+        ),
+        "object_track_association_max_radius_m": LaunchConfiguration(
+            "object_track_association_max_radius_m"
+        ),
+        "object_track_association_speed_gain": LaunchConfiguration(
+            "object_track_association_speed_gain"
+        ),
+        "object_track_association_yaw_gain_m_per_rad": LaunchConfiguration(
+            "object_track_association_yaw_gain_m_per_rad"
+        ),
+        "object_track_association_dt_cap_sec": LaunchConfiguration(
+            "object_track_association_dt_cap_sec"
+        ),
+        "object_track_smoothing_alpha": LaunchConfiguration(
+            "object_track_smoothing_alpha"
+        ),
+        "object_track_confirm_observations": LaunchConfiguration(
+            "object_track_confirm_observations"
+        ),
+        "object_track_candidate_max_age_sec": LaunchConfiguration(
+            "object_track_candidate_max_age_sec"
+        ),
+        "object_track_confirmed_max_age_sec": LaunchConfiguration(
+            "object_track_confirmed_max_age_sec"
+        ),
+        "object_track_keep_confirmed_tracks": LaunchConfiguration(
+            "object_track_keep_confirmed_tracks"
+        ),
+        "object_track_publish_hz": LaunchConfiguration("object_track_publish_hz"),
+        "object_track_max_tracks": LaunchConfiguration("object_track_max_tracks"),
+        "object_track_remove_radius_m": LaunchConfiguration(
+            "object_track_remove_radius_m"
+        ),
+        "object_track_ignored_zones": LaunchConfiguration("object_track_ignored_zones"),
+        "object_track_remove_event_names": LaunchConfiguration(
+            "object_track_remove_event_names"
+        ),
         "enable_distance_overlay": LaunchConfiguration("enable_distance_overlay"),
         "enable_bbox_goal_navigation": LaunchConfiguration("enable_bbox_goal_navigation"),
         "enable_semantic_obstacle_cloud": LaunchConfiguration(
@@ -386,8 +450,21 @@ def generate_launch_description():
             DeclareLaunchArgument("detections_topic", default_value="/detections_json"),
             DeclareLaunchArgument("robot_pose_topic", default_value="/robot_pose_map"),
             DeclareLaunchArgument("object_pose_topic", default_value="/object_pose_map"),
+            DeclareLaunchArgument("object_pose_raw_topic", default_value="/object_pose_map_raw"),
+            DeclareLaunchArgument(
+                "object_pose_raw_json_topic",
+                default_value="/object_pose_map_raw_json",
+            ),
             DeclareLaunchArgument("target_object_pose_topic", default_value="/target_object_pose_map"),
             DeclareLaunchArgument("obstacle_object_pose_topic", default_value="/obstacle_object_pose_map"),
+            DeclareLaunchArgument(
+                "target_object_pose_raw_topic",
+                default_value="/target_object_pose_map_raw",
+            ),
+            DeclareLaunchArgument(
+                "obstacle_object_pose_raw_topic",
+                default_value="/obstacle_object_pose_map_raw",
+            ),
             # 예: target_shape:=cube_any target_fruit:=apple 이면 apple cube만 목표로 본다.
             DeclareLaunchArgument("target_shape", default_value=""),
             DeclareLaunchArgument("target_fruit", default_value=""),
@@ -444,6 +521,67 @@ def generate_launch_description():
             DeclareLaunchArgument("object_association_radius_m", default_value="0.35"),
             DeclareLaunchArgument("object_update_alpha", default_value="0.0"),
             DeclareLaunchArgument("max_tracked_objects", default_value="20"),
+            DeclareLaunchArgument("enable_object_track_fusion", default_value="false"),
+            DeclareLaunchArgument(
+                "object_track_status_topic",
+                default_value="/object_track_fusion/status",
+            ),
+            DeclareLaunchArgument(
+                "object_track_remove_pose_topic",
+                default_value="/object_track_fusion/remove_pose",
+            ),
+            DeclareLaunchArgument(
+                "object_track_mission_event_topic",
+                default_value="/mission/event",
+            ),
+            DeclareLaunchArgument("object_track_class_aware_association", default_value="true"),
+            DeclareLaunchArgument("object_track_association_radius_m", default_value="0.30"),
+            DeclareLaunchArgument(
+                "object_track_use_dynamic_association_radius",
+                default_value="true",
+            ),
+            DeclareLaunchArgument(
+                "object_track_association_base_radius_m",
+                default_value="0.18",
+            ),
+            DeclareLaunchArgument(
+                "object_track_association_max_radius_m",
+                default_value="0.42",
+            ),
+            DeclareLaunchArgument(
+                "object_track_association_speed_gain",
+                default_value="1.0",
+            ),
+            DeclareLaunchArgument(
+                "object_track_association_yaw_gain_m_per_rad",
+                default_value="0.12",
+            ),
+            DeclareLaunchArgument(
+                "object_track_association_dt_cap_sec",
+                default_value="1.0",
+            ),
+            DeclareLaunchArgument("object_track_smoothing_alpha", default_value="0.40"),
+            DeclareLaunchArgument("object_track_confirm_observations", default_value="2"),
+            DeclareLaunchArgument(
+                "object_track_candidate_max_age_sec",
+                default_value="1.5",
+            ),
+            DeclareLaunchArgument(
+                "object_track_confirmed_max_age_sec",
+                default_value="1.5",
+            ),
+            DeclareLaunchArgument(
+                "object_track_keep_confirmed_tracks",
+                default_value="false",
+            ),
+            DeclareLaunchArgument("object_track_publish_hz", default_value="10.0"),
+            DeclareLaunchArgument("object_track_max_tracks", default_value="30"),
+            DeclareLaunchArgument("object_track_remove_radius_m", default_value="0.40"),
+            DeclareLaunchArgument("object_track_ignored_zones", default_value=""),
+            DeclareLaunchArgument(
+                "object_track_remove_event_names",
+                default_value="object_captured,pickup_success,target_captured,target_reached",
+            ),
             DeclareLaunchArgument("enable_mapping_debug", default_value="true"),
             DeclareLaunchArgument("mapping_debug_period_sec", default_value="1.0"),
             DeclareLaunchArgument(

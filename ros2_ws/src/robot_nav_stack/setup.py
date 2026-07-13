@@ -32,6 +32,7 @@ setup(
             "rect_wall_localizer_node = robot_nav_stack.rect_wall_localizer_node:main",
             "yolo_detection_adapter_node = robot_nav_stack.yolo_detection_adapter_node:main",
             "object_localizer_node = robot_nav_stack.object_localizer_node:main",
+            "object_track_fusion_node = robot_nav_stack.object_track_fusion_node:main",
             "distance_annotator_node = robot_nav_stack.distance_annotator_node:main",
             "bbox_goal_navigator_node = robot_nav_stack.bbox_goal_navigator_node:main",
             "semantic_obstacle_cloud_node = robot_nav_stack.semantic_obstacle_cloud_node:main",

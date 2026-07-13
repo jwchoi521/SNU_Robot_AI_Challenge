@@ -1,6 +1,6 @@
 ﻿from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -38,9 +38,22 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("robot_pose_topic", default_value="/robot_pose_map"),
             DeclareLaunchArgument("object_pose_topic", default_value="/object_pose_map"),
+            DeclareLaunchArgument("object_pose_raw_topic", default_value="/object_pose_map_raw"),
+            DeclareLaunchArgument(
+                "object_pose_raw_json_topic",
+                default_value="/object_pose_map_raw_json",
+            ),
             # target은 목표점 토픽, obstacle은 costmap 입력 토픽으로 따로 보낸다.
             DeclareLaunchArgument("target_object_pose_topic", default_value="/target_object_pose_map"),
             DeclareLaunchArgument("obstacle_object_pose_topic", default_value="/obstacle_object_pose_map"),
+            DeclareLaunchArgument(
+                "target_object_pose_raw_topic",
+                default_value="/target_object_pose_map_raw",
+            ),
+            DeclareLaunchArgument(
+                "obstacle_object_pose_raw_topic",
+                default_value="/obstacle_object_pose_map_raw",
+            ),
             DeclareLaunchArgument("target_shape", default_value=""),
             DeclareLaunchArgument("target_fruit", default_value=""),
             DeclareLaunchArgument("no_fruit_class", default_value="none"),
@@ -83,6 +96,49 @@ def generate_launch_description():
             DeclareLaunchArgument("object_association_radius_m", default_value="0.35"),
             DeclareLaunchArgument("object_update_alpha", default_value="0.0"),
             DeclareLaunchArgument("max_tracked_objects", default_value="20"),
+            DeclareLaunchArgument("enable_object_track_fusion", default_value="false"),
+            DeclareLaunchArgument("object_track_status_topic", default_value="/object_track_fusion/status"),
+            DeclareLaunchArgument("object_track_remove_pose_topic", default_value="/object_track_fusion/remove_pose"),
+            DeclareLaunchArgument("object_track_mission_event_topic", default_value="/mission/event"),
+            DeclareLaunchArgument("object_track_class_aware_association", default_value="true"),
+            DeclareLaunchArgument("object_track_association_radius_m", default_value="0.30"),
+            DeclareLaunchArgument(
+                "object_track_use_dynamic_association_radius",
+                default_value="true",
+            ),
+            DeclareLaunchArgument(
+                "object_track_association_base_radius_m",
+                default_value="0.18",
+            ),
+            DeclareLaunchArgument(
+                "object_track_association_max_radius_m",
+                default_value="0.42",
+            ),
+            DeclareLaunchArgument(
+                "object_track_association_speed_gain",
+                default_value="1.0",
+            ),
+            DeclareLaunchArgument(
+                "object_track_association_yaw_gain_m_per_rad",
+                default_value="0.12",
+            ),
+            DeclareLaunchArgument(
+                "object_track_association_dt_cap_sec",
+                default_value="1.0",
+            ),
+            DeclareLaunchArgument("object_track_smoothing_alpha", default_value="0.40"),
+            DeclareLaunchArgument("object_track_confirm_observations", default_value="2"),
+            DeclareLaunchArgument("object_track_candidate_max_age_sec", default_value="1.5"),
+            DeclareLaunchArgument("object_track_confirmed_max_age_sec", default_value="1.5"),
+            DeclareLaunchArgument("object_track_keep_confirmed_tracks", default_value="false"),
+            DeclareLaunchArgument("object_track_publish_hz", default_value="10.0"),
+            DeclareLaunchArgument("object_track_max_tracks", default_value="30"),
+            DeclareLaunchArgument("object_track_remove_radius_m", default_value="0.40"),
+            DeclareLaunchArgument("object_track_ignored_zones", default_value=""),
+            DeclareLaunchArgument(
+                "object_track_remove_event_names",
+                default_value="object_captured,pickup_success,target_captured,target_reached",
+            ),
             DeclareLaunchArgument("enable_distance_overlay", default_value="false"),
             DeclareLaunchArgument("enable_bbox_goal_navigation", default_value="false"),
             DeclareLaunchArgument("enable_semantic_obstacle_cloud", default_value="true"),
@@ -208,6 +264,7 @@ def generate_launch_description():
                 package="robot_nav_stack",
                 executable="object_localizer_node",
                 name="object_localizer_node",
+                condition=UnlessCondition(LaunchConfiguration("enable_object_track_fusion")),
                 parameters=[
                     {
                         "model_path": LaunchConfiguration("bbox_model_path"),
@@ -240,6 +297,123 @@ def generate_launch_description():
                         ),
                         "object_update_alpha": _float_arg("object_update_alpha"),
                         "max_tracked_objects": _int_arg("max_tracked_objects"),
+                    }
+                ],
+            ),
+            Node(
+                package="robot_nav_stack",
+                executable="object_localizer_node",
+                name="object_localizer_node",
+                condition=IfCondition(LaunchConfiguration("enable_object_track_fusion")),
+                parameters=[
+                    {
+                        "model_path": LaunchConfiguration("bbox_model_path"),
+                        "detections_topic": LaunchConfiguration("detections_topic"),
+                        "object_pose_topic": LaunchConfiguration("object_pose_raw_topic"),
+                        "object_pose_json_topic": LaunchConfiguration(
+                            "object_pose_raw_json_topic"
+                        ),
+                        "target_object_pose_topic": LaunchConfiguration(
+                            "target_object_pose_raw_topic"
+                        ),
+                        "obstacle_object_pose_topic": LaunchConfiguration(
+                            "obstacle_object_pose_raw_topic"
+                        ),
+                        "target_shape": LaunchConfiguration("target_shape"),
+                        "target_fruit": LaunchConfiguration("target_fruit"),
+                        "no_fruit_class": LaunchConfiguration("no_fruit_class"),
+                        "target_frame": LaunchConfiguration("map_frame"),
+                        "source_frame": LaunchConfiguration("object_source_frame"),
+                        "lidar_frame": LaunchConfiguration("lidar_frame"),
+                        "tf_lookup_timeout_sec": _float_arg("tf_lookup_timeout_sec"),
+                        "fallback_to_latest_tf": _bool_arg("fallback_to_latest_tf"),
+                        "latest_tf_max_extrapolation_sec": _float_arg(
+                            "latest_tf_max_extrapolation_sec"
+                        ),
+                        "pending_detection_timeout_sec": _float_arg(
+                            "pending_detection_timeout_sec"
+                        ),
+                        "max_pending_detections": _int_arg("max_pending_detections"),
+                        "stabilize_objects": False,
+                        "object_association_radius_m": _float_arg(
+                            "object_association_radius_m"
+                        ),
+                        "object_update_alpha": _float_arg("object_update_alpha"),
+                        "max_tracked_objects": _int_arg("max_tracked_objects"),
+                    }
+                ],
+            ),
+            Node(
+                package="robot_nav_stack",
+                executable="object_track_fusion_node",
+                name="object_track_fusion_node",
+                condition=IfCondition(LaunchConfiguration("enable_object_track_fusion")),
+                parameters=[
+                    {
+                        "input_topic": LaunchConfiguration("object_pose_raw_topic"),
+                        "input_json_topic": LaunchConfiguration(
+                            "object_pose_raw_json_topic"
+                        ),
+                        "output_topic": LaunchConfiguration("object_pose_topic"),
+                        "target_output_topic": LaunchConfiguration(
+                            "target_object_pose_topic"
+                        ),
+                        "obstacle_output_topic": LaunchConfiguration(
+                            "obstacle_object_pose_topic"
+                        ),
+                        "status_topic": LaunchConfiguration("object_track_status_topic"),
+                        "remove_pose_topic": LaunchConfiguration(
+                            "object_track_remove_pose_topic"
+                        ),
+                        "mission_event_topic": LaunchConfiguration(
+                            "object_track_mission_event_topic"
+                        ),
+                        "robot_pose_topic": LaunchConfiguration("robot_pose_topic"),
+                        "frame_id": LaunchConfiguration("map_frame"),
+                        "class_aware_association": _bool_arg(
+                            "object_track_class_aware_association"
+                        ),
+                        "association_radius_m": _float_arg(
+                            "object_track_association_radius_m"
+                        ),
+                        "use_dynamic_association_radius": _bool_arg(
+                            "object_track_use_dynamic_association_radius"
+                        ),
+                        "association_base_radius_m": _float_arg(
+                            "object_track_association_base_radius_m"
+                        ),
+                        "association_max_radius_m": _float_arg(
+                            "object_track_association_max_radius_m"
+                        ),
+                        "association_speed_gain": _float_arg(
+                            "object_track_association_speed_gain"
+                        ),
+                        "association_yaw_gain_m_per_rad": _float_arg(
+                            "object_track_association_yaw_gain_m_per_rad"
+                        ),
+                        "association_dt_cap_sec": _float_arg(
+                            "object_track_association_dt_cap_sec"
+                        ),
+                        "smoothing_alpha": _float_arg("object_track_smoothing_alpha"),
+                        "confirm_observations": _int_arg(
+                            "object_track_confirm_observations"
+                        ),
+                        "candidate_max_age_sec": _float_arg(
+                            "object_track_candidate_max_age_sec"
+                        ),
+                        "confirmed_max_age_sec": _float_arg(
+                            "object_track_confirmed_max_age_sec"
+                        ),
+                        "keep_confirmed_tracks": _bool_arg(
+                            "object_track_keep_confirmed_tracks"
+                        ),
+                        "publish_hz": _float_arg("object_track_publish_hz"),
+                        "max_tracks": _int_arg("object_track_max_tracks"),
+                        "remove_radius_m": _float_arg("object_track_remove_radius_m"),
+                        "ignored_zones": LaunchConfiguration("object_track_ignored_zones"),
+                        "remove_event_names": LaunchConfiguration(
+                            "object_track_remove_event_names"
+                        ),
                     }
                 ],
             ),

@@ -44,6 +44,7 @@ class ObjectLocalizerNode(Node):
         self.declare_parameter("model_path", "")
         self.declare_parameter("detections_topic", "/detections_json")
         self.declare_parameter("object_pose_topic", "/object_pose_map")
+        self.declare_parameter("object_pose_json_topic", "")
         # 잡아야 할 target과 피해야 할 obstacle을 서로 다른 토픽으로 분리한다.
         self.declare_parameter("target_object_pose_topic", "/target_object_pose_map")
         self.declare_parameter("obstacle_object_pose_topic", "/obstacle_object_pose_map")
@@ -93,6 +94,7 @@ class ObjectLocalizerNode(Node):
 
         detections_topic = str(self.get_parameter("detections_topic").value)
         object_pose_topic = str(self.get_parameter("object_pose_topic").value)
+        object_pose_json_topic = str(self.get_parameter("object_pose_json_topic").value).strip()
         target_object_pose_topic = str(self.get_parameter("target_object_pose_topic").value)
         obstacle_object_pose_topic = str(self.get_parameter("obstacle_object_pose_topic").value)
         self.target_shape = self._clean_name(str(self.get_parameter("target_shape").value))
@@ -100,6 +102,11 @@ class ObjectLocalizerNode(Node):
         self.no_fruit_class = self._clean_name(str(self.get_parameter("no_fruit_class").value))
         self.sub = self.create_subscription(String, detections_topic, self.on_detection_json, 10)
         self.pub = self.create_publisher(PoseStamped, object_pose_topic, 10)
+        self.json_pub = (
+            self.create_publisher(String, object_pose_json_topic, 10)
+            if object_pose_json_topic
+            else None
+        )
         self.target_pub = self.create_publisher(PoseStamped, target_object_pose_topic, 10)
         self.obstacle_pub = self.create_publisher(PoseStamped, obstacle_object_pose_topic, 10)
         retry_period = max(0.01, float(self.get_parameter("pending_tf_retry_period_sec").value))
@@ -152,6 +159,22 @@ class ObjectLocalizerNode(Node):
             self.target_pub.publish(out)
         if role in ("unfiltered", "obstacle"):
             self.obstacle_pub.publish(out)
+        if self.json_pub is not None:
+            payload = {
+                "stamp": detection.stamp,
+                "frame_id": self.target_frame,
+                "x": object_map.x,
+                "y": object_map.y,
+                "theta": object_map.theta,
+                "object_type": detection.object_type,
+                "confidence": detection.confidence,
+                "fruit_kind": detection.fruit_kind,
+                "fruit_confidence": detection.fruit_confidence,
+                "role": role,
+            }
+            msg = String()
+            msg.data = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+            self.json_pub.publish(msg)
 
     def _stabilize_object_pose(self, detection: Detection, object_map: Pose2D) -> Pose2D:
         if not bool(self.get_parameter("stabilize_objects").value):
