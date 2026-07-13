@@ -99,18 +99,20 @@ const float SET1_WHEEL_KP = 0.045f;
 const float SET1_WHEEL_KI = 0.35f;
 const int SET1_MAX_CORRECTION = 90;
 const float SET1_INTEGRAL_LIMIT = 250.0f;
-const float SET1_MAX_TARGET_CPS = 2834.0f;  // 20 rad/s * 141.7 counts/rad.
-const uint32_t SET1_DEBUG_INTERVAL_MS = 250;
+const float SET1_MAX_TARGET_CPS = 7085.0f;  // 50 rad/s * 141.7 counts/rad.
+const uint32_t SET1_DEBUG_INTERVAL_MS = 1000;
 const bool SET1_IMU_YAW_FEEDBACK_ENABLED = true;
 const float SET1_WHEEL_RADIUS_M = 0.033f;
 const float SET1_TRACK_WIDTH_M = 0.30f;
 const float SET1_ENCODER_COUNTS_PER_REV = 890.3f;
 const float SET1_IMU_YAW_RATE_SIGN = 1.0f;
 const uint32_t SET1_IMU_YAW_RATE_TIMEOUT_MS = 250;
-const float SET1_YAW_FEEDBACK_KP = 0.6f;
+const float SET1_IMU_YAW_RATE_FILTER_ALPHA = 0.25f;
+const float SET1_YAW_FEEDBACK_KP = 0.35f;
 const float SET1_YAW_FEEDBACK_KI = 0.0f;
 const float SET1_YAW_FEEDBACK_INTEGRAL_LIMIT = 0.5f;
-const float SET1_YAW_FEEDBACK_MAX_CORRECTION_RAD_S = 0.35f;
+const float SET1_YAW_FEEDBACK_MAX_CORRECTION_RAD_S = 0.20f;
+const float SET1_YAW_FEEDBACK_MAX_STEP_RAD_S = 0.04f;
 const float SET1_YAW_RATE_ERROR_DEADBAND_RAD_S = 0.02f;
 
 const int I2C_SDA_PIN = 21;
@@ -157,6 +159,7 @@ float set1TargetCps[MOTOR_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f};
 float set1Integral[MOTOR_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f};
 int32_t set1LastTicks[MOTOR_COUNT] = {0, 0, 0, 0};
 float set1YawFeedbackIntegral = 0.0f;
+float set1YawCorrectionRadS = 0.0f;
 bool straightRunActive = false;
 uint32_t straightRunStopAtMs = 0;
 uint32_t nextStraightControlMs = 0;
@@ -400,6 +403,7 @@ void resetSet1VelocityControlState() {
   nextSet1ControlMs = 0;
   nextSet1DebugMs = 0;
   set1YawFeedbackIntegral = 0.0f;
+  set1YawCorrectionRadS = 0.0f;
   for (int i = 0; i < MOTOR_COUNT; i++) {
     set1TargetCps[i] = 0.0f;
     set1Integral[i] = 0.0f;
@@ -691,6 +695,13 @@ void updateSet1VelocityClosedLoop() {
         -SET1_YAW_FEEDBACK_MAX_CORRECTION_RAD_S,
         SET1_YAW_FEEDBACK_MAX_CORRECTION_RAD_S
       );
+      float maxStep = SET1_YAW_FEEDBACK_MAX_STEP_RAD_S;
+      yawCorrectionRadS = clampFloat(
+        yawCorrectionRadS,
+        set1YawCorrectionRadS - maxStep,
+        set1YawCorrectionRadS + maxStep
+      );
+      set1YawCorrectionRadS = yawCorrectionRadS;
       yawCorrectionCps = yawRateCorrectionToSideCps(yawCorrectionRadS);
 
       adjustedTargetCps[0] = clampFloat(set1TargetCps[0] - yawCorrectionCps, -SET1_MAX_TARGET_CPS, SET1_MAX_TARGET_CPS);
@@ -700,9 +711,11 @@ void updateSet1VelocityClosedLoop() {
       yawFeedbackActive = true;
     } else {
       set1YawFeedbackIntegral = 0.0f;
+      set1YawCorrectionRadS = 0.0f;
     }
   } else {
     set1YawFeedbackIntegral = 0.0f;
+    set1YawCorrectionRadS = 0.0f;
   }
 
   int wheelPwm[MOTOR_COUNT];
@@ -1118,7 +1131,12 @@ void updateImuYawRate(float yawRad) {
     return;
   }
 
-  latestImuWzRadS = wrapPi(yawRad - lastYawRateYawRad) / dtSec;
+  float measuredWzRadS = wrapPi(yawRad - lastYawRateYawRad) / dtSec;
+  if (haveImuYawRateSample) {
+    latestImuWzRadS += SET1_IMU_YAW_RATE_FILTER_ALPHA * (measuredWzRadS - latestImuWzRadS);
+  } else {
+    latestImuWzRadS = measuredWzRadS;
+  }
   lastYawRateYawRad = yawRad;
   lastYawRateUs = nowUs;
   latestImuSampleMs = millis();
