@@ -142,7 +142,7 @@ local_costmap:
       # accepts a 0.10 m-diameter object.
       # 실제 ㄷ자 로봇 외형을 footprint로 반영한다.
       footprint: "[[0.16, 0.165], [-0.16, 0.165], [-0.16, -0.165], [0.16, -0.165], [0.16, -0.08], [0.0, -0.08], [0.0, 0.08], [0.16, 0.08]]"
-      footprint_padding: 0.0
+      footprint_padding: 0.03
       plugins: [obstacle_layer, inflation_layer]
       obstacle_layer:
         plugin: nav2_costmap_2d::ObstacleLayer
@@ -178,7 +178,7 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       footprint: "[[0.16, 0.165], [-0.16, 0.165], [-0.16, -0.165], [0.16, -0.165], [0.16, -0.08], [0.0, -0.08], [0.0, 0.08], [0.16, 0.08]]"
-      footprint_padding: 0.0
+      footprint_padding: 0.03
       resolution: 0.05
       track_unknown_space: true
       plugins: [static_layer, obstacle_layer, inflation_layer]
