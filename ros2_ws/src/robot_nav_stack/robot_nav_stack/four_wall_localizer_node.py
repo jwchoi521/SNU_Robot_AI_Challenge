@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections import deque
 from dataclasses import dataclass
 
 import rclpy
@@ -40,6 +41,18 @@ class LocalizerResult:
     total_score: float
 
 
+@dataclass(frozen=True)
+class OdomPoseSample:
+    stamp_sec: float
+    pose: Pose2D
+
+
+@dataclass(frozen=True)
+class ImuYawSample:
+    stamp_sec: float
+    yaw: float
+
+
 class FourWallLocalizerNode(Node):
     """Estimate robot pose by ray-casting LiDAR returns against four arena walls.
 
@@ -73,8 +86,12 @@ class FourWallLocalizerNode(Node):
         self.declare_parameter("lidar_y_m", 0.0)
         self.declare_parameter("lidar_yaw_deg", 0.0)
         self.declare_parameter("use_odom_prior", True)
+        self.declare_parameter("odom_history_sec", 5.0)
+        self.declare_parameter("odom_lookup_tolerance_sec", 0.25)
         self.declare_parameter("use_imu_yaw_prior", True)
         self.declare_parameter("max_imu_age_sec", 0.5)
+        self.declare_parameter("imu_history_sec", 5.0)
+        self.declare_parameter("imu_lookup_tolerance_sec", 0.25)
         self.declare_parameter("publish_tf", False)
         self.declare_parameter("tf_mode", "map_to_base")
         self.declare_parameter("publish_lidar_tf", True)
@@ -106,11 +123,14 @@ class FourWallLocalizerNode(Node):
         self.last_pose: Pose2D | None = None
         self.last_odom_pose: Pose2D | None = None
         self.current_odom_pose: Pose2D | None = None
+        self.odom_history: deque[OdomPoseSample] = deque()
         self.last_imu_yaw: float | None = None
         self.current_imu_yaw: float | None = None
         self.current_imu_time_sec: float | None = None
+        self.imu_history: deque[ImuYawSample] = deque()
         self._imu_prior_used = False
         self._warned_missing_odom_for_tf = False
+        self._warned_odom_stamp_for_tf = False
 
         scan_topic = str(self.get_parameter("scan_topic").value)
         odom_topic = str(self.get_parameter("odom_topic").value)
@@ -127,16 +147,30 @@ class FourWallLocalizerNode(Node):
 
     def on_odom(self, msg: Odometry) -> None:
         q = msg.pose.pose.orientation
-        self.current_odom_pose = Pose2D(
+        pose = Pose2D(
             x=float(msg.pose.pose.position.x),
             y=float(msg.pose.pose.position.y),
             theta=yaw_from_quaternion(q.x, q.y, q.z, q.w),
         )
+        stamp_sec = self._stamp_to_sec(msg.header.stamp)
+        if stamp_sec <= 0.0:
+            stamp_sec = self._now_sec()
+
+        self.current_odom_pose = pose
+        self.odom_history.append(OdomPoseSample(stamp_sec=stamp_sec, pose=pose))
+        self._prune_odom_history(stamp_sec)
 
     def on_imu(self, msg: Imu) -> None:
         q = msg.orientation
-        self.current_imu_yaw = yaw_from_quaternion(q.x, q.y, q.z, q.w)
-        self.current_imu_time_sec = self.get_clock().now().nanoseconds * 1.0e-9
+        yaw = yaw_from_quaternion(q.x, q.y, q.z, q.w)
+        stamp_sec = self._stamp_to_sec(msg.header.stamp)
+        if stamp_sec <= 0.0:
+            stamp_sec = self._now_sec()
+
+        self.current_imu_yaw = yaw
+        self.current_imu_time_sec = stamp_sec
+        self.imu_history.append(ImuYawSample(stamp_sec=stamp_sec, yaw=yaw))
+        self._prune_imu_history(stamp_sec)
 
     def on_scan(self, msg: LaserScan) -> None:
         rays = self._scan_to_base_rays(msg)
@@ -152,7 +186,9 @@ class FourWallLocalizerNode(Node):
 
         self._imu_prior_used = False
         has_pose_prior = self.last_pose is not None
-        prior = self._predict_prior_pose()
+        scan_odom_pose = self._odom_pose_at_stamp(msg.header.stamp)
+        scan_imu_yaw = self._imu_yaw_at_stamp(msg.header.stamp)
+        prior = self._predict_prior_pose(scan_odom_pose, scan_imu_yaw)
         seeds = self._symmetry_seeds(prior)
         results = [
             self._optimize_seed(seed, prior, rays, use_prior=has_pose_prior)
@@ -173,12 +209,11 @@ class FourWallLocalizerNode(Node):
         ambiguous = symmetry_resolved_by_prior and best is not wall_sorted[0]
 
         self.last_pose = best.pose
-        self.last_odom_pose = self.current_odom_pose
-        if self.current_imu_yaw is not None:
-            self.last_imu_yaw = self.current_imu_yaw
+        self.last_odom_pose = scan_odom_pose
+        self.last_imu_yaw = scan_imu_yaw
         self._publish_pose(best.pose, msg.header.stamp)
         if bool(self.get_parameter("publish_tf").value):
-            self._publish_tf(best.pose, msg.header.stamp)
+            self._publish_tf(best.pose, msg.header.stamp, scan_odom_pose)
 
         self._publish_status(
             {
@@ -189,8 +224,8 @@ class FourWallLocalizerNode(Node):
                 "y": best.pose.y,
                 "yaw_deg": math.degrees(best.pose.theta),
                 "imu_yaw_deg": (
-                    math.degrees(self.current_imu_yaw)
-                    if self.current_imu_yaw is not None
+                    math.degrees(scan_imu_yaw)
+                    if scan_imu_yaw is not None
                     else None
                 ),
                 "imu_yaw_prior_used": self._imu_prior_used,
@@ -209,6 +244,8 @@ class FourWallLocalizerNode(Node):
                     self.get_parameter("use_symmetry_seeds").value
                 ),
                 "pose_prior_active": has_pose_prior,
+                "odom_at_scan_used": scan_odom_pose is not None,
+                "imu_at_scan_used": scan_imu_yaw is not None,
                 "range_score": best.range_score.score,
                 "prior_score": best.prior_score,
                 "total_score": best.total_score,
@@ -249,21 +286,25 @@ class FourWallLocalizerNode(Node):
         stride = max(1, int(math.ceil(len(rays) / max_rays)))
         return rays[::stride]
 
-    def _predict_prior_pose(self) -> Pose2D:
-        imu_delta = self._imu_yaw_delta_since_last_scan()
+    def _predict_prior_pose(
+        self,
+        odom_pose_at_scan: Pose2D | None = None,
+        imu_yaw_at_scan: float | None = None,
+    ) -> Pose2D:
+        imu_delta = self._imu_yaw_delta_since_last_scan(imu_yaw_at_scan)
         if (
             bool(self.get_parameter("use_odom_prior").value)
             and self.last_pose is not None
             and self.last_odom_pose is not None
-            and self.current_odom_pose is not None
+            and odom_pose_at_scan is not None
         ):
-            dx_odom = self.current_odom_pose.x - self.last_odom_pose.x
-            dy_odom = self.current_odom_pose.y - self.last_odom_pose.y
+            dx_odom = odom_pose_at_scan.x - self.last_odom_pose.x
+            dy_odom = odom_pose_at_scan.y - self.last_odom_pose.y
             c_o = math.cos(-self.last_odom_pose.theta)
             s_o = math.sin(-self.last_odom_pose.theta)
             dx_local = c_o * dx_odom - s_o * dy_odom
             dy_local = s_o * dx_odom + c_o * dy_odom
-            dtheta = wrap_angle(self.current_odom_pose.theta - self.last_odom_pose.theta)
+            dtheta = wrap_angle(odom_pose_at_scan.theta - self.last_odom_pose.theta)
             if imu_delta is not None:
                 dtheta = imu_delta
             c_m = math.cos(self.last_pose.theta)
@@ -289,12 +330,13 @@ class FourWallLocalizerNode(Node):
             theta=math.radians(float(self.get_parameter("initial_yaw_deg").value)),
         )
 
-    def _imu_yaw_delta_since_last_scan(self) -> float | None:
-        current = self._fresh_current_imu_yaw()
-        if current is None or self.last_imu_yaw is None:
+    def _imu_yaw_delta_since_last_scan(self, imu_yaw_at_scan: float | None) -> float | None:
+        if not bool(self.get_parameter("use_imu_yaw_prior").value):
+            return None
+        if imu_yaw_at_scan is None or self.last_imu_yaw is None:
             return None
         self._imu_prior_used = True
-        return wrap_angle(current - self.last_imu_yaw)
+        return wrap_angle(imu_yaw_at_scan - self.last_imu_yaw)
 
     def _fresh_current_imu_yaw(self) -> float | None:
         if not bool(self.get_parameter("use_imu_yaw_prior").value):
@@ -575,6 +617,115 @@ class FourWallLocalizerNode(Node):
         yaw_weight = float(self.get_parameter("prior_yaw_weight").value)
         return xy_weight * (dx * dx + dy * dy) + yaw_weight * (dtheta * dtheta)
 
+    def _odom_pose_at_stamp(self, stamp) -> Pose2D | None:
+        target_sec = self._stamp_to_sec(stamp)
+        if target_sec <= 0.0 or not self.odom_history:
+            return self.current_odom_pose
+
+        tolerance = max(0.0, float(self.get_parameter("odom_lookup_tolerance_sec").value))
+        samples = list(self.odom_history)
+        first = samples[0]
+        last = samples[-1]
+
+        if target_sec <= first.stamp_sec:
+            if first.stamp_sec - target_sec <= tolerance:
+                return first.pose
+            return None
+        if target_sec >= last.stamp_sec:
+            if target_sec - last.stamp_sec <= tolerance:
+                return last.pose
+            return None
+
+        for index in range(1, len(samples)):
+            next_sample = samples[index]
+            if next_sample.stamp_sec < target_sec:
+                continue
+            prev_sample = samples[index - 1]
+            return self._interpolate_pose(prev_sample, next_sample, target_sec)
+
+        return None
+
+    def _imu_yaw_at_stamp(self, stamp) -> float | None:
+        if not bool(self.get_parameter("use_imu_yaw_prior").value):
+            return None
+
+        target_sec = self._stamp_to_sec(stamp)
+        if target_sec <= 0.0 or not self.imu_history:
+            return self._fresh_current_imu_yaw()
+
+        tolerance = max(0.0, float(self.get_parameter("imu_lookup_tolerance_sec").value))
+        samples = list(self.imu_history)
+        first = samples[0]
+        last = samples[-1]
+
+        if target_sec <= first.stamp_sec:
+            if first.stamp_sec - target_sec <= tolerance:
+                return first.yaw
+            return None
+        if target_sec >= last.stamp_sec:
+            if target_sec - last.stamp_sec <= tolerance:
+                return last.yaw
+            return None
+
+        for index in range(1, len(samples)):
+            next_sample = samples[index]
+            if next_sample.stamp_sec < target_sec:
+                continue
+            prev_sample = samples[index - 1]
+            return self._interpolate_yaw(prev_sample, next_sample, target_sec)
+
+        return None
+
+    def _prune_odom_history(self, now_sec: float) -> None:
+        history_sec = max(0.1, float(self.get_parameter("odom_history_sec").value))
+        cutoff = now_sec - history_sec
+        while self.odom_history and self.odom_history[0].stamp_sec < cutoff:
+            self.odom_history.popleft()
+
+    def _prune_imu_history(self, now_sec: float) -> None:
+        history_sec = max(0.1, float(self.get_parameter("imu_history_sec").value))
+        cutoff = now_sec - history_sec
+        while self.imu_history and self.imu_history[0].stamp_sec < cutoff:
+            self.imu_history.popleft()
+
+    @staticmethod
+    def _interpolate_pose(
+        before: OdomPoseSample,
+        after: OdomPoseSample,
+        target_sec: float,
+    ) -> Pose2D:
+        dt = after.stamp_sec - before.stamp_sec
+        if dt <= 1e-9:
+            return before.pose
+        ratio = max(0.0, min(1.0, (target_sec - before.stamp_sec) / dt))
+        return Pose2D(
+            x=before.pose.x + ratio * (after.pose.x - before.pose.x),
+            y=before.pose.y + ratio * (after.pose.y - before.pose.y),
+            theta=wrap_angle(
+                before.pose.theta
+                + ratio * wrap_angle(after.pose.theta - before.pose.theta)
+            ),
+        )
+
+    @staticmethod
+    def _interpolate_yaw(
+        before: ImuYawSample,
+        after: ImuYawSample,
+        target_sec: float,
+    ) -> float:
+        dt = after.stamp_sec - before.stamp_sec
+        if dt <= 1e-9:
+            return before.yaw
+        ratio = max(0.0, min(1.0, (target_sec - before.stamp_sec) / dt))
+        return wrap_angle(before.yaw + ratio * wrap_angle(after.yaw - before.yaw))
+
+    @staticmethod
+    def _stamp_to_sec(stamp) -> float:
+        return float(stamp.sec) + float(stamp.nanosec) * 1.0e-9
+
+    def _now_sec(self) -> float:
+        return self.get_clock().now().nanoseconds * 1.0e-9
+
     def _publish_pose(self, pose: Pose2D, stamp) -> None:
         msg = PoseStamped()
         msg.header.stamp = stamp
@@ -589,10 +740,15 @@ class FourWallLocalizerNode(Node):
         msg.pose.orientation.w = qw
         self.pose_pub.publish(msg)
 
-    def _publish_tf(self, pose: Pose2D, stamp) -> None:
+    def _publish_tf(
+        self,
+        pose: Pose2D,
+        stamp,
+        odom_pose_at_scan: Pose2D | None = None,
+    ) -> None:
         tf_mode = str(self.get_parameter("tf_mode").value).lower()
         if tf_mode in ("map_to_odom", "map_odom"):
-            self._publish_map_to_odom_tf(pose, stamp)
+            self._publish_map_to_odom_tf(pose, stamp, odom_pose_at_scan)
             return
         if tf_mode not in ("map_to_base", "map_base", "direct"):
             self.get_logger().warn(
@@ -645,18 +801,40 @@ class FourWallLocalizerNode(Node):
         lidar_tf.transform.rotation.w = qw
         self.tf_broadcaster.sendTransform(lidar_tf)
 
-    def _publish_map_to_odom_tf(self, map_pose_base: Pose2D, stamp) -> None:
-        if self.current_odom_pose is None:
+    def _publish_map_to_odom_tf(
+        self,
+        map_pose_base: Pose2D,
+        stamp,
+        odom_pose_at_scan: Pose2D | None = None,
+    ) -> None:
+        odom_pose_base = (
+            odom_pose_at_scan
+            if odom_pose_at_scan is not None
+            else self._odom_pose_at_stamp(stamp)
+        )
+        if odom_pose_base is None:
             if not self._warned_missing_odom_for_tf:
                 self.get_logger().warn(
                     "tf_mode=map_to_odom needs odometry; "
                     "waiting before publishing map -> odom"
                 )
                 self._warned_missing_odom_for_tf = True
+            if not self._warned_odom_stamp_for_tf:
+                scan_sec = self._stamp_to_sec(stamp)
+                latest_sec = (
+                    self.odom_history[-1].stamp_sec
+                    if self.odom_history
+                    else None
+                )
+                self.get_logger().warn(
+                    "no odometry sample near scan stamp for map -> odom: "
+                    f"scan={scan_sec:.3f}, latest_odom={latest_sec}"
+                )
+                self._warned_odom_stamp_for_tf = True
             return
 
         self._warned_missing_odom_for_tf = False
-        odom_pose_base = self.current_odom_pose
+        self._warned_odom_stamp_for_tf = False
         theta = wrap_angle(map_pose_base.theta - odom_pose_base.theta)
         c = math.cos(theta)
         s = math.sin(theta)
