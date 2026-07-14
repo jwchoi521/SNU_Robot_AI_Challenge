@@ -146,7 +146,7 @@ def generate_launch_description():
                 "semantic_obstacle_topic",
                 default_value="/semantic_obstacle_cloud",
             ),
-            DeclareLaunchArgument("semantic_obstacle_radius_m", default_value="0.05"),
+            DeclareLaunchArgument("semantic_obstacle_radius_m", default_value="0.07"),
             DeclareLaunchArgument("semantic_obstacle_point_spacing_m", default_value="0.01"),
             DeclareLaunchArgument("semantic_obstacle_ttl_sec", default_value="15.0"),
             DeclareLaunchArgument(

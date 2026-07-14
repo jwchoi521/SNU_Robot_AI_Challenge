@@ -164,7 +164,7 @@ local_costmap:
           obstacle_min_range: 0.0
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
-        cost_scaling_factor: 4.0
+        cost_scaling_factor: 2.5
         # 물체 반지름 5cm + inflation 16cm = 중심 기준 약 21cm 회피 비용 영역.
         inflation_radius: 0.16
       always_send_full_costmap: true
@@ -203,7 +203,7 @@ global_costmap:
           obstacle_min_range: 0.0
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
-        cost_scaling_factor: 4.0
+        cost_scaling_factor: 2.5
         inflation_radius: 0.16
       always_send_full_costmap: true
 
