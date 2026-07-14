@@ -332,18 +332,39 @@ class ObjectLocalizerNode(Node):
 
         object_type = self._clean_name(detection.object_type)
         fruit_kind = self._clean_name(detection.fruit_kind)
+        has_no_fruit = not fruit_kind or fruit_kind == self.no_fruit_class
 
-        if self.target_shape and object_type != self.target_shape:
-            return "obstacle"
-
-        if self.target_fruit and (not self.target_shape or self.target_shape == "cube_any"):
-            # cube_any 미션에서는 fruit 미확정 cube도 집을 후보(target)로 둔다.
-            if self.target_shape == "cube_any" and (
-                not fruit_kind or fruit_kind == self.no_fruit_class
-            ):
+        if self.target_shape == "cube_any":
+            if object_type != "cube_any":
+                return "obstacle"
+            if not self.target_fruit:
                 return "target"
-            if not fruit_kind or fruit_kind == self.no_fruit_class:
-                return "unknown"
+            if has_no_fruit:
+                return "target"
+            return "target" if fruit_kind == self.target_fruit else "obstacle"
+
+        if self.target_shape:
+            if object_type == self.target_shape:
+                return "target"
+            if object_type != "cube_any":
+                return "obstacle"
+            if not self.target_fruit:
+                return "obstacle"
+
+        if self.target_fruit and object_type == "cube_any":
+            if has_no_fruit:
+                if self.target_shape:
+                    return (
+                        "target"
+                        if self.target_fruit == self.no_fruit_class
+                        else "obstacle"
+                    )
+                return "target" if self.target_fruit == self.no_fruit_class else "unknown"
+            return "target" if fruit_kind == self.target_fruit else "obstacle"
+
+        if self.target_fruit:
+            if has_no_fruit:
+                return "target" if self.target_fruit == self.no_fruit_class else "unknown"
             return "target" if fruit_kind == self.target_fruit else "obstacle"
 
         return "target"
