@@ -128,16 +128,20 @@ cd ~/SNU_Robot_AI_Challenge/ros2_ws && source install/setup.bash && ros2 run snu
 
 full stack 실행 시에는 `enable_wheel_command_mapper:=false`로 둡니다. ESP32 bridge는 켜도 됩니다.
 
-그 다음 터미널 하나에서 보정 노드를 켭니다.
+그 다음 터미널 하나에서 보정 노드와 wheel mapper를 함께 켭니다.
 
 ```bash
-cd ~/SNU_Robot_AI_Challenge/ros2_ws && source install/setup.bash && ros2 run snu_yaw_calibration yaw_cmd_compensator --ros-args -p model_path:=/home/cho/yaw_calibration/yaw_response_model.json -p input_cmd_vel_topic:=/cmd_vel -p output_cmd_vel_topic:=/cmd_vel_calibrated -p max_abs_yaw_cmd_rad_s:=4.0
+cd ~/SNU_Robot_AI_Challenge/ros2_ws && source install/setup.bash && ros2 launch snu_yaw_calibration yaw_compensated_mapper.launch.py model_path:=/home/cho/yaw_calibration/yaw_response_model.json max_abs_yaw_cmd_rad_s:=4.0
 ```
 
-다른 터미널에서 wheel mapper를 보정된 토픽에 연결합니다.
+이 launch는 내부적으로 다음 두 노드를 같이 켭니다.
 
-```bash
-cd ~/SNU_Robot_AI_Challenge/ros2_ws && source install/setup.bash && ros2 run snu_base_control cmd_vel_to_four_wheel --ros-args -p cmd_vel_topic:=/cmd_vel_calibrated -p wheel_command_topic:=/wheel_commands -p drive_model:=skid_steer -p command_mode:=velocity -p wheel_radius_m:=0.033 -p track_width_m:=0.30 -p wheelbase_m:=0.235 -p max_wheel_velocity_rad_s:=50.0
+```text
+yaw_cmd_compensator:
+  /cmd_vel -> /cmd_vel_calibrated
+
+cmd_vel_to_four_wheel:
+  /cmd_vel_calibrated -> /wheel_commands
 ```
 
 그러면 흐름이 이렇게 됩니다.
