@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import rclpy
 from geometry_msgs.msg import PoseStamped
@@ -10,6 +10,7 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 from .core import Pose2D, quaternion_from_yaw, wrap_angle, yaw_from_quaternion
+from .track_evidence import TrackEvidence
 
 
 @dataclass
@@ -20,8 +21,12 @@ class ObjectTrack:
     pose: Pose2D
     first_seen_sec: float
     last_seen_sec: float
-    hits: int = 1
+    evidence: TrackEvidence = field(default_factory=TrackEvidence)
     published_once: bool = False
+
+    @property
+    def hits(self) -> int:
+        return self.evidence.frame_count
 
 
 @dataclass
@@ -55,7 +60,7 @@ class ObjectTrackFusionNode(Node):
         self.declare_parameter("mission_event_topic", "/mission/event")
         self.declare_parameter("robot_pose_topic", "/robot_pose_map")
         self.declare_parameter("frame_id", "map")
-        self.declare_parameter("class_aware_association", True)
+        self.declare_parameter("class_aware_association", False)
         self.declare_parameter("association_radius_m", 0.30)
         self.declare_parameter("use_dynamic_association_radius", True)
         self.declare_parameter("association_base_radius_m", 0.18)
@@ -64,7 +69,7 @@ class ObjectTrackFusionNode(Node):
         self.declare_parameter("association_yaw_gain_m_per_rad", 0.12)
         self.declare_parameter("association_dt_cap_sec", 1.0)
         self.declare_parameter("smoothing_alpha", 0.40)
-        self.declare_parameter("confirm_observations", 2)
+        self.declare_parameter("confirm_observations", 3)
         self.declare_parameter("candidate_max_age_sec", 1.5)
         self.declare_parameter("confirmed_max_age_sec", 1.5)
         self.declare_parameter("keep_confirmed_tracks", False)
@@ -146,7 +151,16 @@ class ObjectTrackFusionNode(Node):
     def _on_raw_pose(self, msg: PoseStamped) -> None:
         if not self._accept_frame(msg.header.frame_id, "input"):
             return
-        self._on_observation(self._pose_from_msg(msg), object_type="", role="unfiltered")
+        observation_stamp_sec = self._stamp_to_sec(msg.header.stamp)
+        if observation_stamp_sec <= 0.0:
+            observation_stamp_sec = self._now_sec()
+        self._on_observation(
+            self._pose_from_msg(msg),
+            object_type="",
+            role="unfiltered",
+            confidence=1.0,
+            observation_stamp_sec=observation_stamp_sec,
+        )
 
     def _on_raw_json(self, msg: String) -> None:
         try:
@@ -161,13 +175,30 @@ class ObjectTrackFusionNode(Node):
             )
             object_type = str(payload.get("object_type", "")).strip()
             role = str(payload.get("role", "unfiltered")).strip() or "unfiltered"
+            confidence = float(payload.get("confidence", 1.0))
+            observation_stamp_sec = float(payload.get("stamp", 0.0))
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             self.get_logger().warn(f"failed to parse raw object JSON: {exc}")
             return
 
-        self._on_observation(pose, object_type=object_type, role=role)
+        if not math.isfinite(observation_stamp_sec) or observation_stamp_sec <= 0.0:
+            observation_stamp_sec = self._now_sec()
+        self._on_observation(
+            pose,
+            object_type=object_type,
+            role=role,
+            confidence=confidence,
+            observation_stamp_sec=observation_stamp_sec,
+        )
 
-    def _on_observation(self, pose: Pose2D, object_type: str, role: str) -> None:
+    def _on_observation(
+        self,
+        pose: Pose2D,
+        object_type: str,
+        role: str,
+        confidence: float,
+        observation_stamp_sec: float,
+    ) -> None:
         self.raw_observations_since_status += 1
         now_sec = self._now_sec()
         self._prune(now_sec)
@@ -177,9 +208,24 @@ class ObjectTrackFusionNode(Node):
 
         match = self._nearest_track(pose, object_type, now_sec)
         if match is None:
-            self._add_track(pose, object_type, role, now_sec)
+            self._add_track(
+                pose,
+                object_type,
+                role,
+                confidence,
+                observation_stamp_sec,
+                now_sec,
+            )
         else:
-            self._update_track(match, pose, role, now_sec)
+            self._update_track(
+                match,
+                pose,
+                object_type,
+                role,
+                confidence,
+                observation_stamp_sec,
+                now_sec,
+            )
 
         self._limit_tracks()
 
@@ -223,29 +269,59 @@ class ObjectTrackFusionNode(Node):
         if event in names and self.selected_target is not None:
             self._remove_near(self.selected_target)
 
-    def _add_track(self, pose: Pose2D, object_type: str, role: str, now_sec: float) -> None:
-        self.tracks.append(
-            ObjectTrack(
-                track_id=self.next_track_id,
-                object_type=object_type,
-                role=role,
-                pose=pose,
-                first_seen_sec=now_sec,
-                last_seen_sec=now_sec,
-            )
+    def _add_track(
+        self,
+        pose: Pose2D,
+        object_type: str,
+        role: str,
+        confidence: float,
+        observation_stamp_sec: float,
+        now_sec: float,
+    ) -> None:
+        track = ObjectTrack(
+            track_id=self.next_track_id,
+            object_type=object_type,
+            role=role,
+            pose=pose,
+            first_seen_sec=now_sec,
+            last_seen_sec=now_sec,
         )
+        track.evidence.observe(observation_stamp_sec, object_type, role, confidence)
+        track.object_type = track.evidence.representative_class
+        track.role = track.evidence.representative_role
+        self.tracks.append(track)
         self.next_track_id += 1
 
-    def _update_track(self, track: ObjectTrack, pose: Pose2D, role: str, now_sec: float) -> None:
-        alpha = self._clamp(float(self.get_parameter("smoothing_alpha").value), 0.0, 1.0)
-        track.pose = Pose2D(
-            x=(1.0 - alpha) * track.pose.x + alpha * pose.x,
-            y=(1.0 - alpha) * track.pose.y + alpha * pose.y,
-            theta=self._blend_angle(track.pose.theta, pose.theta, alpha),
+    def _update_track(
+        self,
+        track: ObjectTrack,
+        pose: Pose2D,
+        object_type: str,
+        role: str,
+        confidence: float,
+        observation_stamp_sec: float,
+        now_sec: float,
+    ) -> None:
+        accepted = track.evidence.observe(
+            observation_stamp_sec,
+            object_type,
+            role,
+            confidence,
         )
-        track.role = role
+        if accepted:
+            alpha = self._clamp(
+                float(self.get_parameter("smoothing_alpha").value),
+                0.0,
+                1.0,
+            )
+            track.pose = Pose2D(
+                x=(1.0 - alpha) * track.pose.x + alpha * pose.x,
+                y=(1.0 - alpha) * track.pose.y + alpha * pose.y,
+                theta=self._blend_angle(track.pose.theta, pose.theta, alpha),
+            )
+            track.object_type = track.evidence.representative_class
+            track.role = track.evidence.representative_role
         track.last_seen_sec = now_sec
-        track.hits += 1
 
     def _nearest_track(
         self,
@@ -346,6 +422,14 @@ class ObjectTrackFusionNode(Node):
                     "y": round(track.pose.y, 4),
                     "theta": round(track.pose.theta, 4),
                     "hits": track.hits,
+                    "class_score": round(
+                        track.evidence.representative_class_score,
+                        4,
+                    ),
+                    "class_scores": {
+                        name: round(score, 4)
+                        for name, score in sorted(track.evidence.class_scores.items())
+                    },
                     "age_sec": round(now_sec - track.first_seen_sec, 3),
                     "last_seen_age_sec": round(now_sec - track.last_seen_sec, 3),
                     "confirmed": self._is_confirmed(track),
@@ -486,6 +570,10 @@ class ObjectTrackFusionNode(Node):
             y=float(msg.pose.position.y),
             theta=yaw_from_quaternion(q.x, q.y, q.z, q.w),
         )
+
+    @staticmethod
+    def _stamp_to_sec(stamp) -> float:
+        return float(stamp.sec) + float(stamp.nanosec) * 1e-9
 
     @staticmethod
     def _blend_angle(old: float, new: float, alpha: float) -> float:

@@ -100,7 +100,7 @@ def generate_launch_description():
             DeclareLaunchArgument("object_track_status_topic", default_value="/object_track_fusion/status"),
             DeclareLaunchArgument("object_track_remove_pose_topic", default_value="/object_track_fusion/remove_pose"),
             DeclareLaunchArgument("object_track_mission_event_topic", default_value="/mission/event"),
-            DeclareLaunchArgument("object_track_class_aware_association", default_value="true"),
+            DeclareLaunchArgument("object_track_class_aware_association", default_value="false"),
             DeclareLaunchArgument("object_track_association_radius_m", default_value="0.30"),
             DeclareLaunchArgument(
                 "object_track_use_dynamic_association_radius",
@@ -127,7 +127,7 @@ def generate_launch_description():
                 default_value="1.0",
             ),
             DeclareLaunchArgument("object_track_smoothing_alpha", default_value="0.40"),
-            DeclareLaunchArgument("object_track_confirm_observations", default_value="2"),
+            DeclareLaunchArgument("object_track_confirm_observations", default_value="3"),
             DeclareLaunchArgument("object_track_candidate_max_age_sec", default_value="1.5"),
             DeclareLaunchArgument("object_track_confirmed_max_age_sec", default_value="1.5"),
             DeclareLaunchArgument("object_track_keep_confirmed_tracks", default_value="false"),
