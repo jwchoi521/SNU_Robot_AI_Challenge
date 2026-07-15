@@ -13,6 +13,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 
 from .bbox_model import HomographyResidualBboxEstimator
 from .core import BBox, Detection, Pose2D, quaternion_from_yaw, wrap_angle, yaw_from_quaternion
+from .object_role import classify_object_role
 
 
 @dataclass
@@ -151,9 +152,9 @@ class ObjectLocalizerNode(Node):
         out = self._make_pose_msg(object_map, detection.stamp)
         self.pub.publish(out)
         # target은 Nav2 목표 후보로, obstacle은 semantic costmap 입력으로 보낸다.
-        if role in ("unfiltered", "target"):
+        if role == "target":
             self.target_pub.publish(out)
-        if role in ("unfiltered", "obstacle"):
+        elif role == "obstacle":
             self.obstacle_pub.publish(self._make_pose_msg(raw_object_map, detection.stamp))
         if self.json_pub is not None:
             payload = {
@@ -337,47 +338,13 @@ class ObjectLocalizerNode(Node):
 
     # launch 옵션 target_shape/target_fruit 기준으로 target/obstacle/unknown을 결정한다.
     def _detection_role(self, detection: Detection) -> str:
-        if not self.target_shape and not self.target_fruit:
-            return "unfiltered"
-
-        object_type = self._clean_name(detection.object_type)
-        fruit_kind = self._clean_name(detection.fruit_kind)
-        has_no_fruit = not fruit_kind or fruit_kind == self.no_fruit_class
-
-        if self.target_shape == "cube_any":
-            if object_type != "cube_any":
-                return "obstacle"
-            if not self.target_fruit:
-                return "target"
-            if has_no_fruit:
-                return "target"
-            return "target" if fruit_kind == self.target_fruit else "obstacle"
-
-        if self.target_shape:
-            if object_type == self.target_shape:
-                return "target"
-            if object_type != "cube_any":
-                return "obstacle"
-            if not self.target_fruit:
-                return "obstacle"
-
-        if self.target_fruit and object_type == "cube_any":
-            if has_no_fruit:
-                if self.target_shape:
-                    return (
-                        "target"
-                        if self.target_fruit == self.no_fruit_class
-                        else "obstacle"
-                    )
-                return "target" if self.target_fruit == self.no_fruit_class else "unknown"
-            return "target" if fruit_kind == self.target_fruit else "obstacle"
-
-        if self.target_fruit:
-            if has_no_fruit:
-                return "target" if self.target_fruit == self.no_fruit_class else "unknown"
-            return "target" if fruit_kind == self.target_fruit else "obstacle"
-
-        return "target"
+        return classify_object_role(
+            object_type=detection.object_type,
+            fruit_kind=detection.fruit_kind,
+            target_shape=self.target_shape,
+            target_fruit=self.target_fruit,
+            no_fruit_class=self.no_fruit_class,
+        )
 
     @staticmethod
     def _clean_name(value: str) -> str:

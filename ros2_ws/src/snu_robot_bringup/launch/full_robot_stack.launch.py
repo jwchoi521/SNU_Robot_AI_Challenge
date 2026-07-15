@@ -280,6 +280,12 @@ def generate_launch_description():
             "semantic_obstacle_point_spacing_m"
         ),
         "semantic_obstacle_ttl_sec": LaunchConfiguration("semantic_obstacle_ttl_sec"),
+        "semantic_target_clear_radius_m": LaunchConfiguration(
+            "semantic_target_clear_radius_m"
+        ),
+        "semantic_clear_costmaps_on_target": LaunchConfiguration(
+            "semantic_clear_costmaps_on_target"
+        ),
         "semantic_obstacle_clear_costmaps_on_expiry": LaunchConfiguration(
             "semantic_obstacle_clear_costmaps_on_expiry"
         ),
@@ -468,6 +474,8 @@ def generate_launch_description():
             DeclareLaunchArgument("semantic_obstacle_radius_m", default_value="0.07"),
             DeclareLaunchArgument("semantic_obstacle_point_spacing_m", default_value="0.01"),
             DeclareLaunchArgument("semantic_obstacle_ttl_sec", default_value="15.0"),
+            DeclareLaunchArgument("semantic_target_clear_radius_m", default_value="0.25"),
+            DeclareLaunchArgument("semantic_clear_costmaps_on_target", default_value="true"),
             DeclareLaunchArgument(
                 "semantic_obstacle_clear_costmaps_on_expiry",
                 default_value="true",

@@ -38,6 +38,7 @@ class BboxGoalNavigatorNode(Node):
         super().__init__("bbox_goal_navigator_node")
 
         self.declare_parameter("target_pose_topic", "/object_pose_map")
+        self.declare_parameter("obstacle_pose_topic", "/obstacle_object_pose_map")
         self.declare_parameter("robot_pose_topic", "/robot_pose_map")
         self.declare_parameter("computed_goal_topic", "/bbox_goal_pose")
         self.declare_parameter("selected_target_pose_topic", "/bbox_goal_target_pose")
@@ -62,6 +63,7 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("max_target_age_sec", 1.5)
         self.declare_parameter("target_selection_mode", "nearest")
         self.declare_parameter("target_association_radius_m", 0.15)
+        self.declare_parameter("reclassification_radius_m", 0.25)
         self.declare_parameter("max_tracked_targets", 20)
         self.declare_parameter("control_period_sec", 0.2)
         self.declare_parameter("capture_stop_hold_sec", 0.8)
@@ -150,6 +152,12 @@ class BboxGoalNavigatorNode(Node):
         )
         self.create_subscription(
             PoseStamped,
+            str(self.get_parameter("obstacle_pose_topic").value),
+            self._on_obstacle_pose,
+            10,
+        )
+        self.create_subscription(
+            PoseStamped,
             str(self.get_parameter("robot_pose_topic").value),
             self._on_robot_pose,
             10,
@@ -183,6 +191,54 @@ class BboxGoalNavigatorNode(Node):
         if self._target_selection_mode() == "latest":
             self._target_pose = pose
             self._target_stamp_sec = stamp_sec
+
+    def _on_obstacle_pose(self, msg: PoseStamped) -> None:
+        if msg.header.frame_id and msg.header.frame_id != self._map_frame:
+            self.get_logger().warn(
+                "ignoring obstacle pose in frame "
+                f"{msg.header.frame_id!r}; expected {self._map_frame!r}"
+            )
+            return
+
+        obstacle = _pose_from_msg(msg)
+        radius = max(
+            0.0,
+            float(self.get_parameter("reclassification_radius_m").value),
+        )
+        before = len(self._tracked_targets)
+        self._tracked_targets = [
+            tracked
+            for tracked in self._tracked_targets
+            if math.hypot(tracked.pose.x - obstacle.x, tracked.pose.y - obstacle.y)
+            > radius
+        ]
+        removed = before - len(self._tracked_targets)
+        selected_reclassified = (
+            self._target_pose is not None
+            and math.hypot(
+                self._target_pose.x - obstacle.x,
+                self._target_pose.y - obstacle.y,
+            )
+            <= radius
+        )
+        if not selected_reclassified and removed == 0:
+            return
+
+        if selected_reclassified:
+            self._nav_state = "target_reclassified_obstacle"
+            self._cancel_active_goal("target_reclassified_obstacle")
+            self._publish_stop_cmd()
+            self._send_gripper(GripperCommand.CLOSE, "target_reclassified_obstacle")
+            self._target_pose = None
+            self._target_stamp_sec = None
+            self._selected_target_distance_m = None
+            self._last_sent_goal = None
+
+        self._publish_status(
+            "target_reclassified_obstacle",
+            removed_tracked_targets=removed,
+            obstacle=_pose_to_dict(obstacle),
+        )
 
     def _on_mission_event(self, msg: String) -> None:
         event = msg.data.strip()

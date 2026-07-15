@@ -156,6 +156,8 @@ def generate_launch_description():
             DeclareLaunchArgument("semantic_obstacle_radius_m", default_value="0.07"),
             DeclareLaunchArgument("semantic_obstacle_point_spacing_m", default_value="0.01"),
             DeclareLaunchArgument("semantic_obstacle_ttl_sec", default_value="15.0"),
+            DeclareLaunchArgument("semantic_target_clear_radius_m", default_value="0.25"),
+            DeclareLaunchArgument("semantic_clear_costmaps_on_target", default_value="true"),
             DeclareLaunchArgument(
                 "semantic_obstacle_clear_costmaps_on_expiry",
                 default_value="true",
@@ -484,6 +486,9 @@ def generate_launch_description():
                 parameters=[
                     {
                         "target_pose_topic": LaunchConfiguration("bbox_goal_target_topic"),
+                        "obstacle_pose_topic": LaunchConfiguration(
+                            "obstacle_object_pose_topic"
+                        ),
                         "robot_pose_topic": LaunchConfiguration("robot_pose_topic"),
                         "computed_goal_topic": LaunchConfiguration("bbox_goal_pose_topic"),
                         "status_topic": LaunchConfiguration("bbox_goal_status_topic"),
@@ -533,6 +538,9 @@ def generate_launch_description():
                         "target_association_radius_m": _float_arg(
                             "bbox_goal_target_association_radius_m"
                         ),
+                        "reclassification_radius_m": _float_arg(
+                            "semantic_target_clear_radius_m"
+                        ),
                         "max_tracked_targets": _int_arg(
                             "bbox_goal_max_tracked_targets"
                         ),
@@ -552,11 +560,17 @@ def generate_launch_description():
                     {
                         # 선택된 target은 장애물 cloud에 넣지 않는다.
                         "input_topic": LaunchConfiguration("obstacle_object_pose_topic"),
+                        "target_input_topic": LaunchConfiguration(
+                            "target_object_pose_topic"
+                        ),
                         "output_topic": LaunchConfiguration("semantic_obstacle_topic"),
                         "frame_id": LaunchConfiguration("map_frame"),
                         "obstacle_radius_m": _float_arg("semantic_obstacle_radius_m"),
                         "point_spacing_m": _float_arg("semantic_obstacle_point_spacing_m"),
                         "ttl_sec": _float_arg("semantic_obstacle_ttl_sec"),
+                        "target_clear_radius_m": _float_arg(
+                            "semantic_target_clear_radius_m"
+                        ),
                         # Obstacle poses bypass ObjectLocalizer stabilization, so
                         # association and smoothing are applied exactly once here.
                         "association_radius_m": _float_arg(
@@ -568,6 +582,9 @@ def generate_launch_description():
                         "publish_hz": 10.0,
                         "clear_costmaps_on_expiry": _bool_arg(
                             "semantic_obstacle_clear_costmaps_on_expiry"
+                        ),
+                        "clear_costmaps_on_target": _bool_arg(
+                            "semantic_clear_costmaps_on_target"
                         ),
                     }
                 ],

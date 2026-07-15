@@ -2,7 +2,6 @@
 
 import math
 import struct
-from dataclasses import dataclass
 
 import rclpy
 from geometry_msgs.msg import PoseStamped
@@ -10,14 +9,7 @@ from nav2_msgs.srv import ClearEntireCostmap
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2, PointField
 
-
-@dataclass
-class TimedObstacle:
-    x: float
-    y: float
-    z: float
-    stamp_sec: float
-    hits: int = 1
+from .semantic_obstacle_state import TimedObstacle, remove_obstacles_near
 
 
 class SemanticObstacleCloudNode(Node):
@@ -35,6 +27,7 @@ class SemanticObstacleCloudNode(Node):
         super().__init__("semantic_obstacle_cloud_node")
         # target이 아닌 물체만 입력받아 Nav2 costmap 장애물로 만든다.
         self.declare_parameter("input_topic", "/obstacle_object_pose_map")
+        self.declare_parameter("target_input_topic", "/target_object_pose_map")
         self.declare_parameter("output_topic", "/semantic_obstacle_cloud")
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("obstacle_radius_m", 0.05)
@@ -47,6 +40,8 @@ class SemanticObstacleCloudNode(Node):
         self.declare_parameter("publish_hz", 10.0)
         self.declare_parameter("z_m", 0.05)
         self.declare_parameter("clear_costmaps_on_expiry", True)
+        self.declare_parameter("clear_costmaps_on_target", True)
+        self.declare_parameter("target_clear_radius_m", 0.25)
         self.declare_parameter("clear_costmap_cooldown_sec", 1.0)
         self.declare_parameter(
             "local_clear_service",
@@ -62,13 +57,25 @@ class SemanticObstacleCloudNode(Node):
         self._last_clear_request_sec = float("-inf")
         self._warned_clear_services_unavailable = False
         self._warned_stale_input = False
+        self._warned_target_frame = False
         self._clear_futures = []
 
         input_topic = str(self.get_parameter("input_topic").value)
+        target_input_topic = str(self.get_parameter("target_input_topic").value).strip()
         output_topic = str(self.get_parameter("output_topic").value)
         publish_hz = float(self.get_parameter("publish_hz").value)
 
         self.sub = self.create_subscription(PoseStamped, input_topic, self.on_object_pose, 20)
+        self.target_sub = (
+            self.create_subscription(
+                PoseStamped,
+                target_input_topic,
+                self.on_target_pose,
+                20,
+            )
+            if target_input_topic
+            else None
+        )
         self.pub = self.create_publisher(PointCloud2, output_topic, 10)
         self._clear_clients = [
             self.create_client(
@@ -100,7 +107,9 @@ class SemanticObstacleCloudNode(Node):
                 self._warned_stale_input = True
             return
 
-        if self._prune(now_sec):
+        if self._prune(now_sec) and bool(
+            self.get_parameter("clear_costmaps_on_expiry").value
+        ):
             self._schedule_costmap_clear()
         x = float(msg.pose.position.x)
         y = float(msg.pose.position.y)
@@ -130,8 +139,41 @@ class SemanticObstacleCloudNode(Node):
             )
         )
 
+    def on_target_pose(self, msg: PoseStamped) -> None:
+        if msg.header.frame_id and msg.header.frame_id != self.frame_id:
+            if not self._warned_target_frame:
+                self.get_logger().warn(
+                    "ignoring target pose in frame "
+                    f"{msg.header.frame_id!r}; expected {self.frame_id!r}"
+                )
+                self._warned_target_frame = True
+            return
+
+        x = float(msg.pose.position.x)
+        y = float(msg.pose.position.y)
+        clear_radius = float(self.get_parameter("target_clear_radius_m").value)
+        self.obstacles, removed = remove_obstacles_near(
+            self.obstacles,
+            x,
+            y,
+            clear_radius,
+        )
+        if removed == 0:
+            return
+
+        self.get_logger().info(
+            "removed semantic obstacle after target confirmation "
+            f"at ({x:.2f}, {y:.2f}); removed={removed}"
+        )
+        if bool(self.get_parameter("clear_costmaps_on_target").value):
+            self._schedule_costmap_clear()
+        # Do not wait for the periodic timer to publish the corrected cloud.
+        self.publish_cloud()
+
     def publish_cloud(self) -> None:
-        if self._prune():
+        if self._prune() and bool(
+            self.get_parameter("clear_costmaps_on_expiry").value
+        ):
             self._schedule_costmap_clear()
         elif self._pending_clear_client_indices:
             self._request_costmap_clear()
@@ -160,8 +202,6 @@ class SemanticObstacleCloudNode(Node):
         return len(self.obstacles) != before
 
     def _schedule_costmap_clear(self) -> None:
-        if not bool(self.get_parameter("clear_costmaps_on_expiry").value):
-            return
         self._pending_clear_client_indices.update(range(len(self._clear_clients)))
         self._request_costmap_clear()
 
@@ -187,13 +227,13 @@ class SemanticObstacleCloudNode(Node):
 
         if requested:
             self._last_clear_request_sec = now
-            self.get_logger().info("clearing Nav2 costmaps after semantic obstacle expiry")
+            self.get_logger().info("clearing Nav2 costmaps after semantic obstacle removal")
         if not self._pending_clear_client_indices:
             self._warned_clear_services_unavailable = False
         elif not self._warned_clear_services_unavailable:
             self._warned_clear_services_unavailable = True
             self.get_logger().warn(
-                "semantic obstacle expired, but Nav2 clear-costmap services are unavailable"
+                "semantic obstacle was removed, but Nav2 clear-costmap services are unavailable"
             )
 
     def _nearest_obstacle(self, x: float, y: float) -> TimedObstacle | None:
