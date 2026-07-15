@@ -154,6 +154,7 @@ class Esp32SerialBridge(Node):
         self._last_imu_time = self.get_clock().now()
         self._imu_enable_retry_attempts = 0
         self._imu_enable_retry_timer = None
+        self._logged_first_imu_sample = False
         self._last_dry_run_log_sec = 0.0
         self._last_serial_write_log_sec = 0.0
 
@@ -424,17 +425,11 @@ class Esp32SerialBridge(Node):
     def _publish_imu_sample(self, parts: list[str], line: str) -> None:
         if self._imu_publisher is None:
             return
-        if len(parts) < 5:
+        parsed = _parse_imu_line(parts)
+        if parsed is None:
             self.get_logger().warn(f"Invalid IMU line from ESP32: {line}")
             return
-
-        try:
-            yaw = float(parts[2]) + self._imu_yaw_offset_rad
-            float(parts[3])
-            float(parts[4])
-        except ValueError:
-            self.get_logger().warn(f"Invalid IMU line from ESP32: {line}")
-            return
+        yaw = parsed[0] + self._imu_yaw_offset_rad
 
         now = self.get_clock().now()
         msg = Imu()
@@ -480,6 +475,11 @@ class Esp32SerialBridge(Node):
         self._imu_publisher.publish(msg)
         self._last_imu_yaw = yaw
         self._last_imu_time = now
+        if self._imu_enable_retry_timer is not None:
+            self._imu_enable_retry_timer.cancel()
+        if not self._logged_first_imu_sample:
+            self._logged_first_imu_sample = True
+            self.get_logger().info("Received first IMU sample; publishing /imu")
 
     def _publish_joint_states(self, counts: list[int]) -> None:
         now = self.get_clock().now()
@@ -654,6 +654,31 @@ def _parse_u_shape_encoder_line(parts: list[str]) -> list[int] | None:
     if not all(name in values for name in required):
         return None
     return [values[name] for name in required]
+
+
+def _parse_imu_line(parts: list[str]) -> tuple[float, float, float] | None:
+    if not parts or parts[0] != "IMU":
+        return None
+
+    values: list[float] = []
+    for part in parts[1:]:
+        try:
+            values.append(float(part))
+        except ValueError:
+            return None
+
+    if len(values) < 3:
+        return None
+
+    # Supported firmware formats:
+    #   IMU <yaw> <pitch> <roll>
+    #   IMU <millis> <yaw> <pitch> <roll> [quat...]
+    # Yaw is always a small wrapped radian value; millis is much larger.
+    if len(values) >= 4 and abs(values[0]) > 10.0:
+        yaw, pitch, roll = values[1], values[2], values[3]
+    else:
+        yaw, pitch, roll = values[0], values[1], values[2]
+    return yaw, pitch, roll
 
 
 def _clamp(value: float, low: float, high: float) -> float:
