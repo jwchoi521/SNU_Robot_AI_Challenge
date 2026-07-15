@@ -101,7 +101,7 @@ def generate_launch_description():
             DeclareLaunchArgument("object_association_radius_m", default_value="0.35"),
             DeclareLaunchArgument("object_update_alpha", default_value="0.4"),
             DeclareLaunchArgument("max_tracked_objects", default_value="20"),
-            DeclareLaunchArgument("enable_object_track_fusion", default_value="true"),
+            DeclareLaunchArgument("enable_object_track_fusion", default_value="false"),
             DeclareLaunchArgument("object_track_status_topic", default_value="/object_track_fusion/status"),
             DeclareLaunchArgument("object_track_remove_pose_topic", default_value="/object_track_fusion/remove_pose"),
             DeclareLaunchArgument("object_track_mission_event_topic", default_value="/mission/event"),
