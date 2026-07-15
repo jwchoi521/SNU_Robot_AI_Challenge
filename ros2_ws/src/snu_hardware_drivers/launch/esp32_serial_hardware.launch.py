@@ -26,6 +26,9 @@ def generate_launch_description() -> LaunchDescription:
     close_gate_on_start = ParameterValue(
         LaunchConfiguration("close_gate_on_start"), value_type=bool
     )
+    publish_cargo_events = ParameterValue(
+        LaunchConfiguration("publish_cargo_events"), value_type=bool
+    )
     publish_imu = ParameterValue(LaunchConfiguration("publish_imu"), value_type=bool)
     imu_yaw_offset_deg = ParameterValue(
         LaunchConfiguration("imu_yaw_offset_deg"), value_type=float
@@ -69,6 +72,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("log_serial_writes", default_value="false"),
             DeclareLaunchArgument("gripper_command_topic", default_value="/gripper/command"),
             DeclareLaunchArgument("close_gate_on_start", default_value="true"),
+            DeclareLaunchArgument("mission_event_topic", default_value="/mission/event"),
+            DeclareLaunchArgument("publish_cargo_events", default_value="true"),
+            DeclareLaunchArgument("cargo_entry_event_name", default_value="object_captured"),
             DeclareLaunchArgument("publish_imu", default_value="true"),
             DeclareLaunchArgument("imu_topic", default_value="/imu"),
             DeclareLaunchArgument("imu_frame", default_value="base_link"),
@@ -103,6 +109,13 @@ def generate_launch_description() -> LaunchDescription:
                             "gripper_command_topic"
                         ),
                         "close_gate_on_start": close_gate_on_start,
+                        "mission_event_topic": LaunchConfiguration(
+                            "mission_event_topic"
+                        ),
+                        "publish_cargo_events": publish_cargo_events,
+                        "cargo_entry_event_name": LaunchConfiguration(
+                            "cargo_entry_event_name"
+                        ),
                         "publish_imu": publish_imu,
                         "imu_topic": LaunchConfiguration("imu_topic"),
                         "imu_frame": LaunchConfiguration("imu_frame"),

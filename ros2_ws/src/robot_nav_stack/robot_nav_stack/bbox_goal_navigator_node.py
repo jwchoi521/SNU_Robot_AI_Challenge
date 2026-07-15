@@ -7,7 +7,7 @@ from typing import Any
 
 import rclpy
 from action_msgs.msg import GoalStatus
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Twist
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.node import Node
@@ -43,12 +43,18 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("selected_target_pose_topic", "/bbox_goal_target_pose")
         self.declare_parameter("status_topic", "/bbox_goal_navigator/status")
         self.declare_parameter("mission_event_topic", "/mission/event")
+        self.declare_parameter(
+            "capture_event_names",
+            "object_captured,cargo_entry,pickup_success,target_captured",
+        )
         self.declare_parameter("gripper_command_topic", "/gripper/command")
+        self.declare_parameter("cmd_vel_topic", "/cmd_vel")
         self.declare_parameter("nav_action_name", "navigate_to_pose")
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("send_nav2_goal", True)
         self.declare_parameter("publish_mission_events", True)
         self.declare_parameter("control_gripper_gate", True)
+        self.declare_parameter("gate_open_distance_m", 0.30)
         self.declare_parameter("approach_distance_m", 0.0)
         self.declare_parameter("goal_reached_tolerance_m", 0.12)
         self.declare_parameter("min_goal_separation_m", 0.15)
@@ -58,6 +64,8 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("target_association_radius_m", 0.15)
         self.declare_parameter("max_tracked_targets", 20)
         self.declare_parameter("control_period_sec", 0.2)
+        self.declare_parameter("capture_stop_hold_sec", 0.8)
+        self.declare_parameter("capture_remove_radius_m", 0.40)
         self.declare_parameter("nav_server_wait_sec", 0.05)
         self.declare_parameter("arena_width_m", 0.0)
         self.declare_parameter("arena_height_m", 0.0)
@@ -84,8 +92,11 @@ class BboxGoalNavigatorNode(Node):
         self._last_sent_goal: Pose2D | None = None
         self._goal_sequence = 0
         self._active_goal_sequence: int | None = None
+        self._active_goal_handle = None
+        self._cancel_pending_goal = False
         self._nav_state = "idle"
         self._gate_state = "closed"
+        self._stop_until_sec = 0.0
         self._last_status: dict[str, Any] = {}
         self._warned_nav_server_unavailable = False
 
@@ -114,9 +125,20 @@ class BboxGoalNavigatorNode(Node):
             str(self.get_parameter("mission_event_topic").value),
             10,
         )
+        self._cmd_vel_pub = self.create_publisher(
+            Twist,
+            str(self.get_parameter("cmd_vel_topic").value),
+            10,
+        )
         self._gripper_pub = self.create_publisher(
             GripperCommand,
             str(self.get_parameter("gripper_command_topic").value),
+            10,
+        )
+        self.create_subscription(
+            String,
+            str(self.get_parameter("mission_event_topic").value),
+            self._on_mission_event,
             10,
         )
         self.create_subscription(
@@ -161,7 +183,43 @@ class BboxGoalNavigatorNode(Node):
             self._target_pose = pose
             self._target_stamp_sec = stamp_sec
 
+    def _on_mission_event(self, msg: String) -> None:
+        event = msg.data.strip()
+        if not event:
+            return
+        event_name = event.split()[0].strip().lower()
+        capture_event_names = {
+            name.strip().lower()
+            for name in str(self.get_parameter("capture_event_names").value).split(",")
+            if name.strip()
+        }
+        if event_name not in capture_event_names:
+            return
+        self._handle_capture_event(event_name)
+
+    def _handle_capture_event(self, event_name: str) -> None:
+        self._nav_state = "capture_complete"
+        self._cancel_active_goal(event_name)
+        self._publish_stop_cmd()
+        hold_sec = max(0.0, float(self.get_parameter("capture_stop_hold_sec").value))
+        self._stop_until_sec = max(self._stop_until_sec, self._now_sec() + hold_sec)
+        self._send_gripper(GripperCommand.CLOSE, f"capture_event:{event_name}")
+        removed = self._remove_selected_target()
+        self._last_sent_goal = None
+        self._target_pose = None
+        self._target_stamp_sec = None
+        self._selected_target_distance_m = None
+        self._publish_status(
+            "capture_complete",
+            capture_event=event_name,
+            removed_tracked_targets=removed,
+        )
+
     def _control_step(self) -> None:
+        if self._now_sec() <= self._stop_until_sec:
+            self._publish_stop_cmd()
+            self._publish_status("capture_stop_hold")
+            return
         if self._robot_pose is None:
             self._publish_status("waiting_for_robot_pose")
             return
@@ -177,19 +235,19 @@ class BboxGoalNavigatorNode(Node):
         target_age = self._now_sec() - self._target_stamp_sec
         max_age = float(self.get_parameter("max_target_age_sec").value)
         if max_age > 0.0 and target_age > max_age:
+            self._send_gripper(GripperCommand.CLOSE, "target_stale")
             self._publish_status("target_stale", target_age_sec=target_age)
             return
 
         self._publish_selected_target_pose(self._target_pose)
+        self._update_gate_for_target_distance()
         goal = self._compute_approach_goal(self._robot_pose, self._target_pose)
         if goal is None:
-            self._send_gripper(GripperCommand.CLOSE, "target_goal_reached")
             self._publish_status("target_goal_reached")
             return
 
         self._publish_goal_pose(goal)
         if not self._send_nav2_goal:
-            self._send_gripper(GripperCommand.OPEN, "published_goal_only")
             self._publish_status("published_goal_only", goal=goal, target_age_sec=target_age)
             return
 
@@ -365,9 +423,10 @@ class BboxGoalNavigatorNode(Node):
         self._goal_sequence += 1
         sequence = self._goal_sequence
         self._active_goal_sequence = sequence
+        self._active_goal_handle = None
+        self._cancel_pending_goal = False
         self._last_sent_goal = goal
         self._nav_state = "sending_goal"
-        self._send_gripper(GripperCommand.OPEN, "approach_started")
         self._publish_status("sending_goal", goal=goal)
 
         future = self._nav_client.send_goal_async(goal_msg)
@@ -389,11 +448,18 @@ class BboxGoalNavigatorNode(Node):
 
         if not goal_handle.accepted:
             self._nav_state = "goal_rejected"
+            self._active_goal_handle = None
+            self._cancel_pending_goal = False
             self._last_sent_goal = None
             self._send_gripper(GripperCommand.CLOSE, "goal_rejected")
             self._publish_status("goal_rejected", goal=goal)
             return
 
+        self._active_goal_handle = goal_handle
+        if self._cancel_pending_goal:
+            self._cancel_pending_goal = False
+            self._cancel_active_goal("pending_capture_event")
+            return
         self._nav_state = "goal_active"
         self._publish_status("goal_active", goal=goal)
         result_future = goal_handle.get_result_async()
@@ -405,6 +471,8 @@ class BboxGoalNavigatorNode(Node):
         if sequence != self._active_goal_sequence:
             return
         self._active_goal_sequence = None
+        self._active_goal_handle = None
+        self._cancel_pending_goal = False
         try:
             result = future.result()
         except Exception as exc:  # noqa: BLE001 - report action-client failures.
@@ -424,6 +492,62 @@ class BboxGoalNavigatorNode(Node):
             GoalStatus.STATUS_CANCELED,
         ):
             self._send_gripper(GripperCommand.CLOSE, status_name)
+
+    def _cancel_active_goal(self, reason: str) -> None:
+        goal_handle = self._active_goal_handle
+        if goal_handle is None:
+            if self._active_goal_sequence is not None:
+                self._cancel_pending_goal = True
+            return
+        self._active_goal_handle = None
+        self._active_goal_sequence = None
+        self._cancel_pending_goal = False
+        try:
+            future = goal_handle.cancel_goal_async()
+            future.add_done_callback(
+                lambda done_future: self._on_cancel_result(done_future, reason)
+            )
+        except Exception as exc:  # noqa: BLE001 - best-effort emergency cancel.
+            self.get_logger().warn(f"failed to cancel Nav2 goal after {reason}: {exc}")
+
+    def _on_cancel_result(self, future, reason: str) -> None:
+        try:
+            future.result()
+        except Exception as exc:  # noqa: BLE001 - report action-client failures.
+            self.get_logger().warn(f"Nav2 goal cancel failed after {reason}: {exc}")
+
+    def _publish_stop_cmd(self) -> None:
+        self._cmd_vel_pub.publish(Twist())
+
+    def _update_gate_for_target_distance(self) -> None:
+        if self._selected_target_distance_m is None:
+            self._send_gripper(GripperCommand.CLOSE, "target_distance_unknown")
+            return
+        open_distance = max(
+            0.0,
+            float(self.get_parameter("gate_open_distance_m").value),
+        )
+        if self._selected_target_distance_m <= open_distance:
+            self._send_gripper(GripperCommand.OPEN, "target_within_gate_open_distance")
+        else:
+            self._send_gripper(GripperCommand.CLOSE, "target_outside_gate_open_distance")
+
+    def _remove_selected_target(self) -> int:
+        target = self._target_pose
+        if target is None:
+            return 0
+        remove_radius = max(
+            0.0,
+            float(self.get_parameter("capture_remove_radius_m").value),
+        )
+        before = len(self._tracked_targets)
+        self._tracked_targets = [
+            tracked
+            for tracked in self._tracked_targets
+            if math.hypot(tracked.pose.x - target.x, tracked.pose.y - target.y)
+            > remove_radius
+        ]
+        return before - len(self._tracked_targets)
 
     def _publish_goal_pose(self, goal: Pose2D) -> None:
         self._goal_pub.publish(self._make_pose_stamped(goal))

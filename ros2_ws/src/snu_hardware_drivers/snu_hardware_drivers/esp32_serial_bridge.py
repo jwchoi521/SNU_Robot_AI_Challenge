@@ -15,6 +15,7 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from sensor_msgs.msg import Imu, JointState
 from snu_robot_interfaces.msg import FourWheelCommand, GripperCommand
+from std_msgs.msg import String
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,9 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("u_shape_stream_encoders", True)
         self.declare_parameter("gripper_command_topic", "/gripper/command")
         self.declare_parameter("close_gate_on_start", True)
+        self.declare_parameter("mission_event_topic", "/mission/event")
+        self.declare_parameter("publish_cargo_events", True)
+        self.declare_parameter("cargo_entry_event_name", "object_captured")
         self.declare_parameter("publish_imu", True)
         self.declare_parameter("imu_topic", "/imu")
         self.declare_parameter("imu_frame", "base_link")
@@ -97,6 +101,12 @@ class Esp32SerialBridge(Node):
         self._close_gate_on_start = bool(
             self.get_parameter("close_gate_on_start").value
         )
+        self._publish_cargo_events = bool(
+            self.get_parameter("publish_cargo_events").value
+        )
+        self._cargo_entry_event_name = str(
+            self.get_parameter("cargo_entry_event_name").value
+        ).strip()
         self._publish_imu = bool(self.get_parameter("publish_imu").value)
         self._imu_frame = str(self.get_parameter("imu_frame").value)
         self._imu_yaw_offset_rad = (
@@ -186,6 +196,12 @@ class Esp32SerialBridge(Node):
                 10,
             )
             if self._publish_imu
+            else None
+        )
+        mission_event_topic = str(self.get_parameter("mission_event_topic").value).strip()
+        self._mission_event_publisher = (
+            self.create_publisher(String, mission_event_topic, 10)
+            if self._publish_cargo_events and mission_event_topic
             else None
         )
         self._command_subscription = self.create_subscription(
@@ -419,8 +435,26 @@ class Esp32SerialBridge(Node):
                 self._publish_joint_states(counts)
         elif parts[0] == "IMU":
             self._publish_imu_sample(parts, line)
+        elif parts[0] == "EVENT":
+            self._handle_event_line(parts, line)
         elif parts[0] not in ("OK", "READY"):
             self.get_logger().info(f"ESP32: {line}")
+
+    def _handle_event_line(self, parts: list[str], line: str) -> None:
+        if len(parts) >= 2 and parts[1].upper() == "CARGO_ENTRY":
+            self._publish_mission_event(self._cargo_entry_event_name)
+        self.get_logger().info(f"ESP32: {line}")
+
+    def _publish_mission_event(self, event_name: str) -> None:
+        if self._mission_event_publisher is None:
+            return
+        event_name = event_name.strip()
+        if not event_name:
+            return
+        msg = String()
+        msg.data = event_name
+        self._mission_event_publisher.publish(msg)
+        self.get_logger().info(f"published mission event: {event_name}")
 
     def _publish_imu_sample(self, parts: list[str], line: str) -> None:
         if self._imu_publisher is None:

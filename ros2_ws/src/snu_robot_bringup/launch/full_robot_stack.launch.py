@@ -291,10 +291,17 @@ def generate_launch_description():
         "bbox_goal_publish_mission_events": LaunchConfiguration(
             "bbox_goal_publish_mission_events"
         ),
+        "bbox_goal_capture_event_names": LaunchConfiguration(
+            "bbox_goal_capture_event_names"
+        ),
         "bbox_goal_control_gripper_gate": LaunchConfiguration(
             "bbox_goal_control_gripper_gate"
         ),
         "gripper_command_topic": LaunchConfiguration("gripper_command_topic"),
+        "bbox_goal_cmd_vel_topic": LaunchConfiguration("bbox_goal_cmd_vel_topic"),
+        "bbox_goal_gate_open_distance_m": LaunchConfiguration(
+            "bbox_goal_gate_open_distance_m"
+        ),
         "bbox_goal_approach_distance_m": LaunchConfiguration(
             "bbox_goal_approach_distance_m"
         ),
@@ -306,6 +313,12 @@ def generate_launch_description():
         ),
         "bbox_goal_max_target_age_sec": LaunchConfiguration(
             "bbox_goal_max_target_age_sec"
+        ),
+        "bbox_goal_capture_stop_hold_sec": LaunchConfiguration(
+            "bbox_goal_capture_stop_hold_sec"
+        ),
+        "bbox_goal_capture_remove_radius_m": LaunchConfiguration(
+            "bbox_goal_capture_remove_radius_m"
         ),
         "bbox_goal_target_selection_mode": LaunchConfiguration(
             "bbox_goal_target_selection_mode"
@@ -395,6 +408,9 @@ def generate_launch_description():
         "log_serial_writes": LaunchConfiguration("esp32_log_serial_writes"),
         "gripper_command_topic": LaunchConfiguration("gripper_command_topic"),
         "close_gate_on_start": LaunchConfiguration("esp32_close_gate_on_start"),
+        "mission_event_topic": LaunchConfiguration("object_track_mission_event_topic"),
+        "publish_cargo_events": LaunchConfiguration("esp32_publish_cargo_events"),
+        "cargo_entry_event_name": LaunchConfiguration("esp32_cargo_entry_event_name"),
         "publish_imu": LaunchConfiguration("esp32_publish_imu"),
         "imu_topic": LaunchConfiguration("esp32_imu_topic"),
         "imu_frame": LaunchConfiguration("esp32_imu_frame"),
@@ -465,12 +481,20 @@ def generate_launch_description():
             DeclareLaunchArgument("bbox_goal_nav_action_name", default_value="navigate_to_pose"),
             DeclareLaunchArgument("bbox_goal_send_nav2_goal", default_value="true"),
             DeclareLaunchArgument("bbox_goal_publish_mission_events", default_value="true"),
+            DeclareLaunchArgument(
+                "bbox_goal_capture_event_names",
+                default_value="object_captured,cargo_entry,pickup_success,target_captured",
+            ),
             DeclareLaunchArgument("bbox_goal_control_gripper_gate", default_value="true"),
             DeclareLaunchArgument("gripper_command_topic", default_value="/gripper/command"),
+            DeclareLaunchArgument("bbox_goal_cmd_vel_topic", default_value="/cmd_vel"),
+            DeclareLaunchArgument("bbox_goal_gate_open_distance_m", default_value="0.30"),
             DeclareLaunchArgument("bbox_goal_approach_distance_m", default_value="0.0"),
             DeclareLaunchArgument("bbox_goal_reached_tolerance_m", default_value="0.05"),
             DeclareLaunchArgument("bbox_goal_min_separation_m", default_value="0.15"),
             DeclareLaunchArgument("bbox_goal_max_target_age_sec", default_value="1.5"),
+            DeclareLaunchArgument("bbox_goal_capture_stop_hold_sec", default_value="0.8"),
+            DeclareLaunchArgument("bbox_goal_capture_remove_radius_m", default_value="0.40"),
             DeclareLaunchArgument("bbox_goal_target_selection_mode", default_value="nearest"),
             DeclareLaunchArgument(
                 "bbox_goal_target_association_radius_m",
@@ -505,6 +529,8 @@ def generate_launch_description():
             DeclareLaunchArgument("esp32_u_shape_pwm_max", default_value="120"),
             DeclareLaunchArgument("esp32_log_serial_writes", default_value="false"),
             DeclareLaunchArgument("esp32_close_gate_on_start", default_value="true"),
+            DeclareLaunchArgument("esp32_publish_cargo_events", default_value="true"),
+            DeclareLaunchArgument("esp32_cargo_entry_event_name", default_value="object_captured"),
             DeclareLaunchArgument("esp32_publish_imu", default_value="true"),
             DeclareLaunchArgument("esp32_imu_topic", default_value="/imu"),
             DeclareLaunchArgument("esp32_imu_frame", default_value="base_link"),

@@ -169,13 +169,21 @@ def generate_launch_description():
             DeclareLaunchArgument("bbox_goal_nav_action_name", default_value="navigate_to_pose"),
             DeclareLaunchArgument("bbox_goal_send_nav2_goal", default_value="true"),
             DeclareLaunchArgument("bbox_goal_publish_mission_events", default_value="true"),
+            DeclareLaunchArgument(
+                "bbox_goal_capture_event_names",
+                default_value="object_captured,cargo_entry,pickup_success,target_captured",
+            ),
             DeclareLaunchArgument("bbox_goal_control_gripper_gate", default_value="true"),
             DeclareLaunchArgument("gripper_command_topic", default_value="/gripper/command"),
+            DeclareLaunchArgument("bbox_goal_cmd_vel_topic", default_value="/cmd_vel"),
+            DeclareLaunchArgument("bbox_goal_gate_open_distance_m", default_value="0.30"),
             # target 중심으로 들어가야 하므로 기본 접근 거리는 0m로 둔다.
             DeclareLaunchArgument("bbox_goal_approach_distance_m", default_value="0.0"),
             DeclareLaunchArgument("bbox_goal_reached_tolerance_m", default_value="0.05"),
             DeclareLaunchArgument("bbox_goal_min_separation_m", default_value="0.15"),
             DeclareLaunchArgument("bbox_goal_max_target_age_sec", default_value="1.5"),
+            DeclareLaunchArgument("bbox_goal_capture_stop_hold_sec", default_value="0.8"),
+            DeclareLaunchArgument("bbox_goal_capture_remove_radius_m", default_value="0.40"),
             DeclareLaunchArgument("bbox_goal_target_selection_mode", default_value="nearest"),
             DeclareLaunchArgument(
                 "bbox_goal_target_association_radius_m",
@@ -485,11 +493,21 @@ def generate_launch_description():
                         "publish_mission_events": _bool_arg(
                             "bbox_goal_publish_mission_events"
                         ),
+                        "mission_event_topic": LaunchConfiguration(
+                            "object_track_mission_event_topic"
+                        ),
+                        "capture_event_names": LaunchConfiguration(
+                            "bbox_goal_capture_event_names"
+                        ),
                         "control_gripper_gate": _bool_arg(
                             "bbox_goal_control_gripper_gate"
                         ),
                         "gripper_command_topic": LaunchConfiguration(
                             "gripper_command_topic"
+                        ),
+                        "cmd_vel_topic": LaunchConfiguration("bbox_goal_cmd_vel_topic"),
+                        "gate_open_distance_m": _float_arg(
+                            "bbox_goal_gate_open_distance_m"
                         ),
                         "approach_distance_m": _float_arg(
                             "bbox_goal_approach_distance_m"
@@ -502,6 +520,12 @@ def generate_launch_description():
                         ),
                         "max_target_age_sec": _float_arg(
                             "bbox_goal_max_target_age_sec"
+                        ),
+                        "capture_stop_hold_sec": _float_arg(
+                            "bbox_goal_capture_stop_hold_sec"
+                        ),
+                        "capture_remove_radius_m": _float_arg(
+                            "bbox_goal_capture_remove_radius_m"
                         ),
                         "target_selection_mode": LaunchConfiguration(
                             "bbox_goal_target_selection_mode"
