@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
 import rclpy
 from rclpy.node import Node
@@ -13,6 +14,14 @@ from robot_object_detector_ros.msg import (
     FruitClassificationArray,
 )
 
+from .exact_frame_sync import ExactFrameSynchronizer, FrameKey
+
+
+@dataclass
+class PendingCubeFrame:
+    stamp_sec: float
+    detections: list[Detection2D]
+
 
 class YoloDetectionAdapterNode(Node):
     """Convert TensorRT YOLO detections into robot_nav_stack detection JSON."""
@@ -21,7 +30,6 @@ class YoloDetectionAdapterNode(Node):
         super().__init__("yolo_detection_adapter_node")
         self.declare_parameter("input_topic", "/shape_yolo/detections")
         self.declare_parameter("output_topic", "/detections_json")
-        # YOLO는 shape만 판단하고, 과일 종류는 classifier 결과를 받아서 합친다.
         self.declare_parameter("classifications_topic", "/cube_fruit/classifications")
         self.declare_parameter("min_confidence", 0.0)
         self.declare_parameter("max_detections_per_frame", 0)
@@ -31,6 +39,8 @@ class YoloDetectionAdapterNode(Node):
         self.declare_parameter("max_header_stamp_offset_sec", 2.0)
         self.declare_parameter("classification_iou_threshold", 0.7)
         self.declare_parameter("classification_max_age_sec", 1.0)
+        self.declare_parameter("max_pending_cube_frames", 10)
+        self.declare_parameter("cube_class_id", 0)
         self.declare_parameter("no_fruit_class", "none")
 
         input_topic = str(self.get_parameter("input_topic").value)
@@ -51,15 +61,25 @@ class YoloDetectionAdapterNode(Node):
         self.classification_iou_threshold = float(
             self.get_parameter("classification_iou_threshold").value
         )
+        # Kept for parameter compatibility; now this is the maximum time a
+        # cube detection waits for its exact-frame classifier result.
         self.classification_max_age_sec = float(
             self.get_parameter("classification_max_age_sec").value
         )
+        self.max_pending_cube_frames = max(
+            1,
+            int(self.get_parameter("max_pending_cube_frames").value),
+        )
+        self.cube_class_id = int(self.get_parameter("cube_class_id").value)
         self.no_fruit_class = str(self.get_parameter("no_fruit_class").value)
         self._warned_bad_stamp = False
         self._warned_unknown_stamp_mode = False
+        self._warned_unmatched_cube = False
         self._last_publish_sec: float | None = None
-        self._latest_classifications: list[FruitClassification] = []
-        self._latest_classification_stamp: float | None = None
+        self._cube_frame_sync = ExactFrameSynchronizer[
+            PendingCubeFrame,
+            list[FruitClassification],
+        ](max_pending_frames=self.max_pending_cube_frames)
 
         self.sub = self.create_subscription(
             Detection2DArray,
@@ -74,19 +94,25 @@ class YoloDetectionAdapterNode(Node):
             10,
         )
         self.pub = self.create_publisher(String, output_topic, 10)
+        self.create_timer(0.1, self._expire_pending_cube_frames)
 
         self.get_logger().info(
             f"adapting {input_topic} Detection2DArray messages to {output_topic} JSON "
             f"(stamp_mode={self.stamp_mode}, min_confidence={self.min_confidence:.2f}, "
             f"max_detections_per_frame={self.max_detections_per_frame}, "
             f"max_output_hz={self.max_output_hz:.2f}, "
-            f"classifications={classifications_topic})"
+            f"classifications={classifications_topic}, "
+            "cube_sync=exact_header_stamp)"
         )
 
     def on_classifications(self, msg: FruitClassificationArray) -> None:
-        self._latest_classifications = list(msg.classifications)
-        stamp = self._stamp_to_seconds(msg.header.stamp)
-        self._latest_classification_stamp = stamp if stamp > 0.0 else self._now_seconds()
+        matched = self._cube_frame_sync.add_right(
+            self._frame_key(msg.header.stamp),
+            list(msg.classifications),
+            self._now_seconds(),
+        )
+        if matched is not None:
+            self._publish_classified_cubes(*matched)
 
     def on_detections(self, msg: Detection2DArray) -> None:
         stamp = self._select_stamp_seconds(msg.header.stamp)
@@ -101,60 +127,130 @@ class YoloDetectionAdapterNode(Node):
         ):
             return
 
-        candidates = sorted(
+        candidates: list[Detection2D] = []
+        for detection in sorted(
             msg.detections,
-            key=lambda detection: float(detection.confidence),
+            key=lambda item: float(item.confidence),
             reverse=True,
-        )
-        published = 0
-
-        for detection in candidates:
-            confidence = float(detection.confidence)
-            if confidence < min_confidence:
+        ):
+            if float(detection.confidence) < min_confidence:
                 continue
-
-            x1 = float(detection.x1)
-            y1 = float(detection.y1)
-            x2 = float(detection.x2)
-            y2 = float(detection.y2)
-            w = x2 - x1
-            h = y2 - y1
-            if w <= 0.0 or h <= 0.0:
-                self.get_logger().warn(
-                    f"skipping invalid bbox: x1={x1:.1f}, y1={y1:.1f}, "
-                    f"x2={x2:.1f}, y2={y2:.1f}"
-                )
+            if not self._valid_bbox(detection):
                 continue
-
-            object_type = detection.class_name or str(int(detection.class_id))
-            payload = {
-                "stamp": stamp,
-                "bbox": {
-                    "cx": x1 + 0.5 * w,
-                    "cy": y1 + 0.5 * h,
-                    "w": w,
-                    "h": h,
-                },
-                "object_type": object_type,
-                "confidence": confidence,
-                "class_id": int(detection.class_id),
-            }
-            # 같은 bbox로 판단되는 classifier 결과만 detection JSON에 fruit 정보로 붙인다.
-            classification = self._match_classification(detection, stamp)
-            if classification is not None:
-                payload["fruit_kind"] = classification.fruit_kind or self.no_fruit_class
-                payload["fruit_confidence"] = float(classification.confidence)
-                payload["pick_allowed"] = bool(classification.pick_allowed)
-
-            out = String()
-            out.data = json.dumps(payload, separators=(",", ":"))
-            self.pub.publish(out)
-            published += 1
-            if max_detections > 0 and published >= max_detections:
+            candidates.append(detection)
+            if max_detections > 0 and len(candidates) >= max_detections:
                 break
 
-        if published > 0:
-            self._last_publish_sec = now_sec
+        if not candidates:
+            return
+
+        # Throttle when the frame is accepted. Cubes are published later, only
+        # after a classifier result carrying this exact source header stamp.
+        self._last_publish_sec = now_sec
+        cubes = [detection for detection in candidates if self._is_cube(detection)]
+        for detection in candidates:
+            if not self._is_cube(detection):
+                self._publish_detection(detection, stamp, classification=None)
+
+        if not cubes:
+            return
+
+        matched = self._cube_frame_sync.add_left(
+            self._frame_key(msg.header.stamp),
+            PendingCubeFrame(stamp_sec=stamp, detections=cubes),
+            now_sec,
+        )
+        if matched is not None:
+            self._publish_classified_cubes(*matched)
+
+    def _publish_classified_cubes(
+        self,
+        pending: PendingCubeFrame,
+        classifications: list[FruitClassification],
+    ) -> None:
+        for detection in pending.detections:
+            classification = self._match_classification(detection, classifications)
+            if classification is None:
+                if not self._warned_unmatched_cube:
+                    self.get_logger().warn(
+                        "dropping cube_any detection because the classifier result "
+                        "for the same frame did not contain a matching cube bbox"
+                    )
+                    self._warned_unmatched_cube = True
+                continue
+
+            self._warned_unmatched_cube = False
+            self._publish_detection(detection, pending.stamp_sec, classification)
+
+    def _publish_detection(
+        self,
+        detection: Detection2D,
+        stamp: float,
+        classification: FruitClassification | None,
+    ) -> None:
+        x1 = float(detection.x1)
+        y1 = float(detection.y1)
+        x2 = float(detection.x2)
+        y2 = float(detection.y2)
+        w = x2 - x1
+        h = y2 - y1
+        object_type = detection.class_name or str(int(detection.class_id))
+        payload = {
+            "stamp": stamp,
+            "bbox": {
+                "cx": x1 + 0.5 * w,
+                "cy": y1 + 0.5 * h,
+                "w": w,
+                "h": h,
+            },
+            "object_type": object_type,
+            "confidence": float(detection.confidence),
+            "class_id": int(detection.class_id),
+        }
+        if classification is not None:
+            payload["fruit_kind"] = classification.fruit_kind or self.no_fruit_class
+            payload["fruit_confidence"] = float(classification.confidence)
+            payload["pick_allowed"] = bool(classification.pick_allowed)
+
+        out = String()
+        out.data = json.dumps(payload, separators=(",", ":"))
+        self.pub.publish(out)
+
+    def _expire_pending_cube_frames(self) -> None:
+        expired_cubes, _ = self._cube_frame_sync.expire(
+            self._now_seconds(),
+            self.classification_max_age_sec,
+        )
+        dropped = sum(len(frame.detections) for frame in expired_cubes)
+        if dropped:
+            self.get_logger().warn(
+                "dropping cube_any detections because the exact-frame classifier "
+                f"result did not arrive within {self.classification_max_age_sec:.2f}s; "
+                f"dropped={dropped}"
+            )
+
+    def _valid_bbox(self, detection: Detection2D) -> bool:
+        x1 = float(detection.x1)
+        y1 = float(detection.y1)
+        x2 = float(detection.x2)
+        y2 = float(detection.y2)
+        if x2 > x1 and y2 > y1:
+            return True
+        self.get_logger().warn(
+            f"skipping invalid bbox: x1={x1:.1f}, y1={y1:.1f}, "
+            f"x2={x2:.1f}, y2={y2:.1f}"
+        )
+        return False
+
+    def _is_cube(self, detection: Detection2D) -> bool:
+        return (
+            int(detection.class_id) == self.cube_class_id
+            or detection.class_name.strip().lower() == "cube_any"
+        )
+
+    @staticmethod
+    def _frame_key(stamp) -> FrameKey:
+        return int(stamp.sec), int(stamp.nanosec)
 
     @staticmethod
     def _stamp_to_seconds(stamp) -> float:
@@ -200,24 +296,14 @@ class YoloDetectionAdapterNode(Node):
 
         return header
 
-    # classifier 결과가 너무 오래됐거나 bbox가 다르면 fruit 정보는 붙이지 않는다.
     def _match_classification(
         self,
         detection: Detection2D,
-        detection_stamp: float,
+        classifications: list[FruitClassification],
     ) -> FruitClassification | None:
-        if not self._latest_classifications:
-            return None
-
-        if self._latest_classification_stamp is not None:
-            age = abs(detection_stamp - self._latest_classification_stamp)
-            max_age = self.classification_max_age_sec
-            if max_age > 0.0 and age > max_age:
-                return None
-
         best: FruitClassification | None = None
         best_iou = 0.0
-        for classification in self._latest_classifications:
+        for classification in classifications:
             iou = _bbox_iou(detection, classification.cube)
             if iou > best_iou:
                 best = classification
