@@ -15,6 +15,14 @@ esp32_serial_bridge:
     u_shape_pwm_max: 120
     log_serial_writes: false
     close_gate_on_start: true
+    publish_imu: true
+    imu_topic: /imu
+    imu_frame: base_link
+    imu_yaw_offset_deg: 0.0
+    # Retry IMU ON until the first IMU sample is received. 0 max attempts means
+    # keep retrying, useful when ESP32 ignores the first command during reset.
+    imu_enable_retry_sec: 1.0
+    imu_enable_retry_max_attempts: 0
     max_wheel_velocity_rad_s: 20.0
 
     # Measured wheel encoder scale: 141.7 counts/rad * 2*pi.

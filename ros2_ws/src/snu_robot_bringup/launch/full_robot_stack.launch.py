@@ -335,6 +335,10 @@ def generate_launch_description():
         "imu_topic": LaunchConfiguration("esp32_imu_topic"),
         "imu_frame": LaunchConfiguration("esp32_imu_frame"),
         "imu_yaw_offset_deg": LaunchConfiguration("esp32_imu_yaw_offset_deg"),
+        "imu_enable_retry_sec": LaunchConfiguration("esp32_imu_enable_retry_sec"),
+        "imu_enable_retry_max_attempts": LaunchConfiguration(
+            "esp32_imu_enable_retry_max_attempts"
+        ),
     }
 
     return LaunchDescription(
@@ -436,6 +440,8 @@ def generate_launch_description():
             DeclareLaunchArgument("esp32_imu_topic", default_value="/imu"),
             DeclareLaunchArgument("esp32_imu_frame", default_value="base_link"),
             DeclareLaunchArgument("esp32_imu_yaw_offset_deg", default_value="0.0"),
+            DeclareLaunchArgument("esp32_imu_enable_retry_sec", default_value="1.0"),
+            DeclareLaunchArgument("esp32_imu_enable_retry_max_attempts", default_value="0"),
             DeclareLaunchArgument("enable_sensor_tf", default_value="false"),
             DeclareLaunchArgument("enable_lidar_driver", default_value="true"),
             DeclareLaunchArgument("lidar_serial_port", default_value="/dev/ttyUSB0"),

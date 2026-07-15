@@ -30,6 +30,12 @@ def generate_launch_description() -> LaunchDescription:
     imu_yaw_offset_deg = ParameterValue(
         LaunchConfiguration("imu_yaw_offset_deg"), value_type=float
     )
+    imu_enable_retry_sec = ParameterValue(
+        LaunchConfiguration("imu_enable_retry_sec"), value_type=float
+    )
+    imu_enable_retry_max_attempts = ParameterValue(
+        LaunchConfiguration("imu_enable_retry_max_attempts"), value_type=int
+    )
     max_wheel_velocity_rad_s = ParameterValue(
         LaunchConfiguration("max_wheel_velocity_rad_s"), value_type=float
     )
@@ -67,6 +73,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("imu_topic", default_value="/imu"),
             DeclareLaunchArgument("imu_frame", default_value="base_link"),
             DeclareLaunchArgument("imu_yaw_offset_deg", default_value="0.0"),
+            DeclareLaunchArgument("imu_enable_retry_sec", default_value="1.0"),
+            DeclareLaunchArgument("imu_enable_retry_max_attempts", default_value="0"),
             DeclareLaunchArgument("max_wheel_velocity_rad_s", default_value="20.0"),
             DeclareLaunchArgument("encoder_counts_per_revolution", default_value="890.3"),
             DeclareLaunchArgument("front_left_motor_sign", default_value="1.0"),
@@ -99,6 +107,8 @@ def generate_launch_description() -> LaunchDescription:
                         "imu_topic": LaunchConfiguration("imu_topic"),
                         "imu_frame": LaunchConfiguration("imu_frame"),
                         "imu_yaw_offset_deg": imu_yaw_offset_deg,
+                        "imu_enable_retry_sec": imu_enable_retry_sec,
+                        "imu_enable_retry_max_attempts": imu_enable_retry_max_attempts,
                         "max_wheel_velocity_rad_s": max_wheel_velocity_rad_s,
                         "encoder_counts_per_revolution": encoder_counts_per_revolution,
                         "front_left_motor_sign": front_left_motor_sign,

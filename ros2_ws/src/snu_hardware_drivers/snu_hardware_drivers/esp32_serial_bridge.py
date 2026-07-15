@@ -51,6 +51,8 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("imu_topic", "/imu")
         self.declare_parameter("imu_frame", "base_link")
         self.declare_parameter("imu_yaw_offset_deg", 0.0)
+        self.declare_parameter("imu_enable_retry_sec", 1.0)
+        self.declare_parameter("imu_enable_retry_max_attempts", 0)
         self.declare_parameter("max_wheel_velocity_rad_s", 20.0)
         self.declare_parameter("encoder_counts_per_revolution", 890.3)
 
@@ -100,6 +102,14 @@ class Esp32SerialBridge(Node):
         self._imu_yaw_offset_rad = (
             float(self.get_parameter("imu_yaw_offset_deg").value) * pi / 180.0
         )
+        self._imu_enable_retry_sec = max(
+            0.0,
+            float(self.get_parameter("imu_enable_retry_sec").value),
+        )
+        self._imu_enable_retry_max_attempts = max(
+            0,
+            int(self.get_parameter("imu_enable_retry_max_attempts").value),
+        )
         self._max_wheel_velocity_rad_s = max(
             0.01,
             float(self.get_parameter("max_wheel_velocity_rad_s").value),
@@ -142,6 +152,8 @@ class Esp32SerialBridge(Node):
         self._last_joint_time = self.get_clock().now()
         self._last_imu_yaw: float | None = None
         self._last_imu_time = self.get_clock().now()
+        self._imu_enable_retry_attempts = 0
+        self._imu_enable_retry_timer = None
         self._last_dry_run_log_sec = 0.0
         self._last_serial_write_log_sec = 0.0
 
@@ -190,6 +202,11 @@ class Esp32SerialBridge(Node):
         read_rate_hz = float(self.get_parameter("read_rate_hz").value)
         self._read_timer = self.create_timer(1.0 / max(1.0, read_rate_hz), self._read)
         self._watchdog_timer = self.create_timer(0.05, self._stop_if_timed_out)
+        if self._should_retry_imu_enable():
+            self._imu_enable_retry_timer = self.create_timer(
+                self._imu_enable_retry_sec,
+                self._retry_imu_enable_until_sample,
+            )
 
     def _on_command(self, msg: FourWheelCommand) -> None:
         self._last_command_time = self.get_clock().now()
@@ -320,6 +337,43 @@ class Esp32SerialBridge(Node):
         if self._close_gate_on_start:
             # Start every real run with the front gate closed before Nav2 moves.
             self._send_serial_line("GATE CLOSE\n")
+
+    def _should_retry_imu_enable(self) -> bool:
+        if self._dry_run or self._serial is None:
+            return False
+        if not self._publish_imu:
+            return False
+        if self._imu_enable_retry_sec <= 0.0:
+            return False
+        return self._esp32_protocol in ("u_shape", "u_shape_pwm", "u_shape_robot")
+
+    def _retry_imu_enable_until_sample(self) -> None:
+        if self._last_imu_yaw is not None:
+            if self._imu_enable_retry_timer is not None:
+                self._imu_enable_retry_timer.cancel()
+            return
+        if not self._should_retry_imu_enable():
+            if self._imu_enable_retry_timer is not None:
+                self._imu_enable_retry_timer.cancel()
+            return
+        if (
+            self._imu_enable_retry_max_attempts > 0
+            and self._imu_enable_retry_attempts >= self._imu_enable_retry_max_attempts
+        ):
+            self.get_logger().warn(
+                "No IMU sample received after "
+                f"{self._imu_enable_retry_attempts} IMU ON retries"
+            )
+            if self._imu_enable_retry_timer is not None:
+                self._imu_enable_retry_timer.cancel()
+            return
+
+        self._imu_enable_retry_attempts += 1
+        self._send_serial_line("IMU ON\n")
+        self.get_logger().warn(
+            "No IMU sample received yet; resent IMU ON "
+            f"(attempt {self._imu_enable_retry_attempts})"
+        )
 
     def _log_dry_run(self, line: str) -> None:
         now_sec = self.get_clock().now().nanoseconds * 1.0e-9
