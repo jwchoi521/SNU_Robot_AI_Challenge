@@ -71,6 +71,11 @@ def generate_launch_description():
             DeclareLaunchArgument("lidar_x_m", default_value="0.0"),
             DeclareLaunchArgument("lidar_y_m", default_value="0.0"),
             DeclareLaunchArgument("lidar_yaw_deg", default_value="0.0"),
+            DeclareLaunchArgument("use_lidar_tf_extrinsics", default_value="false"),
+            DeclareLaunchArgument("lidar_tf_timeout_sec", default_value="0.05"),
+            DeclareLaunchArgument("enable_lidar_deskew", default_value="true"),
+            DeclareLaunchArgument("motion_history_sec", default_value="3.0"),
+            DeclareLaunchArgument("motion_max_extrapolation_sec", default_value="0.05"),
             DeclareLaunchArgument("use_imu_yaw_prior", default_value="true"),
             DeclareLaunchArgument("max_imu_age_sec", default_value="0.5"),
             DeclareLaunchArgument("max_rays", default_value="60"),
@@ -94,25 +99,25 @@ def generate_launch_description():
             DeclareLaunchArgument("max_pending_detections", default_value="3"),
             DeclareLaunchArgument("stabilize_objects", default_value="true"),
             DeclareLaunchArgument("object_association_radius_m", default_value="0.35"),
-            DeclareLaunchArgument("object_update_alpha", default_value="0.0"),
+            DeclareLaunchArgument("object_update_alpha", default_value="0.4"),
             DeclareLaunchArgument("max_tracked_objects", default_value="20"),
             DeclareLaunchArgument("enable_object_track_fusion", default_value="false"),
             DeclareLaunchArgument("object_track_status_topic", default_value="/object_track_fusion/status"),
             DeclareLaunchArgument("object_track_remove_pose_topic", default_value="/object_track_fusion/remove_pose"),
             DeclareLaunchArgument("object_track_mission_event_topic", default_value="/mission/event"),
             DeclareLaunchArgument("object_track_class_aware_association", default_value="false"),
-            DeclareLaunchArgument("object_track_association_radius_m", default_value="0.30"),
+            DeclareLaunchArgument("object_track_association_radius_m", default_value="0.35"),
             DeclareLaunchArgument(
                 "object_track_use_dynamic_association_radius",
-                default_value="true",
+                default_value="false",
             ),
             DeclareLaunchArgument(
                 "object_track_association_base_radius_m",
-                default_value="0.18",
+                default_value="0.35",
             ),
             DeclareLaunchArgument(
                 "object_track_association_max_radius_m",
-                default_value="0.42",
+                default_value="0.35",
             ),
             DeclareLaunchArgument(
                 "object_track_association_speed_gain",
@@ -131,6 +136,8 @@ def generate_launch_description():
             DeclareLaunchArgument("object_track_candidate_max_age_sec", default_value="1.5"),
             DeclareLaunchArgument("object_track_confirmed_max_age_sec", default_value="1.5"),
             DeclareLaunchArgument("object_track_keep_confirmed_tracks", default_value="false"),
+            DeclareLaunchArgument("object_track_max_publish_age_sec", default_value="1.5"),
+            DeclareLaunchArgument("object_track_out_of_order_tolerance_sec", default_value="0.02"),
             DeclareLaunchArgument("object_track_publish_hz", default_value="10.0"),
             DeclareLaunchArgument("object_track_max_tracks", default_value="30"),
             DeclareLaunchArgument("object_track_remove_radius_m", default_value="0.40"),
@@ -219,6 +226,15 @@ def generate_launch_description():
                         "lidar_x_m": _float_arg("lidar_x_m"),
                         "lidar_y_m": _float_arg("lidar_y_m"),
                         "lidar_yaw_deg": _float_arg("lidar_yaw_deg"),
+                        "use_lidar_tf_extrinsics": _bool_arg(
+                            "use_lidar_tf_extrinsics"
+                        ),
+                        "lidar_tf_timeout_sec": _float_arg("lidar_tf_timeout_sec"),
+                        "enable_lidar_deskew": _bool_arg("enable_lidar_deskew"),
+                        "motion_history_sec": _float_arg("motion_history_sec"),
+                        "motion_max_extrapolation_sec": _float_arg(
+                            "motion_max_extrapolation_sec"
+                        ),
                         "max_rays": _int_arg("max_rays"),
                         "min_rays": _int_arg("min_rays"),
                         "opt_iterations": _int_arg("opt_iterations"),
@@ -316,8 +332,10 @@ def generate_launch_description():
                         "target_object_pose_topic": LaunchConfiguration(
                             "target_object_pose_raw_topic"
                         ),
+                        # Obstacles bypass track fusion and go directly to the
+                        # single semantic association/smoothing stage.
                         "obstacle_object_pose_topic": LaunchConfiguration(
-                            "obstacle_object_pose_raw_topic"
+                            "obstacle_object_pose_topic"
                         ),
                         "target_shape": LaunchConfiguration("target_shape"),
                         "target_fruit": LaunchConfiguration("target_fruit"),
@@ -358,9 +376,8 @@ def generate_launch_description():
                         "target_output_topic": LaunchConfiguration(
                             "target_object_pose_topic"
                         ),
-                        "obstacle_output_topic": LaunchConfiguration(
-                            "obstacle_object_pose_topic"
-                        ),
+                        # Target/all-object fusion stays enabled; obstacles do not.
+                        "obstacle_output_topic": "",
                         "status_topic": LaunchConfiguration("object_track_status_topic"),
                         "remove_pose_topic": LaunchConfiguration(
                             "object_track_remove_pose_topic"
@@ -406,6 +423,12 @@ def generate_launch_description():
                         ),
                         "keep_confirmed_tracks": _bool_arg(
                             "object_track_keep_confirmed_tracks"
+                        ),
+                        "max_publish_age_sec": _float_arg(
+                            "object_track_max_publish_age_sec"
+                        ),
+                        "out_of_order_tolerance_sec": _float_arg(
+                            "object_track_out_of_order_tolerance_sec"
                         ),
                         "publish_hz": _float_arg("object_track_publish_hz"),
                         "max_tracks": _int_arg("object_track_max_tracks"),
@@ -510,10 +533,14 @@ def generate_launch_description():
                         "obstacle_radius_m": _float_arg("semantic_obstacle_radius_m"),
                         "point_spacing_m": _float_arg("semantic_obstacle_point_spacing_m"),
                         "ttl_sec": _float_arg("semantic_obstacle_ttl_sec"),
-                        "association_radius_m": 0.12,
-                        # ObjectLocalizer already stabilizes map positions.  Holding
-                        # the registered center avoids stale costmap trails.
-                        "position_smoothing_alpha": 0.0,
+                        # Obstacle poses bypass ObjectLocalizer stabilization, so
+                        # association and smoothing are applied exactly once here.
+                        "association_radius_m": _float_arg(
+                            "object_association_radius_m"
+                        ),
+                        "position_smoothing_alpha": _float_arg(
+                            "object_update_alpha"
+                        ),
                         "publish_hz": 10.0,
                         "clear_costmaps_on_expiry": _bool_arg(
                             "semantic_obstacle_clear_costmaps_on_expiry"

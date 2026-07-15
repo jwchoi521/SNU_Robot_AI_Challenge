@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
+from rclpy.time import Time
 from std_msgs.msg import String
 
 from .core import Pose2D, quaternion_from_yaw, wrap_angle, yaw_from_quaternion
@@ -21,6 +22,8 @@ class ObjectTrack:
     pose: Pose2D
     first_seen_sec: float
     last_seen_sec: float
+    first_observation_stamp_sec: float
+    last_observation_stamp_sec: float
     evidence: TrackEvidence = field(default_factory=TrackEvidence)
     published_once: bool = False
 
@@ -61,10 +64,10 @@ class ObjectTrackFusionNode(Node):
         self.declare_parameter("robot_pose_topic", "/robot_pose_map")
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("class_aware_association", False)
-        self.declare_parameter("association_radius_m", 0.30)
-        self.declare_parameter("use_dynamic_association_radius", True)
-        self.declare_parameter("association_base_radius_m", 0.18)
-        self.declare_parameter("association_max_radius_m", 0.42)
+        self.declare_parameter("association_radius_m", 0.35)
+        self.declare_parameter("use_dynamic_association_radius", False)
+        self.declare_parameter("association_base_radius_m", 0.35)
+        self.declare_parameter("association_max_radius_m", 0.35)
         self.declare_parameter("association_speed_gain", 1.0)
         self.declare_parameter("association_yaw_gain_m_per_rad", 0.12)
         self.declare_parameter("association_dt_cap_sec", 1.0)
@@ -73,6 +76,8 @@ class ObjectTrackFusionNode(Node):
         self.declare_parameter("candidate_max_age_sec", 1.5)
         self.declare_parameter("confirmed_max_age_sec", 1.5)
         self.declare_parameter("keep_confirmed_tracks", False)
+        self.declare_parameter("max_publish_age_sec", 1.5)
+        self.declare_parameter("out_of_order_tolerance_sec", 0.02)
         self.declare_parameter("publish_hz", 10.0)
         self.declare_parameter("max_tracks", 30)
         self.declare_parameter("remove_radius_m", 0.40)
@@ -89,6 +94,9 @@ class ObjectTrackFusionNode(Node):
         self.raw_observations_since_status = 0
         self.confirmed_published_since_status = 0
         self.removed_since_status = 0
+        self.stale_publish_suppressed_since_status = 0
+        self.stale_observation_dropped_since_status = 0
+        self.out_of_order_dropped_since_status = 0
         self.robot_pose_prev: RobotPoseSample | None = None
         self.robot_pose_latest: RobotPoseSample | None = None
         self.robot_linear_speed_mps = 0.0
@@ -202,6 +210,13 @@ class ObjectTrackFusionNode(Node):
         self.raw_observations_since_status += 1
         now_sec = self._now_sec()
         self._prune(now_sec)
+        max_publish_age = float(self.get_parameter("max_publish_age_sec").value)
+        if (
+            max_publish_age >= 0.0
+            and now_sec - observation_stamp_sec > max_publish_age
+        ):
+            self.stale_observation_dropped_since_status += 1
+            return
 
         if self._in_ignored_zone(pose):
             return
@@ -233,7 +248,10 @@ class ObjectTrackFusionNode(Node):
         if not self._accept_frame(msg.header.frame_id, "robot"):
             return
 
-        sample = RobotPoseSample(pose=self._pose_from_msg(msg), stamp_sec=self._now_sec())
+        stamp_sec = self._stamp_to_sec(msg.header.stamp)
+        if stamp_sec <= 0.0:
+            stamp_sec = self._now_sec()
+        sample = RobotPoseSample(pose=self._pose_from_msg(msg), stamp_sec=stamp_sec)
         if self.robot_pose_latest is not None:
             dt = sample.stamp_sec - self.robot_pose_latest.stamp_sec
             if dt > 1e-3:
@@ -285,6 +303,8 @@ class ObjectTrackFusionNode(Node):
             pose=pose,
             first_seen_sec=now_sec,
             last_seen_sec=now_sec,
+            first_observation_stamp_sec=observation_stamp_sec,
+            last_observation_stamp_sec=observation_stamp_sec,
         )
         track.evidence.observe(observation_stamp_sec, object_type, role, confidence)
         track.object_type = track.evidence.representative_class
@@ -302,6 +322,14 @@ class ObjectTrackFusionNode(Node):
         observation_stamp_sec: float,
         now_sec: float,
     ) -> None:
+        tolerance = max(
+            0.0,
+            float(self.get_parameter("out_of_order_tolerance_sec").value),
+        )
+        if observation_stamp_sec < track.last_observation_stamp_sec - tolerance:
+            self.out_of_order_dropped_since_status += 1
+            return
+
         accepted = track.evidence.observe(
             observation_stamp_sec,
             object_type,
@@ -322,6 +350,9 @@ class ObjectTrackFusionNode(Node):
             track.object_type = track.evidence.representative_class
             track.role = track.evidence.representative_role
         track.last_seen_sec = now_sec
+        track.last_observation_stamp_sec = max(
+            track.last_observation_stamp_sec, observation_stamp_sec
+        )
 
     def _nearest_track(
         self,
@@ -382,12 +413,17 @@ class ObjectTrackFusionNode(Node):
     def _publish_tracks(self) -> None:
         now_sec = self._now_sec()
         self._prune(now_sec)
+        max_publish_age = float(self.get_parameter("max_publish_age_sec").value)
         for track in self.tracks:
             if not self._is_confirmed(track):
                 continue
             if self._in_ignored_zone(track.pose):
                 continue
-            msg = self._make_pose_msg(track.pose)
+            measurement_age = now_sec - track.last_observation_stamp_sec
+            if max_publish_age >= 0.0 and measurement_age > max_publish_age:
+                self.stale_publish_suppressed_since_status += 1
+                continue
+            msg = self._make_pose_msg(track.pose, track.last_observation_stamp_sec)
             self.pose_pub.publish(msg)
             if track.role in ("unfiltered", "target") and self.target_pose_pub is not None:
                 self.target_pose_pub.publish(msg)
@@ -407,6 +443,9 @@ class ObjectTrackFusionNode(Node):
             "raw_observations": self.raw_observations_since_status,
             "confirmed_published": self.confirmed_published_since_status,
             "removed": self.removed_since_status,
+            "stale_publish_suppressed": self.stale_publish_suppressed_since_status,
+            "stale_observation_dropped": self.stale_observation_dropped_since_status,
+            "out_of_order_dropped": self.out_of_order_dropped_since_status,
             "dynamic_association": bool(
                 self.get_parameter("use_dynamic_association_radius").value
             ),
@@ -432,6 +471,11 @@ class ObjectTrackFusionNode(Node):
                     },
                     "age_sec": round(now_sec - track.first_seen_sec, 3),
                     "last_seen_age_sec": round(now_sec - track.last_seen_sec, 3),
+                    "first_observation_stamp": round(track.first_observation_stamp_sec, 6),
+                    "last_observation_stamp": round(track.last_observation_stamp_sec, 6),
+                    "measurement_age_sec": round(
+                        now_sec - track.last_observation_stamp_sec, 3
+                    ),
                     "confirmed": self._is_confirmed(track),
                 }
                 for track in self.tracks
@@ -443,6 +487,9 @@ class ObjectTrackFusionNode(Node):
         self.raw_observations_since_status = 0
         self.confirmed_published_since_status = 0
         self.removed_since_status = 0
+        self.stale_publish_suppressed_since_status = 0
+        self.stale_observation_dropped_since_status = 0
+        self.out_of_order_dropped_since_status = 0
 
     def _remove_near(self, pose: Pose2D) -> None:
         radius = max(0.0, float(self.get_parameter("remove_radius_m").value))
@@ -548,9 +595,9 @@ class ObjectTrackFusionNode(Node):
             self._warned_robot_frame = True
         return False
 
-    def _make_pose_msg(self, pose: Pose2D) -> PoseStamped:
+    def _make_pose_msg(self, pose: Pose2D, observation_stamp_sec: float) -> PoseStamped:
         msg = PoseStamped()
-        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.stamp = Time(nanoseconds=int(round(observation_stamp_sec * 1e9))).to_msg()
         msg.header.frame_id = self.frame_id
         msg.pose.position.x = pose.x
         msg.pose.position.y = pose.y

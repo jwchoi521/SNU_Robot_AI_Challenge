@@ -62,7 +62,7 @@ class ObjectLocalizerNode(Node):
         self.declare_parameter("max_pending_detections", 10)
         self.declare_parameter("stabilize_objects", True)
         self.declare_parameter("object_association_radius_m", 0.35)
-        self.declare_parameter("object_update_alpha", 0.0)
+        self.declare_parameter("object_update_alpha", 0.4)
         self.declare_parameter("max_tracked_objects", 20)
 
         model_path = self.get_parameter("model_path").get_parameter_value().string_value
@@ -140,25 +140,21 @@ class ObjectLocalizerNode(Node):
         self._publish_object_pose(detection, object_map)
 
     def _publish_object_pose(self, detection: Detection, object_map: Pose2D) -> None:
-        object_map = self._stabilize_object_pose(detection, object_map)
-        out = PoseStamped()
-        out.header.frame_id = self.target_frame
-        out.header.stamp = Time(seconds=detection.stamp).to_msg()
-        out.pose.position.x = object_map.x
-        out.pose.position.y = object_map.y
-        out.pose.position.z = 0.0
-        qx, qy, qz, qw = quaternion_from_yaw(object_map.theta)
-        out.pose.orientation.x = qx
-        out.pose.orientation.y = qy
-        out.pose.orientation.z = qz
-        out.pose.orientation.w = qw
+        role = self._detection_role(detection)
+        raw_object_map = object_map
+        # Obstacle association/smoothing happens once in the semantic cloud node.
+        object_map = (
+            raw_object_map
+            if role == "obstacle"
+            else self._stabilize_object_pose(detection, object_map)
+        )
+        out = self._make_pose_msg(object_map, detection.stamp)
         self.pub.publish(out)
         # target은 Nav2 목표 후보로, obstacle은 semantic costmap 입력으로 보낸다.
-        role = self._detection_role(detection)
         if role in ("unfiltered", "target"):
             self.target_pub.publish(out)
         if role in ("unfiltered", "obstacle"):
-            self.obstacle_pub.publish(out)
+            self.obstacle_pub.publish(self._make_pose_msg(raw_object_map, detection.stamp))
         if self.json_pub is not None:
             payload = {
                 "stamp": detection.stamp,
@@ -175,6 +171,20 @@ class ObjectLocalizerNode(Node):
             msg = String()
             msg.data = json.dumps(payload, separators=(",", ":"), sort_keys=True)
             self.json_pub.publish(msg)
+
+    def _make_pose_msg(self, pose: Pose2D, stamp_sec: float) -> PoseStamped:
+        out = PoseStamped()
+        out.header.frame_id = self.target_frame
+        out.header.stamp = Time(seconds=stamp_sec).to_msg()
+        out.pose.position.x = pose.x
+        out.pose.position.y = pose.y
+        out.pose.position.z = 0.0
+        qx, qy, qz, qw = quaternion_from_yaw(pose.theta)
+        out.pose.orientation.x = qx
+        out.pose.orientation.y = qy
+        out.pose.orientation.z = qz
+        out.pose.orientation.w = qw
+        return out
 
     def _stabilize_object_pose(self, detection: Detection, object_map: Pose2D) -> Pose2D:
         if not bool(self.get_parameter("stabilize_objects").value):

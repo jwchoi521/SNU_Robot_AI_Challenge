@@ -1,6 +1,7 @@
 ﻿from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
+from launch.actions import OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
@@ -23,6 +24,50 @@ def _include_launch(package_name: str, launch_file: str, arguments: dict, condit
         ),
         **include_kwargs,
     )
+
+
+def _launch_bool(context, name: str) -> bool:
+    value = LaunchConfiguration(name).perform(context).strip().lower()
+    if value in ("1", "true", "yes", "on"):
+        return True
+    if value in ("0", "false", "no", "off"):
+        return False
+    raise RuntimeError(f"launch argument {name} must be boolean, got {value!r}")
+
+
+def _validate_tf_configuration(context):
+    mode = LaunchConfiguration("wall_tf_mode").perform(context).strip().lower()
+    direct_mode = mode in ("map_to_base", "map_base", "direct")
+    map_to_odom_mode = mode in ("map_to_odom", "map_odom")
+    if not direct_mode and not map_to_odom_mode:
+        raise RuntimeError(
+            "wall_tf_mode must be map_to_base or map_to_odom, "
+            f"got {mode!r}"
+        )
+
+    publish_tf = _launch_bool(context, "publish_tf")
+    enable_ekf = _launch_bool(context, "enable_ekf")
+    enable_slam = _launch_bool(context, "enable_slam")
+    enable_sensor_tf = _launch_bool(context, "enable_sensor_tf")
+    publish_lidar_tf = _launch_bool(context, "publish_lidar_tf")
+    errors = []
+    if publish_tf and enable_ekf and direct_mode:
+        errors.append(
+            "EKF publishes odom->base_link, so wall_tf_mode must be map_to_odom"
+        )
+    if publish_tf and enable_slam:
+        errors.append(
+            "SLAM Toolbox publishes map->odom; set publish_tf:=false or "
+            "enable_slam:=false so map->odom has exactly one publisher"
+        )
+    if publish_tf and enable_sensor_tf and publish_lidar_tf and direct_mode:
+        errors.append(
+            "sensor_tf publishes base_link->lidar; set publish_lidar_tf:=false "
+            "to avoid giving lidar two TF parents"
+        )
+    if errors:
+        raise RuntimeError("Invalid TF configuration: " + "; ".join(errors))
+    return []
 
 
 def generate_launch_description():
@@ -70,6 +115,12 @@ def generate_launch_description():
         "camera_index": LaunchConfiguration("camera_index"),
         "camera_pipeline": LaunchConfiguration("camera_pipeline"),
         "camera_topic": LaunchConfiguration("camera_topic"),
+        "camera_frame": LaunchConfiguration("camera_frame"),
+        "camera_buffer_size": LaunchConfiguration("camera_buffer_size"),
+        "camera_timestamp_mode": LaunchConfiguration("camera_timestamp_mode"),
+        "camera_timestamp_offset_sec": LaunchConfiguration(
+            "camera_timestamp_offset_sec"
+        ),
         "classifications_topic": LaunchConfiguration("classifications_topic"),
         "classifier_annotated_topic": LaunchConfiguration("classifier_annotated_topic"),
         "fps": LaunchConfiguration("fps"),
@@ -116,6 +167,13 @@ def generate_launch_description():
         "lidar_x_m": LaunchConfiguration("lidar_x_m"),
         "lidar_y_m": LaunchConfiguration("lidar_y_m"),
         "lidar_yaw_deg": LaunchConfiguration("lidar_yaw_deg"),
+        "use_lidar_tf_extrinsics": LaunchConfiguration("enable_sensor_tf"),
+        "lidar_tf_timeout_sec": LaunchConfiguration("lidar_tf_timeout_sec"),
+        "enable_lidar_deskew": LaunchConfiguration("enable_lidar_deskew"),
+        "motion_history_sec": LaunchConfiguration("motion_history_sec"),
+        "motion_max_extrapolation_sec": LaunchConfiguration(
+            "motion_max_extrapolation_sec"
+        ),
         "use_imu_yaw_prior": LaunchConfiguration("use_imu_yaw_prior"),
         "max_imu_age_sec": LaunchConfiguration("max_imu_age_sec"),
         "max_rays": LaunchConfiguration("max_rays"),
@@ -193,6 +251,12 @@ def generate_launch_description():
         ),
         "object_track_keep_confirmed_tracks": LaunchConfiguration(
             "object_track_keep_confirmed_tracks"
+        ),
+        "object_track_max_publish_age_sec": LaunchConfiguration(
+            "object_track_max_publish_age_sec"
+        ),
+        "object_track_out_of_order_tolerance_sec": LaunchConfiguration(
+            "object_track_out_of_order_tolerance_sec"
         ),
         "object_track_publish_hz": LaunchConfiguration("object_track_publish_hz"),
         "object_track_max_tracks": LaunchConfiguration("object_track_max_tracks"),
@@ -357,6 +421,11 @@ def generate_launch_description():
             DeclareLaunchArgument("camera_index", default_value="0"),
             DeclareLaunchArgument("camera_pipeline", default_value=""),
             DeclareLaunchArgument("camera_topic", default_value="/camera/image_raw"),
+            DeclareLaunchArgument("camera_buffer_size", default_value="1"),
+            DeclareLaunchArgument("camera_timestamp_mode", default_value="midpoint"),
+            DeclareLaunchArgument(
+                "camera_timestamp_offset_sec", default_value="0.0"
+            ),
             DeclareLaunchArgument("fps", default_value="30.0"),
             DeclareLaunchArgument("inference_fps", default_value="0.0"),
             DeclareLaunchArgument("frame_width", default_value="1280"),
@@ -502,6 +571,10 @@ def generate_launch_description():
             DeclareLaunchArgument("lidar_x_m", default_value="0.0"),
             DeclareLaunchArgument("lidar_y_m", default_value="0.0"),
             DeclareLaunchArgument("lidar_yaw_deg", default_value="0.0"),
+            DeclareLaunchArgument("lidar_tf_timeout_sec", default_value="0.05"),
+            DeclareLaunchArgument("enable_lidar_deskew", default_value="true"),
+            DeclareLaunchArgument("motion_history_sec", default_value="3.0"),
+            DeclareLaunchArgument("motion_max_extrapolation_sec", default_value="0.05"),
             DeclareLaunchArgument("use_imu_yaw_prior", default_value="true"),
             DeclareLaunchArgument("max_imu_age_sec", default_value="0.5"),
             DeclareLaunchArgument("max_rays", default_value="60"),
@@ -525,7 +598,7 @@ def generate_launch_description():
             DeclareLaunchArgument("max_pending_detections", default_value="3"),
             DeclareLaunchArgument("stabilize_objects", default_value="true"),
             DeclareLaunchArgument("object_association_radius_m", default_value="0.35"),
-            DeclareLaunchArgument("object_update_alpha", default_value="0.0"),
+            DeclareLaunchArgument("object_update_alpha", default_value="0.4"),
             DeclareLaunchArgument("max_tracked_objects", default_value="20"),
             DeclareLaunchArgument("enable_object_track_fusion", default_value="false"),
             DeclareLaunchArgument(
@@ -541,18 +614,18 @@ def generate_launch_description():
                 default_value="/mission/event",
             ),
             DeclareLaunchArgument("object_track_class_aware_association", default_value="false"),
-            DeclareLaunchArgument("object_track_association_radius_m", default_value="0.30"),
+            DeclareLaunchArgument("object_track_association_radius_m", default_value="0.35"),
             DeclareLaunchArgument(
                 "object_track_use_dynamic_association_radius",
-                default_value="true",
+                default_value="false",
             ),
             DeclareLaunchArgument(
                 "object_track_association_base_radius_m",
-                default_value="0.18",
+                default_value="0.35",
             ),
             DeclareLaunchArgument(
                 "object_track_association_max_radius_m",
-                default_value="0.42",
+                default_value="0.35",
             ),
             DeclareLaunchArgument(
                 "object_track_association_speed_gain",
@@ -580,6 +653,14 @@ def generate_launch_description():
                 "object_track_keep_confirmed_tracks",
                 default_value="false",
             ),
+            DeclareLaunchArgument(
+                "object_track_max_publish_age_sec",
+                default_value="1.5",
+            ),
+            DeclareLaunchArgument(
+                "object_track_out_of_order_tolerance_sec",
+                default_value="0.02",
+            ),
             DeclareLaunchArgument("object_track_publish_hz", default_value="10.0"),
             DeclareLaunchArgument("object_track_max_tracks", default_value="30"),
             DeclareLaunchArgument("object_track_remove_radius_m", default_value="0.40"),
@@ -598,6 +679,7 @@ def generate_launch_description():
             DeclareLaunchArgument("wall_tf_mode", default_value="map_to_base"),
             DeclareLaunchArgument("publish_lidar_tf", default_value="true"),
             DeclareLaunchArgument("bbox_model_path", default_value=bbox_model_default),
+            OpaqueFunction(function=_validate_tf_configuration),
             _include_launch(
                 "robot_object_detector_ros",
                 "jetson_shape_fruit.launch.py",

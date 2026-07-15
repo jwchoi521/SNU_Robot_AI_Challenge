@@ -40,8 +40,10 @@ class SemanticObstacleCloudNode(Node):
         self.declare_parameter("obstacle_radius_m", 0.05)
         self.declare_parameter("point_spacing_m", 0.01)
         self.declare_parameter("ttl_sec", 15.0)
-        self.declare_parameter("association_radius_m", 0.12)
-        self.declare_parameter("position_smoothing_alpha", 0.35)
+        self.declare_parameter("reject_stale_observations", True)
+        self.declare_parameter("duplicate_stamp_epsilon_sec", 1e-6)
+        self.declare_parameter("association_radius_m", 0.35)
+        self.declare_parameter("position_smoothing_alpha", 0.4)
         self.declare_parameter("publish_hz", 10.0)
         self.declare_parameter("z_m", 0.05)
         self.declare_parameter("clear_costmaps_on_expiry", True)
@@ -59,6 +61,7 @@ class SemanticObstacleCloudNode(Node):
         self.obstacles: list[TimedObstacle] = []
         self._last_clear_request_sec = float("-inf")
         self._warned_clear_services_unavailable = False
+        self._warned_stale_input = False
         self._clear_futures = []
 
         input_topic = str(self.get_parameter("input_topic").value)
@@ -81,17 +84,35 @@ class SemanticObstacleCloudNode(Node):
         self.timer = self.create_timer(1.0 / max(publish_hz, 0.1), self.publish_cloud)
 
     def on_object_pose(self, msg: PoseStamped) -> None:
+        now_sec = self.get_clock().now().nanoseconds * 1e-9
         stamp = self._stamp_to_sec(msg.header.stamp)
         if stamp <= 0.0:
-            stamp = self.get_clock().now().nanoseconds * 1e-9
+            stamp = now_sec
 
-        if self._prune():
+        ttl = float(self.get_parameter("ttl_sec").value)
+        reject_stale = bool(self.get_parameter("reject_stale_observations").value)
+        if reject_stale and ttl > 0.0 and now_sec - stamp > ttl:
+            if not self._warned_stale_input:
+                self.get_logger().warn(
+                    "ignoring semantic obstacle input older than ttl_sec; "
+                    "the publisher must preserve the original observation stamp"
+                )
+                self._warned_stale_input = True
+            return
+
+        if self._prune(now_sec):
             self._schedule_costmap_clear()
         x = float(msg.pose.position.x)
         y = float(msg.pose.position.y)
         z = float(self.get_parameter("z_m").value)
         match = self._nearest_obstacle(x, y)
         if match is not None:
+            epsilon = max(
+                0.0,
+                float(self.get_parameter("duplicate_stamp_epsilon_sec").value),
+            )
+            if stamp <= match.stamp_sec + epsilon:
+                return
             alpha = self._clamp(float(self.get_parameter("position_smoothing_alpha").value), 0.0, 1.0)
             match.x = (1.0 - alpha) * match.x + alpha * x
             match.y = (1.0 - alpha) * match.y + alpha * y
@@ -128,8 +149,9 @@ class SemanticObstacleCloudNode(Node):
         cloud.header.frame_id = self.frame_id
         self.pub.publish(cloud)
 
-    def _prune(self) -> bool:
-        now = self.get_clock().now().nanoseconds * 1e-9
+    def _prune(self, now: float | None = None) -> bool:
+        if now is None:
+            now = self.get_clock().now().nanoseconds * 1e-9
         ttl = float(self.get_parameter("ttl_sec").value)
         if ttl <= 0.0:
             return False

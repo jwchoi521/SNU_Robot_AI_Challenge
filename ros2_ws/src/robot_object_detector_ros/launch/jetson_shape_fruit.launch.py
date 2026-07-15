@@ -13,6 +13,10 @@ def generate_launch_description():
     camera_index = LaunchConfiguration("camera_index")
     camera_pipeline = LaunchConfiguration("camera_pipeline")
     camera_topic = LaunchConfiguration("camera_topic")
+    camera_frame = LaunchConfiguration("camera_frame")
+    camera_buffer_size = LaunchConfiguration("camera_buffer_size")
+    camera_timestamp_mode = LaunchConfiguration("camera_timestamp_mode")
+    camera_timestamp_offset_sec = LaunchConfiguration("camera_timestamp_offset_sec")
     classifications_topic = LaunchConfiguration("classifications_topic")
     classifier_annotated_topic = LaunchConfiguration("classifier_annotated_topic")
     fps = LaunchConfiguration("fps")
@@ -49,6 +53,12 @@ def generate_launch_description():
                 description="Optional OpenCV GStreamer pipeline. If set, camera_index is ignored.",
             ),
             DeclareLaunchArgument("camera_topic", default_value="/camera/image_raw"),
+            DeclareLaunchArgument("camera_frame", default_value="camera_frame"),
+            DeclareLaunchArgument("camera_buffer_size", default_value="1"),
+            DeclareLaunchArgument("camera_timestamp_mode", default_value="midpoint"),
+            DeclareLaunchArgument(
+                "camera_timestamp_offset_sec", default_value="0.0"
+            ),
             DeclareLaunchArgument(
                 "classifications_topic",
                 default_value="/cube_fruit/classifications",
@@ -75,9 +85,15 @@ def generate_launch_description():
                         "image_topic": camera_topic,
                         "camera_index": ParameterValue(camera_index, value_type=int),
                         "camera_pipeline": camera_pipeline,
+                        "frame_id": camera_frame,
                         "fps": ParameterValue(fps, value_type=float),
                         "frame_width": ParameterValue(frame_width, value_type=int),
                         "frame_height": ParameterValue(frame_height, value_type=int),
+                        "buffer_size": ParameterValue(camera_buffer_size, value_type=int),
+                        "timestamp_mode": camera_timestamp_mode,
+                        "timestamp_offset_sec": ParameterValue(
+                            camera_timestamp_offset_sec, value_type=float
+                        ),
                     }
                 ],
             ),
