@@ -54,7 +54,7 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("send_nav2_goal", True)
         self.declare_parameter("publish_mission_events", True)
         self.declare_parameter("control_gripper_gate", True)
-        self.declare_parameter("gate_open_distance_m", 0.30)
+        self.declare_parameter("gate_open_distance_m", 0.70)
         self.declare_parameter("approach_distance_m", 0.0)
         self.declare_parameter("goal_reached_tolerance_m", 0.12)
         self.declare_parameter("min_goal_separation_m", 0.15)
@@ -96,6 +96,7 @@ class BboxGoalNavigatorNode(Node):
         self._cancel_pending_goal = False
         self._nav_state = "idle"
         self._gate_state = "closed"
+        self._gate_open_latched = False
         self._stop_until_sec = 0.0
         self._last_status: dict[str, Any] = {}
         self._warned_nav_server_unavailable = False
@@ -204,6 +205,7 @@ class BboxGoalNavigatorNode(Node):
         hold_sec = max(0.0, float(self.get_parameter("capture_stop_hold_sec").value))
         self._stop_until_sec = max(self._stop_until_sec, self._now_sec() + hold_sec)
         self._send_gripper(GripperCommand.CLOSE, f"capture_event:{event_name}")
+        self._gate_open_latched = False
         removed = self._remove_selected_target()
         self._last_sent_goal = None
         self._target_pose = None
@@ -229,13 +231,14 @@ class BboxGoalNavigatorNode(Node):
             self._target_stamp_sec = selected_target.stamp_sec
 
         if self._target_pose is None or self._target_stamp_sec is None:
+            self._close_gate_and_reset_latch("waiting_for_target_pose")
             self._publish_status("waiting_for_target_pose")
             return
 
         target_age = self._now_sec() - self._target_stamp_sec
         max_age = float(self.get_parameter("max_target_age_sec").value)
         if max_age > 0.0 and target_age > max_age:
-            self._send_gripper(GripperCommand.CLOSE, "target_stale")
+            self._close_gate_and_reset_latch("target_stale")
             self._publish_status("target_stale", target_age_sec=target_age)
             return
 
@@ -521,16 +524,24 @@ class BboxGoalNavigatorNode(Node):
 
     def _update_gate_for_target_distance(self) -> None:
         if self._selected_target_distance_m is None:
-            self._send_gripper(GripperCommand.CLOSE, "target_distance_unknown")
+            self._close_gate_and_reset_latch("target_distance_unknown")
             return
         open_distance = max(
             0.0,
             float(self.get_parameter("gate_open_distance_m").value),
         )
+        if self._gate_open_latched:
+            self._send_gripper(GripperCommand.OPEN, "gate_open_latched")
+            return
         if self._selected_target_distance_m <= open_distance:
+            self._gate_open_latched = True
             self._send_gripper(GripperCommand.OPEN, "target_within_gate_open_distance")
         else:
             self._send_gripper(GripperCommand.CLOSE, "target_outside_gate_open_distance")
+
+    def _close_gate_and_reset_latch(self, reason: str) -> None:
+        self._gate_open_latched = False
+        self._send_gripper(GripperCommand.CLOSE, reason)
 
     def _remove_selected_target(self) -> int:
         target = self._target_pose
@@ -598,6 +609,7 @@ class BboxGoalNavigatorNode(Node):
             "target_selection_mode": self._target_selection_mode(),
             "tracked_target_count": len(self._tracked_targets),
             "gate_state": self._gate_state,
+            "gate_open_latched": self._gate_open_latched,
         }
         if self._selected_target_distance_m is not None:
             payload["selected_target_distance_m"] = round(

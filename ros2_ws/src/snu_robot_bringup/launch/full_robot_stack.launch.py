@@ -488,7 +488,7 @@ def generate_launch_description():
             DeclareLaunchArgument("bbox_goal_control_gripper_gate", default_value="true"),
             DeclareLaunchArgument("gripper_command_topic", default_value="/gripper/command"),
             DeclareLaunchArgument("bbox_goal_cmd_vel_topic", default_value="/cmd_vel"),
-            DeclareLaunchArgument("bbox_goal_gate_open_distance_m", default_value="0.30"),
+            DeclareLaunchArgument("bbox_goal_gate_open_distance_m", default_value="0.70"),
             DeclareLaunchArgument("bbox_goal_approach_distance_m", default_value="0.0"),
             DeclareLaunchArgument("bbox_goal_reached_tolerance_m", default_value="0.05"),
             DeclareLaunchArgument("bbox_goal_min_separation_m", default_value="0.15"),
@@ -626,7 +626,7 @@ def generate_launch_description():
             DeclareLaunchArgument("object_association_radius_m", default_value="0.35"),
             DeclareLaunchArgument("object_update_alpha", default_value="0.4"),
             DeclareLaunchArgument("max_tracked_objects", default_value="20"),
-            DeclareLaunchArgument("enable_object_track_fusion", default_value="false"),
+            DeclareLaunchArgument("enable_object_track_fusion", default_value="true"),
             DeclareLaunchArgument(
                 "object_track_status_topic",
                 default_value="/object_track_fusion/status",
