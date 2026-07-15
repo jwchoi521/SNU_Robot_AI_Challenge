@@ -432,7 +432,7 @@ def generate_launch_description():
             DeclareLaunchArgument("esp32_command_mode", default_value="encoder_velocity"),
             DeclareLaunchArgument("esp32_max_power", default_value="0.35"),
             DeclareLaunchArgument("esp32_max_wheel_velocity_rad_s", default_value="50.0"),
-            DeclareLaunchArgument("esp32_encoder_counts_per_revolution", default_value="890.3"),
+            DeclareLaunchArgument("esp32_encoder_counts_per_revolution", default_value="684.8"),
             DeclareLaunchArgument("esp32_u_shape_pwm_max", default_value="120"),
             DeclareLaunchArgument("esp32_log_serial_writes", default_value="false"),
             DeclareLaunchArgument("esp32_close_gate_on_start", default_value="true"),

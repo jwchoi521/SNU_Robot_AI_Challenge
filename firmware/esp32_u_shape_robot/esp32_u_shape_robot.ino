@@ -99,12 +99,12 @@ const float SET1_WHEEL_KP = 0.045f;
 const float SET1_WHEEL_KI = 0.35f;
 const int SET1_MAX_CORRECTION = 90;
 const float SET1_INTEGRAL_LIMIT = 250.0f;
-const float SET1_MAX_TARGET_CPS = 7085.0f;  // 50 rad/s * 141.7 counts/rad.
+const float SET1_MAX_TARGET_CPS = 5449.0f;  // 50 rad/s * 109.0 counts/rad.
 const uint32_t SET1_DEBUG_INTERVAL_MS = 1000;
 const bool SET1_IMU_YAW_FEEDBACK_ENABLED = true;
 const float SET1_WHEEL_RADIUS_M = 0.033f;
 const float SET1_TRACK_WIDTH_M = 0.30f;
-const float SET1_ENCODER_COUNTS_PER_REV = 890.3f;
+const float SET1_ENCODER_COUNTS_PER_REV = 684.8f;
 const float SET1_IMU_YAW_RATE_SIGN = 1.0f;
 const uint32_t SET1_IMU_YAW_RATE_TIMEOUT_MS = 250;
 const float SET1_IMU_YAW_RATE_FILTER_ALPHA = 0.25f;
@@ -263,11 +263,7 @@ void IRAM_ATTR handleBrEncoderA() {
 void readEncoderTicks(int32_t *outTicks) {
   noInterrupts();
   for (int i = 0; i < MOTOR_COUNT; i++) {
-    // Multiply by 1.3 to compensate for the robot physically moving 1.3x faster
-    // than the target speed (likely due to a wheel size or gear ratio mismatch).
-    // This scales up the perceived encoder counts, so the PID loop outputs a slower PWM,
-    // and ROS2 receives the exact requested counts, keeping odometry perfectly accurate.
-    outTicks[i] = (int32_t)(encoderTicks[i] * 1.3f);
+    outTicks[i] = encoderTicks[i];
   }
   interrupts();
 }

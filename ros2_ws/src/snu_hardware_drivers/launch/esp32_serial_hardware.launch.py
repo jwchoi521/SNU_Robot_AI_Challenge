@@ -76,7 +76,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("imu_enable_retry_sec", default_value="1.0"),
             DeclareLaunchArgument("imu_enable_retry_max_attempts", default_value="0"),
             DeclareLaunchArgument("max_wheel_velocity_rad_s", default_value="50.0"),
-            DeclareLaunchArgument("encoder_counts_per_revolution", default_value="890.3"),
+            DeclareLaunchArgument("encoder_counts_per_revolution", default_value="684.8"),
             DeclareLaunchArgument("front_left_motor_sign", default_value="1.0"),
             DeclareLaunchArgument("front_right_motor_sign", default_value="1.0"),
             DeclareLaunchArgument("rear_left_motor_sign", default_value="1.0"),
