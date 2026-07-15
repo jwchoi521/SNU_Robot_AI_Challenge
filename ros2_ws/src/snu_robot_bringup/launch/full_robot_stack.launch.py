@@ -614,18 +614,18 @@ def generate_launch_description():
                 default_value="/mission/event",
             ),
             DeclareLaunchArgument("object_track_class_aware_association", default_value="false"),
-            DeclareLaunchArgument("object_track_association_radius_m", default_value="0.35"),
+            DeclareLaunchArgument("object_track_association_radius_m", default_value="0.30"),
             DeclareLaunchArgument(
                 "object_track_use_dynamic_association_radius",
-                default_value="false",
+                default_value="true",
             ),
             DeclareLaunchArgument(
                 "object_track_association_base_radius_m",
-                default_value="0.35",
+                default_value="0.30",
             ),
             DeclareLaunchArgument(
                 "object_track_association_max_radius_m",
-                default_value="0.35",
+                default_value="0.42",
             ),
             DeclareLaunchArgument(
                 "object_track_association_speed_gain",
