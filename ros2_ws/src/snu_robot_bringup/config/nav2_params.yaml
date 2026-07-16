@@ -29,7 +29,7 @@ controller_server:
       # Tight enough for the 25 cm object approach pose, but still achievable
       # with wheel odometry + EKF localization on the physical robot.
       xy_goal_tolerance: 0.05
-      yaw_goal_tolerance: 0.05
+      yaw_goal_tolerance: 1.57
 
     FollowPath:
       plugin: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
