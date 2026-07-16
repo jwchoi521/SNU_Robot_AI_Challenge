@@ -194,6 +194,70 @@ def generate_launch_description():
             DeclareLaunchArgument("bbox_goal_target_lock_distance_m", default_value="0.30"),
             DeclareLaunchArgument("bbox_goal_max_tracked_targets", default_value="20"),
             DeclareLaunchArgument("bbox_goal_margin_m", default_value="0.20"),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_dropoff_enabled",
+                default_value="true",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_trigger_count",
+                default_value="3",
+            ),
+            DeclareLaunchArgument("bbox_goal_storage_min_x", default_value="-2.0"),
+            DeclareLaunchArgument("bbox_goal_storage_max_x", default_value="-1.6"),
+            DeclareLaunchArgument("bbox_goal_storage_min_y", default_value="-2.0"),
+            DeclareLaunchArgument("bbox_goal_storage_max_y", default_value="-1.6"),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_entry_mode",
+                default_value="auto",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_approach_clearance_m",
+                default_value="0.05",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_robot_half_length_m",
+                default_value="0.16",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_robot_half_width_m",
+                default_value="0.165",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_containment_margin_m",
+                default_value="0.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_heading_tolerance_deg",
+                default_value="10.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_verify_timeout_sec",
+                default_value="3.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_nav_max_retries",
+                default_value="2",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_gate_open_wait_sec",
+                default_value="1.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_backup_action_name",
+                default_value="backup",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_backup_distance_m",
+                default_value="0.50",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_backup_speed_mps",
+                default_value="0.08",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_backup_time_allowance_sec",
+                default_value="12.0",
+            ),
             DeclareLaunchArgument("enable_mapping_debug", default_value="true"),
             DeclareLaunchArgument("mapping_debug_period_sec", default_value="1.0"),
             DeclareLaunchArgument(
@@ -552,6 +616,55 @@ def generate_launch_description():
                         "arena_height_m": _float_arg("arena_height_m"),
                         "arena_origin": LaunchConfiguration("arena_origin"),
                         "goal_margin_m": _float_arg("bbox_goal_margin_m"),
+                        "storage_dropoff_enabled": _bool_arg(
+                            "bbox_goal_storage_dropoff_enabled"
+                        ),
+                        "storage_trigger_count": _int_arg(
+                            "bbox_goal_storage_trigger_count"
+                        ),
+                        "storage_min_x": _float_arg("bbox_goal_storage_min_x"),
+                        "storage_max_x": _float_arg("bbox_goal_storage_max_x"),
+                        "storage_min_y": _float_arg("bbox_goal_storage_min_y"),
+                        "storage_max_y": _float_arg("bbox_goal_storage_max_y"),
+                        "storage_entry_mode": LaunchConfiguration(
+                            "bbox_goal_storage_entry_mode"
+                        ),
+                        "storage_approach_clearance_m": _float_arg(
+                            "bbox_goal_storage_approach_clearance_m"
+                        ),
+                        "robot_half_length_m": _float_arg(
+                            "bbox_goal_robot_half_length_m"
+                        ),
+                        "robot_half_width_m": _float_arg(
+                            "bbox_goal_robot_half_width_m"
+                        ),
+                        "storage_containment_margin_m": _float_arg(
+                            "bbox_goal_storage_containment_margin_m"
+                        ),
+                        "storage_heading_tolerance_deg": _float_arg(
+                            "bbox_goal_storage_heading_tolerance_deg"
+                        ),
+                        "storage_verify_timeout_sec": _float_arg(
+                            "bbox_goal_storage_verify_timeout_sec"
+                        ),
+                        "storage_nav_max_retries": _int_arg(
+                            "bbox_goal_storage_nav_max_retries"
+                        ),
+                        "storage_gate_open_wait_sec": _float_arg(
+                            "bbox_goal_storage_gate_open_wait_sec"
+                        ),
+                        "storage_backup_action_name": LaunchConfiguration(
+                            "bbox_goal_storage_backup_action_name"
+                        ),
+                        "storage_backup_distance_m": _float_arg(
+                            "bbox_goal_storage_backup_distance_m"
+                        ),
+                        "storage_backup_speed_mps": _float_arg(
+                            "bbox_goal_storage_backup_speed_mps"
+                        ),
+                        "storage_backup_time_allowance_sec": _float_arg(
+                            "bbox_goal_storage_backup_time_allowance_sec"
+                        ),
                     }
                 ],
             ),

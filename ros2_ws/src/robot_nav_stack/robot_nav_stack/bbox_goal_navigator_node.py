@@ -3,18 +3,26 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped, Twist
-from nav2_msgs.action import NavigateToPose
+from nav2_msgs.action import BackUp, NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from snu_robot_interfaces.msg import GripperCommand
 from std_msgs.msg import String
 
 from .core import Pose2D, angle_diff, quaternion_from_yaw, yaw_from_quaternion
+from .storage_dropoff import (
+    StorageBounds,
+    StoragePlan,
+    choose_storage_plan,
+    footprint_fully_contained,
+    heading_matches_entry,
+)
 from .target_lock import TargetLock
 
 
@@ -24,6 +32,17 @@ class TrackedTarget:
     stamp_sec: float
     last_seen_sec: float
     seen_count: int = 1
+
+
+class StoragePhase(str, Enum):
+    INACTIVE = "inactive"
+    APPROACHING = "approaching"
+    ENTERING = "entering"
+    VERIFYING_INSIDE = "verifying_inside"
+    OPENING_GATE = "opening_gate"
+    BACKING_UP = "backing_up"
+    COMPLETE = "complete"
+    FAILED = "failed"
 
 
 class BboxGoalNavigatorNode(Node):
@@ -75,6 +94,25 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("arena_height_m", 0.0)
         self.declare_parameter("arena_origin", "center")
         self.declare_parameter("goal_margin_m", 0.20)
+        self.declare_parameter("storage_dropoff_enabled", True)
+        self.declare_parameter("storage_trigger_count", 3)
+        self.declare_parameter("storage_min_x", -2.0)
+        self.declare_parameter("storage_max_x", -1.6)
+        self.declare_parameter("storage_min_y", -2.0)
+        self.declare_parameter("storage_max_y", -1.6)
+        self.declare_parameter("storage_entry_mode", "auto")
+        self.declare_parameter("storage_approach_clearance_m", 0.05)
+        self.declare_parameter("robot_half_length_m", 0.16)
+        self.declare_parameter("robot_half_width_m", 0.165)
+        self.declare_parameter("storage_containment_margin_m", 0.0)
+        self.declare_parameter("storage_heading_tolerance_deg", 10.0)
+        self.declare_parameter("storage_verify_timeout_sec", 3.0)
+        self.declare_parameter("storage_nav_max_retries", 2)
+        self.declare_parameter("storage_gate_open_wait_sec", 1.0)
+        self.declare_parameter("storage_backup_action_name", "backup")
+        self.declare_parameter("storage_backup_distance_m", 0.50)
+        self.declare_parameter("storage_backup_speed_mps", 0.08)
+        self.declare_parameter("storage_backup_time_allowance_sec", 12.0)
 
         self._map_frame = str(self.get_parameter("map_frame").value)
         self._send_nav2_goal = bool(self.get_parameter("send_nav2_goal").value)
@@ -87,6 +125,22 @@ class BboxGoalNavigatorNode(Node):
         self._nav_server_wait_sec = float(
             self.get_parameter("nav_server_wait_sec").value
         )
+        self._storage_dropoff_enabled = bool(
+            self.get_parameter("storage_dropoff_enabled").value
+        )
+        self._storage_bounds = StorageBounds(
+            min_x=float(self.get_parameter("storage_min_x").value),
+            max_x=float(self.get_parameter("storage_max_x").value),
+            min_y=float(self.get_parameter("storage_min_y").value),
+            max_y=float(self.get_parameter("storage_max_y").value),
+        )
+        self._storage_bounds.validate()
+        self._robot_half_length_m = float(
+            self.get_parameter("robot_half_length_m").value
+        )
+        self._robot_half_width_m = float(
+            self.get_parameter("robot_half_width_m").value
+        )
 
         self._robot_pose: Pose2D | None = None
         self._target_pose: Pose2D | None = None
@@ -98,6 +152,7 @@ class BboxGoalNavigatorNode(Node):
         self._goal_sequence = 0
         self._active_goal_sequence: int | None = None
         self._active_goal_handle = None
+        self._active_goal_purpose: str | None = None
         self._cancel_pending_goal = False
         self._nav_state = "idle"
         self._gate_state = "closed"
@@ -105,11 +160,27 @@ class BboxGoalNavigatorNode(Node):
         self._stop_until_sec = 0.0
         self._last_status: dict[str, Any] = {}
         self._warned_nav_server_unavailable = False
+        self._captured_object_count = 0
+        self._storage_phase = StoragePhase.INACTIVE
+        self._storage_plan: StoragePlan | None = None
+        self._storage_stage_goal_sent = False
+        self._storage_nav_retry_count = 0
+        self._storage_verify_deadline_sec = 0.0
+        self._storage_gate_opened_at_sec = 0.0
+        self._storage_cycle_id = 0
+        self._backup_goal_pending = False
+        self._backup_goal_handle = None
+        self._warned_backup_server_unavailable = False
 
         self._nav_client = ActionClient(
             self,
             NavigateToPose,
             str(self.get_parameter("nav_action_name").value),
+        )
+        self._backup_client = ActionClient(
+            self,
+            BackUp,
+            str(self.get_parameter("storage_backup_action_name").value),
         )
         self._goal_pub = self.create_publisher(
             PoseStamped,
@@ -257,6 +328,9 @@ class BboxGoalNavigatorNode(Node):
         if not event:
             return
         event_name = event.split()[0].strip().lower()
+        if event_name == "reset":
+            self._reset_storage_mission()
+            return
         capture_event_names = {
             name.strip().lower()
             for name in str(self.get_parameter("capture_event_names").value).split(",")
@@ -267,6 +341,14 @@ class BboxGoalNavigatorNode(Node):
         self._handle_capture_event(event_name)
 
     def _handle_capture_event(self, event_name: str) -> None:
+        if self._storage_phase != StoragePhase.INACTIVE:
+            self._publish_status(
+                "capture_ignored_during_storage_dropoff",
+                capture_event=event_name,
+            )
+            return
+
+        self._captured_object_count += 1
         self._nav_state = "capture_complete"
         self._cancel_active_goal(event_name)
         self._publish_stop_cmd()
@@ -282,8 +364,365 @@ class BboxGoalNavigatorNode(Node):
         self._selected_target_distance_m = None
         self._publish_status(
             "capture_complete",
+            captured_object_count=self._captured_object_count,
             capture_event=event_name,
             removed_tracked_targets=removed,
+        )
+        trigger_count = max(
+            1,
+            int(self.get_parameter("storage_trigger_count").value),
+        )
+        if self._storage_dropoff_enabled and self._captured_object_count >= trigger_count:
+            self._begin_storage_dropoff()
+
+    def _begin_storage_dropoff(self) -> None:
+        self._storage_cycle_id += 1
+        self._storage_plan = None
+        self._storage_nav_retry_count = 0
+        self._storage_verify_deadline_sec = 0.0
+        self._storage_gate_opened_at_sec = 0.0
+        self._storage_stage_goal_sent = False
+        self._nav_state = "storage_dropoff_start"
+        self._send_gripper(GripperCommand.CLOSE, "storage_dropoff_start")
+        self._gate_open_latched = False
+        self._set_storage_phase(StoragePhase.APPROACHING)
+        self._publish_stop_cmd()
+        self._publish_status("storage_dropoff_start")
+
+    def _reset_storage_mission(self) -> None:
+        self._storage_cycle_id += 1
+        self._cancel_active_goal("mission_reset")
+        self._cancel_backup_goal("mission_reset")
+        self._send_gripper(GripperCommand.CLOSE, "mission_reset")
+        self._captured_object_count = 0
+        self._storage_plan = None
+        self._storage_stage_goal_sent = False
+        self._storage_nav_retry_count = 0
+        self._storage_verify_deadline_sec = 0.0
+        self._storage_gate_opened_at_sec = 0.0
+        self._storage_phase = StoragePhase.INACTIVE
+        self._nav_state = "idle"
+        self._target_lock.clear()
+        self._last_sent_goal = None
+        self._target_pose = None
+        self._target_stamp_sec = None
+        self._selected_target_distance_m = None
+        self._gate_open_latched = False
+        self._publish_stop_cmd()
+        self._publish_status("mission_reset")
+
+    def _cancel_backup_goal(self, reason: str) -> None:
+        goal_handle = self._backup_goal_handle
+        self._backup_goal_handle = None
+        self._backup_goal_pending = False
+        if goal_handle is None:
+            return
+        try:
+            future = goal_handle.cancel_goal_async()
+            future.add_done_callback(
+                lambda done_future: self._on_cancel_result(done_future, reason)
+            )
+        except Exception as exc:  # noqa: BLE001 - best-effort emergency cancel.
+            self.get_logger().warn(
+                f"failed to cancel Nav2 BackUp after {reason}: {exc}"
+            )
+
+    def _set_storage_phase(self, phase: StoragePhase) -> None:
+        if phase == self._storage_phase:
+            return
+        previous = self._storage_phase
+        self._storage_phase = phase
+        self._nav_state = f"storage_{phase.value}"
+        if phase in (StoragePhase.APPROACHING, StoragePhase.ENTERING):
+            self._storage_stage_goal_sent = False
+            self._last_sent_goal = None
+        self.get_logger().info(
+            f"storage dropoff phase: {previous.value} -> {phase.value}"
+        )
+
+    def _control_storage_step(self) -> None:
+        robot_pose = self._robot_pose
+        if robot_pose is None:
+            self._publish_status("storage_waiting_for_robot_pose")
+            return
+        if self._storage_phase in (StoragePhase.COMPLETE, StoragePhase.FAILED):
+            self._publish_stop_cmd()
+            self._publish_status(f"storage_{self._storage_phase.value}")
+            return
+
+        if self._storage_plan is None:
+            try:
+                self._storage_plan = choose_storage_plan(
+                    robot_pose=robot_pose,
+                    bounds=self._storage_bounds,
+                    robot_half_length_m=self._robot_half_length_m,
+                    robot_half_width_m=self._robot_half_width_m,
+                    approach_clearance_m=float(
+                        self.get_parameter("storage_approach_clearance_m").value
+                    ),
+                    entry_mode=str(
+                        self.get_parameter("storage_entry_mode").value
+                    ),
+                )
+            except ValueError as exc:
+                self._fail_storage_dropoff(f"invalid_storage_plan:{exc}")
+                return
+            self.get_logger().info(
+                "storage entry selected: "
+                f"{self._storage_plan.entry_direction.value}; "
+                f"exit={self._storage_plan.exit_direction}"
+            )
+
+        plan = self._storage_plan
+        if self._storage_phase == StoragePhase.APPROACHING:
+            self._publish_goal_pose(plan.approach_pose)
+            if not self._send_nav2_goal:
+                self._publish_status(
+                    "storage_approach_goal_published_only",
+                    goal=plan.approach_pose,
+                )
+                return
+            if not self._storage_stage_goal_sent:
+                self._storage_stage_goal_sent = self._send_goal(
+                    plan.approach_pose,
+                    purpose="storage_approach",
+                )
+            self._publish_status(
+                "storage_approaching",
+                goal=plan.approach_pose,
+            )
+            return
+
+        if self._storage_phase == StoragePhase.ENTERING:
+            self._publish_goal_pose(plan.inside_pose)
+            if not self._send_nav2_goal:
+                self._publish_status(
+                    "storage_inside_goal_published_only",
+                    goal=plan.inside_pose,
+                )
+                return
+            if not self._storage_stage_goal_sent:
+                self._storage_stage_goal_sent = self._send_goal(
+                    plan.inside_pose,
+                    purpose="storage_enter",
+                )
+            self._publish_status("storage_entering", goal=plan.inside_pose)
+            return
+
+        if self._storage_phase == StoragePhase.VERIFYING_INSIDE:
+            self._publish_stop_cmd()
+            footprint_inside, heading_aligned = self._storage_ready_to_unload()
+            self._publish_status(
+                "storage_verifying_inside",
+                footprint_fully_inside=footprint_inside,
+                heading_aligned=heading_aligned,
+            )
+            if footprint_inside and heading_aligned:
+                self._send_gripper(
+                    GripperCommand.OPEN,
+                    "robot_fully_inside_storage",
+                )
+                self._storage_gate_opened_at_sec = self._now_sec()
+                self._set_storage_phase(StoragePhase.OPENING_GATE)
+                return
+            if self._now_sec() >= self._storage_verify_deadline_sec:
+                self._retry_storage_navigation(
+                    "storage_enter",
+                    "footprint_or_heading_not_inside",
+                )
+            return
+
+        if self._storage_phase == StoragePhase.OPENING_GATE:
+            self._publish_stop_cmd()
+            wait_sec = max(
+                0.0,
+                float(self.get_parameter("storage_gate_open_wait_sec").value),
+            )
+            elapsed = self._now_sec() - self._storage_gate_opened_at_sec
+            if elapsed >= wait_sec:
+                self._send_backup_goal()
+            else:
+                self._publish_status(
+                    "storage_waiting_for_gate_open",
+                    gate_wait_remaining_sec=max(0.0, wait_sec - elapsed),
+                )
+            return
+
+        if self._storage_phase == StoragePhase.BACKING_UP:
+            self._publish_status(
+                "storage_backing_up",
+                backup_distance_m=float(
+                    self.get_parameter("storage_backup_distance_m").value
+                ),
+                exit_direction=plan.exit_direction,
+            )
+
+    def _storage_ready_to_unload(self) -> tuple[bool, bool]:
+        assert self._robot_pose is not None
+        assert self._storage_plan is not None
+        footprint_inside = footprint_fully_contained(
+            robot_pose=self._robot_pose,
+            bounds=self._storage_bounds,
+            robot_half_length_m=self._robot_half_length_m,
+            robot_half_width_m=self._robot_half_width_m,
+            containment_margin_m=float(
+                self.get_parameter("storage_containment_margin_m").value
+            ),
+        )
+        heading_aligned = heading_matches_entry(
+            robot_pose=self._robot_pose,
+            plan=self._storage_plan,
+            tolerance_rad=math.radians(
+                max(
+                    0.0,
+                    float(
+                        self.get_parameter(
+                            "storage_heading_tolerance_deg"
+                        ).value
+                    ),
+                )
+            ),
+        )
+        return footprint_inside, heading_aligned
+
+    def _retry_storage_navigation(self, purpose: str, reason: str) -> None:
+        self._storage_nav_retry_count += 1
+        max_retries = max(
+            0,
+            int(self.get_parameter("storage_nav_max_retries").value),
+        )
+        if self._storage_nav_retry_count > max_retries:
+            self._fail_storage_dropoff(
+                f"{purpose}_failed_after_{max_retries}_retries:{reason}"
+            )
+            return
+
+        retry_phase = (
+            StoragePhase.APPROACHING
+            if purpose == "storage_approach"
+            else StoragePhase.ENTERING
+        )
+        self._set_storage_phase(retry_phase)
+        self._storage_stage_goal_sent = False
+        self._last_sent_goal = None
+        self._publish_status(
+            "storage_navigation_retry",
+            retry_count=self._storage_nav_retry_count,
+            retry_reason=reason,
+            retry_stage=purpose,
+        )
+
+    def _fail_storage_dropoff(self, reason: str) -> None:
+        self._send_gripper(GripperCommand.CLOSE, f"storage_failure:{reason}")
+        self._publish_stop_cmd()
+        self._set_storage_phase(StoragePhase.FAILED)
+        self.get_logger().error(f"storage dropoff failed: {reason}")
+        self._publish_status("storage_failed", failure_reason=reason)
+
+    def _send_backup_goal(self) -> bool:
+        if self._backup_goal_pending or self._backup_goal_handle is not None:
+            return True
+        if not self._backup_client.wait_for_server(
+            timeout_sec=self._nav_server_wait_sec
+        ):
+            if not self._warned_backup_server_unavailable:
+                self.get_logger().warn("Nav2 BackUp action server is unavailable")
+                self._warned_backup_server_unavailable = True
+            self._publish_status("storage_backup_server_unavailable")
+            return False
+
+        self._warned_backup_server_unavailable = False
+        goal_msg = BackUp.Goal()
+        goal_msg.target.x = -abs(
+            float(self.get_parameter("storage_backup_distance_m").value)
+        )
+        goal_msg.target.y = 0.0
+        goal_msg.target.z = 0.0
+        goal_msg.speed = abs(
+            float(self.get_parameter("storage_backup_speed_mps").value)
+        )
+        allowance = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "storage_backup_time_allowance_sec"
+                ).value
+            ),
+        )
+        goal_msg.time_allowance.sec = int(allowance)
+        goal_msg.time_allowance.nanosec = int(
+            (allowance - int(allowance)) * 1_000_000_000
+        )
+        if hasattr(goal_msg, "disable_collision_checks"):
+            goal_msg.disable_collision_checks = False
+
+        cycle_id = self._storage_cycle_id
+        try:
+            future = self._backup_client.send_goal_async(goal_msg)
+        except Exception as exc:  # noqa: BLE001 - report action-client failures.
+            self.get_logger().warn(f"failed to send Nav2 BackUp goal: {exc}")
+            self._publish_status("storage_backup_send_failed", error=str(exc))
+            return False
+        self._backup_goal_pending = True
+        self._set_storage_phase(StoragePhase.BACKING_UP)
+        future.add_done_callback(
+            lambda done_future: self._on_backup_goal_response(
+                done_future,
+                cycle_id,
+            )
+        )
+        return True
+
+    def _on_backup_goal_response(self, future, cycle_id: int) -> None:
+        self._backup_goal_pending = False
+        try:
+            goal_handle = future.result()
+        except Exception as exc:  # noqa: BLE001 - report action-client failures.
+            if cycle_id == self._storage_cycle_id:
+                self._fail_storage_dropoff(f"backup_send_failed:{exc}")
+            return
+
+        if cycle_id != self._storage_cycle_id:
+            if goal_handle.accepted:
+                goal_handle.cancel_goal_async()
+            return
+        if not goal_handle.accepted:
+            self._fail_storage_dropoff("backup_goal_rejected")
+            return
+
+        self._backup_goal_handle = goal_handle
+        result_future = goal_handle.get_result_async()
+        result_future.add_done_callback(
+            lambda done_future: self._on_backup_goal_result(
+                done_future,
+                cycle_id,
+            )
+        )
+
+    def _on_backup_goal_result(self, future, cycle_id: int) -> None:
+        if cycle_id != self._storage_cycle_id:
+            return
+        self._backup_goal_handle = None
+        try:
+            result = future.result()
+        except Exception as exc:  # noqa: BLE001 - report action-client failures.
+            self._fail_storage_dropoff(f"backup_result_failed:{exc}")
+            return
+
+        status_name = _goal_status_name(int(result.status))
+        if result.status != GoalStatus.STATUS_SUCCEEDED:
+            self._fail_storage_dropoff(f"backup_{status_name}")
+            return
+
+        self._publish_stop_cmd()
+        self._send_gripper(GripperCommand.CLOSE, "storage_backup_complete")
+        self._set_storage_phase(StoragePhase.COMPLETE)
+        self._publish_mission_event("storage_dropoff_complete")
+        self._publish_status(
+            "storage_complete",
+            backup_distance_m=float(
+                self.get_parameter("storage_backup_distance_m").value
+            ),
         )
 
     def _control_step(self) -> None:
@@ -293,6 +732,9 @@ class BboxGoalNavigatorNode(Node):
             return
         if self._robot_pose is None:
             self._publish_status("waiting_for_robot_pose")
+            return
+        if self._storage_phase != StoragePhase.INACTIVE:
+            self._control_storage_step()
             return
         selected_target = self._select_target(self._robot_pose)
         if selected_target is not None:
@@ -512,13 +954,24 @@ class BboxGoalNavigatorNode(Node):
         )
         return yaw_delta >= min_yaw_delta
 
-    def _send_goal(self, goal: Pose2D) -> None:
+    def _send_goal(
+        self,
+        goal: Pose2D,
+        purpose: str = "target",
+    ) -> bool:
+        if self._active_goal_sequence is not None:
+            self._publish_status(
+                "waiting_for_active_goal",
+                active_goal_purpose=self._active_goal_purpose,
+                queued_goal_purpose=purpose,
+            )
+            return False
         if not self._nav_client.wait_for_server(timeout_sec=self._nav_server_wait_sec):
             if not self._warned_nav_server_unavailable:
                 self.get_logger().warn("Nav2 NavigateToPose action server is unavailable")
                 self._warned_nav_server_unavailable = True
             self._publish_status("nav2_server_unavailable", goal=goal)
-            return
+            return False
 
         self._warned_nav_server_unavailable = False
         goal_msg = NavigateToPose.Goal()
@@ -528,33 +981,52 @@ class BboxGoalNavigatorNode(Node):
         sequence = self._goal_sequence
         self._active_goal_sequence = sequence
         self._active_goal_handle = None
+        self._active_goal_purpose = purpose
         self._cancel_pending_goal = False
         self._last_sent_goal = goal
         self._nav_state = "sending_goal"
-        self._publish_status("sending_goal", goal=goal)
+        self._publish_status("sending_goal", goal=goal, goal_purpose=purpose)
 
         future = self._nav_client.send_goal_async(goal_msg)
         future.add_done_callback(
-            lambda done_future: self._on_goal_response(done_future, sequence, goal)
+            lambda done_future: self._on_goal_response(
+                done_future, sequence, goal, purpose
+            )
         )
+        return True
 
-    def _on_goal_response(self, future, sequence: int, goal: Pose2D) -> None:
+    def _on_goal_response(
+        self, future, sequence: int, goal: Pose2D, purpose: str
+    ) -> None:
         if sequence != self._active_goal_sequence:
             return
         try:
             goal_handle = future.result()
         except Exception as exc:  # noqa: BLE001 - report action-client failures.
+            self._active_goal_sequence = None
+            self._active_goal_purpose = None
             self._nav_state = "goal_send_failed"
             self._last_sent_goal = None
-            self._publish_status("goal_send_failed", error=str(exc), goal=goal)
+            self._publish_status(
+                "goal_send_failed",
+                error=str(exc),
+                goal=goal,
+                goal_purpose=purpose,
+            )
+            self._handle_navigation_failure(purpose, f"goal_send_failed:{exc}")
             return
 
         if not goal_handle.accepted:
             self._nav_state = "goal_rejected"
+            self._active_goal_sequence = None
             self._active_goal_handle = None
+            self._active_goal_purpose = None
             self._cancel_pending_goal = False
             self._last_sent_goal = None
-            self._publish_status("goal_rejected", goal=goal)
+            self._publish_status(
+                "goal_rejected", goal=goal, goal_purpose=purpose
+            )
+            self._handle_navigation_failure(purpose, "goal_rejected")
             return
 
         self._active_goal_handle = goal_handle
@@ -563,30 +1035,82 @@ class BboxGoalNavigatorNode(Node):
             self._cancel_active_goal("pending_capture_event")
             return
         self._nav_state = "goal_active"
-        self._publish_status("goal_active", goal=goal)
+        self._publish_status("goal_active", goal=goal, goal_purpose=purpose)
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(
-            lambda done_future: self._on_goal_result(done_future, sequence, goal)
+            lambda done_future: self._on_goal_result(
+                done_future, sequence, goal, purpose
+            )
         )
 
-    def _on_goal_result(self, future, sequence: int, goal: Pose2D) -> None:
+    def _on_goal_result(
+        self, future, sequence: int, goal: Pose2D, purpose: str
+    ) -> None:
         if sequence != self._active_goal_sequence:
             return
         self._active_goal_sequence = None
         self._active_goal_handle = None
+        self._active_goal_purpose = None
         self._cancel_pending_goal = False
         try:
             result = future.result()
         except Exception as exc:  # noqa: BLE001 - report action-client failures.
             self._nav_state = "goal_result_failed"
-            self._publish_status("goal_result_failed", error=str(exc), goal=goal)
+            self._last_sent_goal = None
+            self._publish_status(
+                "goal_result_failed",
+                error=str(exc),
+                goal=goal,
+                goal_purpose=purpose,
+            )
+            self._handle_navigation_failure(
+                purpose,
+                f"goal_result_failed:{exc}",
+            )
             return
 
         status_name = _goal_status_name(int(result.status))
         self._nav_state = status_name
-        self._publish_status(status_name, goal=goal)
-        if result.status == GoalStatus.STATUS_SUCCEEDED:
+        self._publish_status(
+            status_name,
+            goal=goal,
+            goal_purpose=purpose,
+        )
+        if result.status != GoalStatus.STATUS_SUCCEEDED:
+            self._last_sent_goal = None
+            self._handle_navigation_failure(purpose, status_name)
+            return
+
+        if purpose == "target":
             self._publish_mission_event("target_reached")
+        elif (
+            purpose == "storage_approach"
+            and self._storage_phase == StoragePhase.APPROACHING
+        ):
+            self._storage_nav_retry_count = 0
+            self._set_storage_phase(StoragePhase.ENTERING)
+        elif (
+            purpose == "storage_enter"
+            and self._storage_phase == StoragePhase.ENTERING
+        ):
+            verify_timeout = max(
+                0.0,
+                float(
+                    self.get_parameter("storage_verify_timeout_sec").value
+                ),
+            )
+            self._storage_verify_deadline_sec = self._now_sec() + verify_timeout
+            self._set_storage_phase(StoragePhase.VERIFYING_INSIDE)
+
+    def _handle_navigation_failure(self, purpose: str, reason: str) -> None:
+        if (
+            purpose in ("storage_approach", "storage_enter")
+            and self._storage_phase
+            not in (StoragePhase.COMPLETE, StoragePhase.FAILED)
+        ):
+            self._retry_storage_navigation(purpose, reason)
+            return
+        self._last_sent_goal = None
 
     def _cancel_active_goal(self, reason: str) -> None:
         goal_handle = self._active_goal_handle
@@ -596,6 +1120,7 @@ class BboxGoalNavigatorNode(Node):
             return
         self._active_goal_handle = None
         self._active_goal_sequence = None
+        self._active_goal_purpose = None
         self._cancel_pending_goal = False
         try:
             future = goal_handle.cancel_goal_async()
@@ -690,7 +1215,13 @@ class BboxGoalNavigatorNode(Node):
         payload: dict[str, Any] = {
             "state": state,
             "nav_state": self._nav_state,
+            "active_goal_purpose": self._active_goal_purpose,
             "send_nav2_goal": self._send_nav2_goal,
+            "captured_object_count": self._captured_object_count,
+            "storage_trigger_count": max(
+                1, int(self.get_parameter("storage_trigger_count").value)
+            ),
+            "storage_phase": self._storage_phase.value,
             "target_selection_mode": self._target_selection_mode(),
             "target_locked": self._target_lock.active,
             "target_lock_distance_m": max(
@@ -701,6 +1232,11 @@ class BboxGoalNavigatorNode(Node):
             "gate_state": self._gate_state,
             "gate_open_latched": self._gate_open_latched,
         }
+        if self._storage_plan is not None:
+            payload["storage_entry_direction"] = (
+                self._storage_plan.entry_direction.value
+            )
+            payload["storage_exit_direction"] = self._storage_plan.exit_direction
         if self._selected_target_distance_m is not None:
             payload["selected_target_distance_m"] = round(
                 float(self._selected_target_distance_m),
