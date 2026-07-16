@@ -136,7 +136,9 @@ const int RIGHT_GATE_OPEN_DEG = 110;
 const int IR_BEAM_PIN = 35;
 const bool IR_ACTIVE_LOW = true;  // Most break-beam receivers output LOW when blocked.
 const uint32_t IR_DEBOUNCE_MS = 45;
-const uint32_t ENTRY_CLOSE_DELAY_MS = 250;
+const uint32_t ENTRY_CLOSE_DELAY_MS = 0;
+const int IR_CAPTURE_FORWARD_PWM = 55;
+const uint32_t IR_CAPTURE_ADVANCE_TIMEOUT_MS = 900;
 const int MAX_CARGO_CAPACITY = 3;
 const int BATCH_CAPACITIES[] = {3, 2, 2};
 const int BATCH_COUNT = sizeof(BATCH_CAPACITIES) / sizeof(BATCH_CAPACITIES[0]);
@@ -200,8 +202,11 @@ int cargoCount = 0;
 bool irRawBlocked = false;
 bool irStableBlocked = false;
 bool countedThisBlock = false;
+bool irPendingEntry = false;
+bool irCaptureAdvanceActive = false;
 uint32_t irLastRawChangeMs = 0;
 uint32_t scheduledGateCloseAtMs = 0;
+uint32_t irCaptureAdvanceStartedMs = 0;
 
 struct SoftwareServo {
   int pin;
@@ -412,6 +417,7 @@ void forceStopAllMotors() {
   resetSetPwmControlState();
   resetSet1VelocityControlState();
   straightRunActive = false;
+  irCaptureAdvanceActive = false;
   for (int i = 0; i < MOTOR_COUNT; i++) {
     motors[i].targetPwm = 0;
     motors[i].currentPwm = 0;
@@ -978,9 +984,39 @@ void scheduleGateClose(uint32_t delayMs) {
   }
 }
 
+void startIrCaptureAdvance() {
+  if (irCaptureAdvanceActive) return;
+
+  timedRunActive = false;
+  resetSetPwmControlState();
+  resetSet1VelocityControlState();
+  straightRunActive = false;
+
+  int fl, fr, bl, br;
+  computeScaledWheelPwm(
+    IR_CAPTURE_FORWARD_PWM,
+    FIXED_WHEEL_SCALE_FL,
+    FIXED_WHEEL_SCALE_FR,
+    FIXED_WHEEL_SCALE_BL,
+    FIXED_WHEEL_SCALE_BR,
+    fl,
+    fr,
+    bl,
+    br
+  );
+  setAllTargets(fl, fr, bl, br);
+  irCaptureAdvanceActive = true;
+  irCaptureAdvanceStartedMs = millis();
+  Serial.println("IR CAPTURE_ADVANCE");
+}
+
+void stopIrCaptureAdvance() {
+  if (!irCaptureAdvanceActive) return;
+  forceStopAllMotors();
+  Serial.println("IR CAPTURE_STOP");
+}
+
 void registerCargoEntry() {
-  if (countedThisBlock) return;
-  countedThisBlock = true;
   if (cargoCount < MAX_CARGO_CAPACITY) {
     cargoCount++;
   }
@@ -1004,11 +1040,29 @@ void updateIrSensor() {
     irStableBlocked = irRawBlocked;
     if (irStableBlocked) {
       Serial.println("IR BLOCKED");
-      registerCargoEntry();
+      if (!countedThisBlock) {
+        countedThisBlock = true;
+        irPendingEntry = true;
+        startIrCaptureAdvance();
+      }
     } else {
       Serial.println("IR CLEAR");
+      if (irPendingEntry) {
+        stopIrCaptureAdvance();
+        registerCargoEntry();
+        irPendingEntry = false;
+      }
       countedThisBlock = false;
     }
+  }
+
+  if (
+    irCaptureAdvanceActive &&
+    IR_CAPTURE_ADVANCE_TIMEOUT_MS > 0 &&
+    (uint32_t)(now - irCaptureAdvanceStartedMs) >= IR_CAPTURE_ADVANCE_TIMEOUT_MS)
+  {
+    stopIrCaptureAdvance();
+    Serial.println("IR CAPTURE_ADVANCE_TIMEOUT");
   }
 
   if (scheduledGateCloseAtMs != 0 && (int32_t)(now - scheduledGateCloseAtMs) >= 0) {
@@ -1279,6 +1333,8 @@ void handleCargoCommand(char *&cursor) {
   }
   uppercaseToken(mode);
   if (strcmp(mode, "RESET") == 0) {
+    irPendingEntry = false;
+    stopIrCaptureAdvance();
     cargoCount = 0;
     countedThisBlock = false;
     Serial.println("OK CARGO RESET");
@@ -1297,6 +1353,8 @@ void handleBatchCommand(char *&cursor) {
   }
   activeBatchIndex = batchIndex;
   targetCapacity = BATCH_CAPACITIES[batchIndex];
+  irPendingEntry = false;
+  stopIrCaptureAdvance();
   cargoCount = 0;
   countedThisBlock = false;
   closeGate();
@@ -1523,12 +1581,16 @@ void handleCommand(String line) {
   }
 
   if (strcmp(command, "STOP") == 0) {
+    irPendingEntry = false;
+    countedThisBlock = false;
     forceStopAllMotors();
     Serial.println("OK STOP");
     return;
   }
 
   if (strcmp(command, "SET") == 0) {
+    if (irPendingEntry) return;
+
     bool ok = true;
     int fl = readIntToken(cursor, ok);
     int fr = readIntToken(cursor, ok);
@@ -1546,6 +1608,8 @@ void handleCommand(String line) {
   }
 
   if (strcmp(command, "SET1") == 0) {
+    if (irPendingEntry) return;
+
     bool ok = true;
     float fl = readFloatToken(cursor, ok);
     float fr = readFloatToken(cursor, ok);
@@ -1561,6 +1625,8 @@ void handleCommand(String line) {
   }
 
   if (strcmp(command, "DRIVE") == 0 || strcmp(command, "RUN") == 0) {
+    if (irPendingEntry) return;
+
     bool ok = true;
     int base = readIntToken(cursor, ok);
     float flScale = readFloatToken(cursor, ok);
@@ -1591,6 +1657,8 @@ void handleCommand(String line) {
   }
 
   if (strcmp(command, "STRAIGHT") == 0) {
+    if (irPendingEntry) return;
+
     bool ok = true;
     int base = readIntToken(cursor, ok);
     int durationMs = readIntToken(cursor, ok);
@@ -1685,6 +1753,8 @@ void handleCommand(String line) {
   }
 
   if (strcmp(command, "UNLOAD") == 0) {
+    irPendingEntry = false;
+    stopIrCaptureAdvance();
     openGate();
     cargoCount = 0;
     countedThisBlock = false;
