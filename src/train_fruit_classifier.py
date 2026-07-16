@@ -170,6 +170,23 @@ def _run_epoch(
     return total_loss / total_samples, total_correct / total_samples
 
 
+def _load_initial_checkpoint(
+    model: FruitClassifier,
+    checkpoint_path: Path,
+    classes: tuple[str, ...],
+    device: torch.device,
+) -> dict[str, object]:
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    checkpoint_classes = tuple(checkpoint.get("classes", ()))
+    if checkpoint_classes and checkpoint_classes != classes:
+        raise ValueError(
+            "checkpoint classes do not match training classes: "
+            f"{checkpoint_classes} != {classes}"
+        )
+    model.load_state_dict(checkpoint["model_state"])
+    return checkpoint
+
+
 def train_classifier(args: argparse.Namespace) -> list[EpochMetrics]:
     _seed_everything(args.seed)
     device = _resolve_device(args.device)
@@ -205,6 +222,19 @@ def train_classifier(args: argparse.Namespace) -> list[EpochMetrics]:
     )
 
     model = FruitClassifier(num_classes=len(classes)).to(device)
+    if args.init_checkpoint:
+        checkpoint = _load_initial_checkpoint(
+            model=model,
+            checkpoint_path=args.init_checkpoint,
+            classes=classes,
+            device=device,
+        )
+        print(
+            "initialized_from:",
+            args.init_checkpoint,
+            f"epoch={checkpoint.get('epoch', 'unknown')}",
+            f"image_size={checkpoint.get('image_size', 'unknown')}",
+        )
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -275,6 +305,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--threshold", type=float, default=DEFAULT_FRUIT_THRESHOLD)
+    parser.add_argument(
+        "--init-checkpoint",
+        type=Path,
+        default=None,
+        help="Load classifier weights from an existing checkpoint before fine-tuning.",
+    )
     parser.add_argument(
         "--classes",
         nargs="+",
