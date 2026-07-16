@@ -15,6 +15,7 @@ from snu_robot_interfaces.msg import GripperCommand
 from std_msgs.msg import String
 
 from .core import Pose2D, angle_diff, quaternion_from_yaw, yaw_from_quaternion
+from .target_lock import TargetLock
 
 
 @dataclass
@@ -63,6 +64,7 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("max_target_age_sec", 1.5)
         self.declare_parameter("target_selection_mode", "nearest")
         self.declare_parameter("target_association_radius_m", 0.15)
+        self.declare_parameter("target_lock_distance_m", 0.30)
         self.declare_parameter("reclassification_radius_m", 0.25)
         self.declare_parameter("max_tracked_targets", 20)
         self.declare_parameter("control_period_sec", 0.2)
@@ -90,6 +92,7 @@ class BboxGoalNavigatorNode(Node):
         self._target_pose: Pose2D | None = None
         self._target_stamp_sec: float | None = None
         self._tracked_targets: list[TrackedTarget] = []
+        self._target_lock = TargetLock()
         self._selected_target_distance_m: float | None = None
         self._last_sent_goal: Pose2D | None = None
         self._goal_sequence = 0
@@ -188,7 +191,7 @@ class BboxGoalNavigatorNode(Node):
             stamp_sec = self._now_sec()
 
         self._upsert_tracked_target(pose, stamp_sec)
-        if self._target_selection_mode() == "latest":
+        if self._target_selection_mode() == "latest" and not self._target_lock.active:
             self._target_pose = pose
             self._target_stamp_sec = stamp_sec
 
@@ -205,11 +208,13 @@ class BboxGoalNavigatorNode(Node):
             0.0,
             float(self.get_parameter("reclassification_radius_m").value),
         )
+        locked_reclassification = self._target_lock.protects(obstacle, radius)
         before = len(self._tracked_targets)
         self._tracked_targets = [
             tracked
             for tracked in self._tracked_targets
-            if math.hypot(tracked.pose.x - obstacle.x, tracked.pose.y - obstacle.y)
+            if self._target_lock.protects(tracked.pose, radius)
+            or math.hypot(tracked.pose.x - obstacle.x, tracked.pose.y - obstacle.y)
             > radius
         ]
         removed = before - len(self._tracked_targets)
@@ -221,6 +226,13 @@ class BboxGoalNavigatorNode(Node):
             )
             <= radius
         )
+        if locked_reclassification:
+            self._publish_status(
+                "target_reclassification_ignored_locked",
+                removed_tracked_targets=removed,
+                obstacle=_pose_to_dict(obstacle),
+            )
+            return
         if not selected_reclassified and removed == 0:
             return
 
@@ -233,6 +245,7 @@ class BboxGoalNavigatorNode(Node):
             self._target_stamp_sec = None
             self._selected_target_distance_m = None
             self._last_sent_goal = None
+            self._target_lock.clear()
 
         self._publish_status(
             "target_reclassified_obstacle",
@@ -263,6 +276,7 @@ class BboxGoalNavigatorNode(Node):
         self._send_gripper(GripperCommand.CLOSE, f"capture_event:{event_name}")
         self._gate_open_latched = False
         removed = self._remove_selected_target()
+        self._target_lock.clear()
         self._last_sent_goal = None
         self._target_pose = None
         self._target_stamp_sec = None
@@ -293,7 +307,7 @@ class BboxGoalNavigatorNode(Node):
 
         target_age = self._now_sec() - self._target_stamp_sec
         max_age = float(self.get_parameter("max_target_age_sec").value)
-        if max_age > 0.0 and target_age > max_age:
+        if not self._target_lock.active and max_age > 0.0 and target_age > max_age:
             self._close_gate_and_reset_latch("target_stale")
             self._publish_status("target_stale", target_age_sec=target_age)
             return
@@ -353,7 +367,26 @@ class BboxGoalNavigatorNode(Node):
             del self._tracked_targets[max_targets:]
 
     def _select_target(self, robot: Pose2D) -> TrackedTarget | None:
-        self._prune_tracked_targets(self._now_sec())
+        now_sec = self._now_sec()
+        self._prune_tracked_targets(now_sec)
+        lock_distance = max(
+            0.0,
+            float(self.get_parameter("target_lock_distance_m").value),
+        )
+        locked_selection = self._target_lock.select(
+            candidate_pose=None,
+            candidate_stamp_sec=None,
+            robot_pose=robot,
+            lock_distance_m=lock_distance,
+        )
+        if locked_selection is not None:
+            self._selected_target_distance_m = locked_selection.distance_m
+            return TrackedTarget(
+                pose=locked_selection.pose,
+                stamp_sec=locked_selection.stamp_sec,
+                last_seen_sec=now_sec,
+            )
+
         if not self._tracked_targets:
             self._selected_target_distance_m = None
             return None
@@ -373,11 +406,26 @@ class BboxGoalNavigatorNode(Node):
                 ),
             )
 
-        self._selected_target_distance_m = math.hypot(
-            selected.pose.x - robot.x,
-            selected.pose.y - robot.y,
+        selection = self._target_lock.select(
+            candidate_pose=selected.pose,
+            candidate_stamp_sec=selected.stamp_sec,
+            robot_pose=robot,
+            lock_distance_m=lock_distance,
         )
-        return selected
+        assert selection is not None
+        self._selected_target_distance_m = selection.distance_m
+        if selection.locked:
+            self.get_logger().info(
+                "target locked at "
+                f"{selection.distance_m:.3f}m "
+                f"(threshold={lock_distance:.3f}m)"
+            )
+        return TrackedTarget(
+            pose=selection.pose,
+            stamp_sec=selection.stamp_sec,
+            last_seen_sec=now_sec,
+            seen_count=selected.seen_count,
+        )
 
     def _prune_tracked_targets(self, now_sec: float) -> None:
         max_age = float(self.get_parameter("max_target_age_sec").value)
@@ -663,6 +711,11 @@ class BboxGoalNavigatorNode(Node):
             "nav_state": self._nav_state,
             "send_nav2_goal": self._send_nav2_goal,
             "target_selection_mode": self._target_selection_mode(),
+            "target_locked": self._target_lock.active,
+            "target_lock_distance_m": max(
+                0.0,
+                float(self.get_parameter("target_lock_distance_m").value),
+            ),
             "tracked_target_count": len(self._tracked_targets),
             "gate_state": self._gate_state,
             "gate_open_latched": self._gate_open_latched,

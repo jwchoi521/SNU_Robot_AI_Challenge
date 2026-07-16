@@ -332,6 +332,9 @@ def generate_launch_description():
         "bbox_goal_target_association_radius_m": LaunchConfiguration(
             "bbox_goal_target_association_radius_m"
         ),
+        "bbox_goal_target_lock_distance_m": LaunchConfiguration(
+            "bbox_goal_target_lock_distance_m"
+        ),
         "bbox_goal_max_tracked_targets": LaunchConfiguration(
             "bbox_goal_max_tracked_targets"
         ),
@@ -508,6 +511,7 @@ def generate_launch_description():
                 "bbox_goal_target_association_radius_m",
                 default_value="0.15",
             ),
+            DeclareLaunchArgument("bbox_goal_target_lock_distance_m", default_value="0.30"),
             DeclareLaunchArgument("bbox_goal_max_tracked_targets", default_value="20"),
             DeclareLaunchArgument("bbox_goal_margin_m", default_value="0.20"),
             DeclareLaunchArgument("enable_nav2", default_value="false"),

@@ -212,6 +212,10 @@ ENC ON
   Nav2 goal. Increase it if bbox jitter causes frequent replans.
 - `bbox_goal_max_target_age_sec`: Maximum age for a target pose. Increase it if
   perception runs slowly, decrease it if stale goals are risky.
+- `bbox_goal_target_lock_distance_m`: Once the selected target is within this
+  distance, keep that target pose and ignore closer replacement targets or a
+  target-to-obstacle reclassification until capture completes. The default is
+  `0.30` m; set it to `0.0` to disable new target locking.
 - `bbox_goal_margin_m`: Minimum distance from arena walls for the computed
   approach goal.
 - `arena_width_m`, `arena_height_m`: Must match the real field, because goal

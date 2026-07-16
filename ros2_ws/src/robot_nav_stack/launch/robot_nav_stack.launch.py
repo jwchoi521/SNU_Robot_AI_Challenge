@@ -191,6 +191,7 @@ def generate_launch_description():
                 "bbox_goal_target_association_radius_m",
                 default_value="0.15",
             ),
+            DeclareLaunchArgument("bbox_goal_target_lock_distance_m", default_value="0.30"),
             DeclareLaunchArgument("bbox_goal_max_tracked_targets", default_value="20"),
             DeclareLaunchArgument("bbox_goal_margin_m", default_value="0.20"),
             DeclareLaunchArgument("enable_mapping_debug", default_value="true"),
@@ -537,6 +538,9 @@ def generate_launch_description():
                         ),
                         "target_association_radius_m": _float_arg(
                             "bbox_goal_target_association_radius_m"
+                        ),
+                        "target_lock_distance_m": _float_arg(
+                            "bbox_goal_target_lock_distance_m"
                         ),
                         "reclassification_radius_m": _float_arg(
                             "semantic_target_clear_radius_m"
