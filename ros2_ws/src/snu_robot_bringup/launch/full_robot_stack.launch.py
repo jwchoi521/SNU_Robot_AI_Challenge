@@ -125,6 +125,8 @@ def generate_launch_description():
         "classifier_annotated_topic": LaunchConfiguration("classifier_annotated_topic"),
         "fps": LaunchConfiguration("fps"),
         "inference_fps": LaunchConfiguration("inference_fps"),
+        "shape_nms_iou_threshold": LaunchConfiguration("shape_nms_iou_threshold"),
+        "shape_class_agnostic_nms": LaunchConfiguration("shape_class_agnostic_nms"),
         "frame_width": LaunchConfiguration("frame_width"),
         "frame_height": LaunchConfiguration("frame_height"),
     }
@@ -453,6 +455,8 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("fps", default_value="30.0"),
             DeclareLaunchArgument("inference_fps", default_value="0.0"),
+            DeclareLaunchArgument("shape_nms_iou_threshold", default_value="0.8"),
+            DeclareLaunchArgument("shape_class_agnostic_nms", default_value="true"),
             DeclareLaunchArgument("frame_width", default_value="1280"),
             DeclareLaunchArgument("frame_height", default_value="720"),
             DeclareLaunchArgument(

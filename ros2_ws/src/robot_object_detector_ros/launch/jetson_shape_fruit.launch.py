@@ -21,6 +21,8 @@ def generate_launch_description():
     classifier_annotated_topic = LaunchConfiguration("classifier_annotated_topic")
     fps = LaunchConfiguration("fps")
     inference_fps = LaunchConfiguration("inference_fps")
+    shape_nms_iou_threshold = LaunchConfiguration("shape_nms_iou_threshold")
+    shape_class_agnostic_nms = LaunchConfiguration("shape_class_agnostic_nms")
     frame_width = LaunchConfiguration("frame_width")
     frame_height = LaunchConfiguration("frame_height")
 
@@ -73,6 +75,16 @@ def generate_launch_description():
                 default_value="0.0",
                 description="Maximum YOLO inference rate in Hz. 0 means infer every camera frame.",
             ),
+            DeclareLaunchArgument(
+                "shape_nms_iou_threshold",
+                default_value="0.8",
+                description="IoU threshold used by YOLO NMS.",
+            ),
+            DeclareLaunchArgument(
+                "shape_class_agnostic_nms",
+                default_value="true",
+                description="Suppress overlapping YOLO boxes across different shape classes.",
+            ),
             DeclareLaunchArgument("frame_width", default_value="1280"),
             DeclareLaunchArgument("frame_height", default_value="720"),
             Node(
@@ -118,7 +130,12 @@ def generate_launch_description():
                             "icosahedron",
                         ],
                         "conf_threshold": 0.25,
-                        "nms_iou_threshold": 0.7,
+                        "nms_iou_threshold": ParameterValue(
+                            shape_nms_iou_threshold, value_type=float
+                        ),
+                        "class_agnostic_nms": ParameterValue(
+                            shape_class_agnostic_nms, value_type=bool
+                        ),
                         "inference_fps": ParameterValue(inference_fps, value_type=float),
                     }
                 ],

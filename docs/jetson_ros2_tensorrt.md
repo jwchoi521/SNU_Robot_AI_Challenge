@@ -198,7 +198,8 @@ not pickable.
 
 ```text
 shape_yolo_node.conf_threshold        default 0.25
-shape_yolo_node.nms_iou_threshold     default 0.7
+shape_yolo_node.nms_iou_threshold     default 0.8
+shape_yolo_node.class_agnostic_nms    default true
 cube_fruit_classifier_node.threshold  default 0.7
 ```
 

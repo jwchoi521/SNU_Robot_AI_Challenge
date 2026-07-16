@@ -37,8 +37,8 @@ public:
       "class_names",
       {"cube_any", "octahedron", "dodecahedron", "icosahedron"});
     conf_threshold_ = declare_parameter<double>("conf_threshold", 0.25);
-    nms_iou_threshold_ = declare_parameter<double>("nms_iou_threshold", 0.7);
-    class_agnostic_nms_ = declare_parameter<bool>("class_agnostic_nms", false);
+    nms_iou_threshold_ = declare_parameter<double>("nms_iou_threshold", 0.8);
+    class_agnostic_nms_ = declare_parameter<bool>("class_agnostic_nms", true);
     inference_fps_ = declare_parameter<double>("inference_fps", 0.0);
     min_inference_period_sec_ =
       std::isfinite(inference_fps_) && inference_fps_ > 0.0 ? 1.0 / inference_fps_ : 0.0;
@@ -181,8 +181,8 @@ private:
   int num_classes_ = 4;
   std::vector<std::string> class_names_;
   double conf_threshold_ = 0.25;
-  double nms_iou_threshold_ = 0.7;
-  bool class_agnostic_nms_ = false;
+  double nms_iou_threshold_ = 0.8;
+  bool class_agnostic_nms_ = true;
   double inference_fps_ = 0.0;
   double min_inference_period_sec_ = 0.0;
   bool has_last_inference_time_ = false;
