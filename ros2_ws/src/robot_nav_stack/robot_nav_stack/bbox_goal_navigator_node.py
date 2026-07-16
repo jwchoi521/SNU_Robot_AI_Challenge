@@ -240,7 +240,6 @@ class BboxGoalNavigatorNode(Node):
             self._nav_state = "target_reclassified_obstacle"
             self._cancel_active_goal("target_reclassified_obstacle")
             self._publish_stop_cmd()
-            self._send_gripper(GripperCommand.CLOSE, "target_reclassified_obstacle")
             self._target_pose = None
             self._target_stamp_sec = None
             self._selected_target_distance_m = None
@@ -301,14 +300,12 @@ class BboxGoalNavigatorNode(Node):
             self._target_stamp_sec = selected_target.stamp_sec
 
         if self._target_pose is None or self._target_stamp_sec is None:
-            self._close_gate_and_reset_latch("waiting_for_target_pose")
             self._publish_status("waiting_for_target_pose")
             return
 
         target_age = self._now_sec() - self._target_stamp_sec
         max_age = float(self.get_parameter("max_target_age_sec").value)
         if not self._target_lock.active and max_age > 0.0 and target_age > max_age:
-            self._close_gate_and_reset_latch("target_stale")
             self._publish_status("target_stale", target_age_sec=target_age)
             return
 
@@ -549,7 +546,6 @@ class BboxGoalNavigatorNode(Node):
         except Exception as exc:  # noqa: BLE001 - report action-client failures.
             self._nav_state = "goal_send_failed"
             self._last_sent_goal = None
-            self._send_gripper(GripperCommand.CLOSE, "goal_send_failed")
             self._publish_status("goal_send_failed", error=str(exc), goal=goal)
             return
 
@@ -558,7 +554,6 @@ class BboxGoalNavigatorNode(Node):
             self._active_goal_handle = None
             self._cancel_pending_goal = False
             self._last_sent_goal = None
-            self._send_gripper(GripperCommand.CLOSE, "goal_rejected")
             self._publish_status("goal_rejected", goal=goal)
             return
 
@@ -584,7 +579,6 @@ class BboxGoalNavigatorNode(Node):
             result = future.result()
         except Exception as exc:  # noqa: BLE001 - report action-client failures.
             self._nav_state = "goal_result_failed"
-            self._send_gripper(GripperCommand.CLOSE, "goal_result_failed")
             self._publish_status("goal_result_failed", error=str(exc), goal=goal)
             return
 
@@ -593,12 +587,6 @@ class BboxGoalNavigatorNode(Node):
         self._publish_status(status_name, goal=goal)
         if result.status == GoalStatus.STATUS_SUCCEEDED:
             self._publish_mission_event("target_reached")
-            self._send_gripper(GripperCommand.CLOSE, "target_reached")
-        elif result.status in (
-            GoalStatus.STATUS_ABORTED,
-            GoalStatus.STATUS_CANCELED,
-        ):
-            self._send_gripper(GripperCommand.CLOSE, status_name)
 
     def _cancel_active_goal(self, reason: str) -> None:
         goal_handle = self._active_goal_handle
@@ -628,7 +616,6 @@ class BboxGoalNavigatorNode(Node):
 
     def _update_gate_for_target_distance(self) -> None:
         if self._selected_target_distance_m is None:
-            self._close_gate_and_reset_latch("target_distance_unknown")
             return
         open_distance = max(
             0.0,
@@ -640,12 +627,6 @@ class BboxGoalNavigatorNode(Node):
         if self._selected_target_distance_m <= open_distance:
             self._gate_open_latched = True
             self._send_gripper(GripperCommand.OPEN, "target_within_gate_open_distance")
-        else:
-            self._send_gripper(GripperCommand.CLOSE, "target_outside_gate_open_distance")
-
-    def _close_gate_and_reset_latch(self, reason: str) -> None:
-        self._gate_open_latched = False
-        self._send_gripper(GripperCommand.CLOSE, reason)
 
     def _remove_selected_target(self) -> int:
         target = self._target_pose
