@@ -8,10 +8,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import scripts.evaluate_cube_fruit_classifier_engine as engine_eval
 from scripts.evaluate_cube_fruit_classifier_engine import (
     _cuda_device_index,
-    _import_cudart,
+    _execute_async_v2,
+    _execute_async_v3,
+    _trt_dtype_to_torch,
     load_engine_metadata,
     prediction_from_logits,
     preprocess_rgb_for_engine,
@@ -142,32 +143,54 @@ def test_cuda_device_index_accepts_common_forms() -> None:
         _cuda_device_index("cpu")
 
 
-def test_import_cudart_supports_bindings_runtime(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sentinel = object()
-    attempts: list[str] = []
+def test_trt_dtype_to_torch_maps_common_numpy_dtypes() -> None:
+    fake_torch = SimpleNamespace(
+        float16="torch_float16",
+        float32="torch_float32",
+        int8="torch_int8",
+        int32="torch_int32",
+        bool="torch_bool",
+    )
 
-    def fake_import_module(module_name: str) -> object:
-        attempts.append(module_name)
-        if module_name == "cuda.bindings.runtime":
-            return sentinel
-        raise ImportError(f"missing {module_name}")
+    fake_trt = SimpleNamespace(nptype=lambda dtype: dtype)
 
-    monkeypatch.setattr(engine_eval.importlib, "import_module", fake_import_module)
-
-    assert _import_cudart() is sentinel
-    assert attempts == ["cuda.cudart", "cuda.bindings.runtime"]
+    assert _trt_dtype_to_torch(fake_trt, fake_torch, np.float16) == "torch_float16"
+    assert _trt_dtype_to_torch(fake_trt, fake_torch, np.float32) == "torch_float32"
+    assert _trt_dtype_to_torch(fake_trt, fake_torch, np.int8) == "torch_int8"
+    assert _trt_dtype_to_torch(fake_trt, fake_torch, np.int32) == "torch_int32"
+    assert _trt_dtype_to_torch(fake_trt, fake_torch, np.bool_) == "torch_bool"
 
 
-def test_import_cudart_reports_all_failures(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def fake_import_module(module_name: str) -> object:
-        raise ImportError(f"missing {module_name}")
+def test_execute_async_v3_supports_keyword_and_positional_contexts() -> None:
+    keyword_context = SimpleNamespace(
+        execute_async_v3=lambda stream_handle: stream_handle == 123,
+    )
 
-    monkeypatch.setattr(engine_eval.importlib, "import_module", fake_import_module)
-    monkeypatch.setitem(sys.modules, "cuda", SimpleNamespace())
+    class PositionalContext:
+        def execute_async_v3(self, *args: int, **kwargs: int) -> bool:
+            if kwargs:
+                raise TypeError("positional only")
+            return args == (456,)
 
-    with pytest.raises(ModuleNotFoundError, match="cuda.bindings.runtime"):
-        _import_cudart()
+    assert _execute_async_v3(keyword_context, 123)
+    assert _execute_async_v3(PositionalContext(), 456)
+
+
+def test_execute_async_v2_supports_keyword_and_positional_contexts() -> None:
+    keyword_context = SimpleNamespace(
+        execute_async_v2=lambda bindings, stream_handle: bindings == [1, 2]
+        and stream_handle == 123,
+    )
+
+    class PositionalContext:
+        def execute_async_v2(
+            self,
+            *args: object,
+            **kwargs: object,
+        ) -> bool:
+            if kwargs:
+                raise TypeError("positional only")
+            return args == ([3, 4], 456)
+
+    assert _execute_async_v2(keyword_context, [1, 2], 123)
+    assert _execute_async_v2(PositionalContext(), [3, 4], 456)

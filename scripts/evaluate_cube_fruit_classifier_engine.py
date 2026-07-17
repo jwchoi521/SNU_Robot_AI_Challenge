@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import importlib
 import json
 import sys
 from collections import Counter
@@ -180,53 +179,32 @@ def _cuda_device_index(device: str | int | None) -> int:
     raise ValueError(f"TensorRT evaluator needs a CUDA device, got: {device}")
 
 
-def _check_cuda(result: Any) -> Any:
-    if isinstance(result, tuple):
-        status = result[0]
-        payload = result[1:]
-    else:
-        status = result
-        payload = ()
-    if int(status) != 0:
-        raise RuntimeError(f"CUDA runtime call failed with status {status}")
-    if not payload:
-        return None
-    if len(payload) == 1:
-        return payload[0]
-    return payload
-
-
-def _trt_dtype_to_numpy(trt_module: Any, dtype: Any) -> np.dtype:
+def _trt_dtype_to_torch(trt_module: Any, torch_module: Any, dtype: Any) -> Any:
     try:
-        return np.dtype(trt_module.nptype(dtype))
+        numpy_dtype = np.dtype(trt_module.nptype(dtype))
     except Exception:
-        return np.dtype(np.float32)
+        numpy_dtype = np.dtype(np.float32)
+    return {
+        np.dtype(np.float16): torch_module.float16,
+        np.dtype(np.float32): torch_module.float32,
+        np.dtype(np.int8): torch_module.int8,
+        np.dtype(np.int32): torch_module.int32,
+        np.dtype(np.bool_): torch_module.bool,
+    }.get(numpy_dtype, torch_module.float32)
 
 
-def _import_cudart() -> Any:
-    errors: list[str] = []
-    for module_name in (
-        "cuda.cudart",
-        "cuda.bindings.runtime",
-        "cuda.bindings.cudart",
-    ):
-        try:
-            return importlib.import_module(module_name)
-        except ImportError as exc:
-            errors.append(f"{module_name}: {exc}")
-
+def _execute_async_v3(context: Any, stream_handle: int) -> bool:
     try:
-        from cuda import cudart
+        return bool(context.execute_async_v3(stream_handle=stream_handle))
+    except TypeError:
+        return bool(context.execute_async_v3(stream_handle))
 
-        return cudart
-    except ImportError as exc:
-        errors.append(f"from cuda import cudart: {exc}")
 
-    raise ModuleNotFoundError(
-        "TensorRT engine evaluation requires CUDA runtime Python bindings. "
-        "Tried cuda.cudart, cuda.bindings.runtime, cuda.bindings.cudart, "
-        f"and from cuda import cudart. Errors: {'; '.join(errors)}"
-    )
+def _execute_async_v2(context: Any, bindings: list[int], stream_handle: int) -> bool:
+    try:
+        return bool(context.execute_async_v2(bindings=bindings, stream_handle=stream_handle))
+    except TypeError:
+        return bool(context.execute_async_v2(bindings, stream_handle))
 
 
 class TensorRTClassifier:
@@ -238,17 +216,20 @@ class TensorRTClassifier:
     ) -> None:
         try:
             import tensorrt as trt
-            cudart = _import_cudart()
+            import torch
         except (ImportError, ModuleNotFoundError) as exc:
             raise ModuleNotFoundError(
                 "TensorRT engine evaluation requires TensorRT Python bindings "
-                "and CUDA runtime Python bindings on the Jetson."
+                "and PyTorch with CUDA on the Jetson."
             ) from exc
+        if not torch.cuda.is_available():
+            raise RuntimeError("PyTorch CUDA is not available on this Jetson environment")
 
         self.trt = trt
-        self.cudart = cudart
+        self.torch = torch
         self.metadata = metadata
-        _check_cuda(cudart.cudaSetDevice(_cuda_device_index(device)))
+        self.torch_device = torch.device(f"cuda:{_cuda_device_index(device)}")
+        torch.cuda.set_device(self.torch_device)
 
         logger = trt.Logger(trt.Logger.WARNING)
         runtime = trt.Runtime(logger)
@@ -286,8 +267,9 @@ class TensorRTClassifier:
         self.output_name = (
             metadata.output_name if metadata.output_name in names else output_names[0]
         )
-        self.output_dtype = _trt_dtype_to_numpy(
+        self.output_dtype = _trt_dtype_to_torch(
             self.trt,
+            self.torch,
             self.engine.get_tensor_dtype(self.output_name),
         )
         self.uses_tensor_api = True
@@ -315,8 +297,9 @@ class TensorRTClassifier:
         )
         self.input_index = self.engine.get_binding_index(self.input_name)
         self.output_index = self.engine.get_binding_index(self.output_name)
-        self.output_dtype = _trt_dtype_to_numpy(
+        self.output_dtype = _trt_dtype_to_torch(
             self.trt,
+            self.torch,
             self.engine.get_binding_dtype(self.output_index),
         )
         self.uses_tensor_api = False
@@ -328,50 +311,33 @@ class TensorRTClassifier:
         return self._infer_binding_api(input_array)
 
     def _infer_tensor_api(self, input_array: np.ndarray) -> np.ndarray:
-        input_shape = tuple(int(value) for value in input_array.shape)
+        input_tensor = self.torch.from_numpy(input_array).to(self.torch_device)
+        input_tensor = input_tensor.contiguous()
+        input_shape = tuple(int(value) for value in input_tensor.shape)
         self.context.set_input_shape(self.input_name, input_shape)
         output_shape = tuple(
             int(value) for value in self.context.get_tensor_shape(self.output_name)
         )
         if any(dim <= 0 for dim in output_shape):
             raise RuntimeError(f"unresolved TensorRT output shape: {output_shape}")
-        output_array = np.empty(output_shape, dtype=self.output_dtype)
+        output_tensor = self.torch.empty(
+            output_shape,
+            dtype=self.output_dtype,
+            device=self.torch_device,
+        )
 
-        input_device = _check_cuda(self.cudart.cudaMalloc(input_array.nbytes))
-        output_device = _check_cuda(self.cudart.cudaMalloc(output_array.nbytes))
-        stream = _check_cuda(self.cudart.cudaStreamCreate())
-        try:
-            _check_cuda(
-                self.cudart.cudaMemcpyAsync(
-                    input_device,
-                    input_array.ctypes.data,
-                    input_array.nbytes,
-                    self.cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
-                    stream,
-                )
-            )
-            self.context.set_tensor_address(self.input_name, int(input_device))
-            self.context.set_tensor_address(self.output_name, int(output_device))
-            if not self.context.execute_async_v3(stream_handle=stream):
-                raise RuntimeError("TensorRT execute_async_v3 failed")
-            _check_cuda(
-                self.cudart.cudaMemcpyAsync(
-                    output_array.ctypes.data,
-                    output_device,
-                    output_array.nbytes,
-                    self.cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
-                    stream,
-                )
-            )
-            _check_cuda(self.cudart.cudaStreamSynchronize(stream))
-        finally:
-            _check_cuda(self.cudart.cudaStreamDestroy(stream))
-            _check_cuda(self.cudart.cudaFree(input_device))
-            _check_cuda(self.cudart.cudaFree(output_device))
-        return output_array.reshape(-1)
+        self.context.set_tensor_address(self.input_name, int(input_tensor.data_ptr()))
+        self.context.set_tensor_address(self.output_name, int(output_tensor.data_ptr()))
+        stream = self.torch.cuda.current_stream(self.torch_device)
+        if not _execute_async_v3(self.context, int(stream.cuda_stream)):
+            raise RuntimeError("TensorRT execute_async_v3 failed")
+        stream.synchronize()
+        return output_tensor.detach().cpu().numpy().reshape(-1)
 
     def _infer_binding_api(self, input_array: np.ndarray) -> np.ndarray:
-        input_shape = tuple(int(value) for value in input_array.shape)
+        input_tensor = self.torch.from_numpy(input_array).to(self.torch_device)
+        input_tensor = input_tensor.contiguous()
+        input_shape = tuple(int(value) for value in input_tensor.shape)
         if hasattr(self.context, "set_binding_shape"):
             self.context.set_binding_shape(self.input_index, input_shape)
         output_shape = tuple(
@@ -385,35 +351,23 @@ class TensorRTClassifier:
         if any(dim <= 0 for dim in output_shape):
             raise RuntimeError(f"unresolved TensorRT output shape: {output_shape}")
 
-        output_array = np.empty(output_shape, dtype=self.output_dtype)
-        input_device = _check_cuda(self.cudart.cudaMalloc(input_array.nbytes))
-        output_device = _check_cuda(self.cudart.cudaMalloc(output_array.nbytes))
+        output_tensor = self.torch.empty(
+            output_shape,
+            dtype=self.output_dtype,
+            device=self.torch_device,
+        )
         bindings = [0] * self.engine.num_bindings
-        bindings[self.input_index] = int(input_device)
-        bindings[self.output_index] = int(output_device)
-        try:
-            _check_cuda(
-                self.cudart.cudaMemcpy(
-                    input_device,
-                    input_array.ctypes.data,
-                    input_array.nbytes,
-                    self.cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
-                )
-            )
+        bindings[self.input_index] = int(input_tensor.data_ptr())
+        bindings[self.output_index] = int(output_tensor.data_ptr())
+        if hasattr(self.context, "execute_async_v2"):
+            stream = self.torch.cuda.current_stream(self.torch_device)
+            if not _execute_async_v2(self.context, bindings, int(stream.cuda_stream)):
+                raise RuntimeError("TensorRT execute_async_v2 failed")
+            stream.synchronize()
+        else:
             if not self.context.execute_v2(bindings):
                 raise RuntimeError("TensorRT execute_v2 failed")
-            _check_cuda(
-                self.cudart.cudaMemcpy(
-                    output_array.ctypes.data,
-                    output_device,
-                    output_array.nbytes,
-                    self.cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost,
-                )
-            )
-        finally:
-            _check_cuda(self.cudart.cudaFree(input_device))
-            _check_cuda(self.cudart.cudaFree(output_device))
-        return output_array.reshape(-1)
+        return output_tensor.detach().cpu().numpy().reshape(-1)
 
 
 def _resolve_metadata(args: argparse.Namespace) -> EngineMetadata:
