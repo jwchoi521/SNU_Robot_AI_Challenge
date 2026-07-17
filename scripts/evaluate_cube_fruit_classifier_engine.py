@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import importlib
 import json
 import sys
 from collections import Counter
@@ -202,6 +203,32 @@ def _trt_dtype_to_numpy(trt_module: Any, dtype: Any) -> np.dtype:
         return np.dtype(np.float32)
 
 
+def _import_cudart() -> Any:
+    errors: list[str] = []
+    for module_name in (
+        "cuda.cudart",
+        "cuda.bindings.runtime",
+        "cuda.bindings.cudart",
+    ):
+        try:
+            return importlib.import_module(module_name)
+        except ImportError as exc:
+            errors.append(f"{module_name}: {exc}")
+
+    try:
+        from cuda import cudart
+
+        return cudart
+    except ImportError as exc:
+        errors.append(f"from cuda import cudart: {exc}")
+
+    raise ModuleNotFoundError(
+        "TensorRT engine evaluation requires CUDA runtime Python bindings. "
+        "Tried cuda.cudart, cuda.bindings.runtime, cuda.bindings.cudart, "
+        f"and from cuda import cudart. Errors: {'; '.join(errors)}"
+    )
+
+
 class TensorRTClassifier:
     def __init__(
         self,
@@ -211,11 +238,11 @@ class TensorRTClassifier:
     ) -> None:
         try:
             import tensorrt as trt
-            from cuda import cudart
-        except ModuleNotFoundError as exc:
+            cudart = _import_cudart()
+        except (ImportError, ModuleNotFoundError) as exc:
             raise ModuleNotFoundError(
                 "TensorRT engine evaluation requires TensorRT Python bindings "
-                "and cuda-python on the Jetson."
+                "and CUDA runtime Python bindings on the Jetson."
             ) from exc
 
         self.trt = trt

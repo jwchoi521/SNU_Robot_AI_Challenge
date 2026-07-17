@@ -8,8 +8,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import scripts.evaluate_cube_fruit_classifier_engine as engine_eval
 from scripts.evaluate_cube_fruit_classifier_engine import (
     _cuda_device_index,
+    _import_cudart,
     load_engine_metadata,
     prediction_from_logits,
     preprocess_rgb_for_engine,
@@ -138,3 +140,34 @@ def test_cuda_device_index_accepts_common_forms() -> None:
 
     with pytest.raises(ValueError, match="CUDA device"):
         _cuda_device_index("cpu")
+
+
+def test_import_cudart_supports_bindings_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentinel = object()
+    attempts: list[str] = []
+
+    def fake_import_module(module_name: str) -> object:
+        attempts.append(module_name)
+        if module_name == "cuda.bindings.runtime":
+            return sentinel
+        raise ImportError(f"missing {module_name}")
+
+    monkeypatch.setattr(engine_eval.importlib, "import_module", fake_import_module)
+
+    assert _import_cudart() is sentinel
+    assert attempts == ["cuda.cudart", "cuda.bindings.runtime"]
+
+
+def test_import_cudart_reports_all_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_import_module(module_name: str) -> object:
+        raise ImportError(f"missing {module_name}")
+
+    monkeypatch.setattr(engine_eval.importlib, "import_module", fake_import_module)
+    monkeypatch.setitem(sys.modules, "cuda", SimpleNamespace())
+
+    with pytest.raises(ModuleNotFoundError, match="cuda.bindings.runtime"):
+        _import_cudart()
