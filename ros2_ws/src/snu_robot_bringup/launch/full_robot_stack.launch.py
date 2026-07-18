@@ -419,6 +419,9 @@ def generate_launch_description():
         "bbox_goal_storage_nav_max_retries": LaunchConfiguration(
             "bbox_goal_storage_nav_max_retries"
         ),
+        "bbox_goal_storage_open_gate_before_backup": LaunchConfiguration(
+            "bbox_goal_storage_open_gate_before_backup"
+        ),
         "bbox_goal_storage_gate_open_wait_sec": LaunchConfiguration(
             "bbox_goal_storage_gate_open_wait_sec"
         ),
@@ -703,6 +706,10 @@ def generate_launch_description():
                 default_value="2",
             ),
             DeclareLaunchArgument(
+                "bbox_goal_storage_open_gate_before_backup",
+                default_value="true",
+            ),
+            DeclareLaunchArgument(
                 "bbox_goal_storage_gate_open_wait_sec",
                 default_value="1.0",
             ),
@@ -716,11 +723,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "bbox_goal_storage_backup_speed_mps",
-                default_value="0.50",
+                default_value="0.20",
             ),
             DeclareLaunchArgument(
                 "bbox_goal_storage_backup_time_allowance_sec",
-                default_value="1.0",
+                default_value="4.0",
             ),
             DeclareLaunchArgument("enable_nav2", default_value="false"),
             DeclareLaunchArgument("enable_slam", default_value="false"),

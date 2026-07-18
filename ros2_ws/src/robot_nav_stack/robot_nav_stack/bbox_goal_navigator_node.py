@@ -121,11 +121,12 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("storage_heading_tolerance_deg", 10.0)
         self.declare_parameter("storage_verify_timeout_sec", 3.0)
         self.declare_parameter("storage_nav_max_retries", 2)
+        self.declare_parameter("storage_open_gate_before_backup", True)
         self.declare_parameter("storage_gate_open_wait_sec", 1.0)
         self.declare_parameter("storage_backup_action_name", "backup")
         self.declare_parameter("storage_backup_distance_m", 0.50)
-        self.declare_parameter("storage_backup_speed_mps", 0.50)
-        self.declare_parameter("storage_backup_time_allowance_sec", 1.0)
+        self.declare_parameter("storage_backup_speed_mps", 0.20)
+        self.declare_parameter("storage_backup_time_allowance_sec", 4.0)
 
         self._map_frame = str(self.get_parameter("map_frame").value)
         self._send_nav2_goal = bool(self.get_parameter("send_nav2_goal").value)
@@ -567,6 +568,12 @@ class BboxGoalNavigatorNode(Node):
                 heading_aligned=heading_aligned,
             )
             if footprint_inside and heading_aligned:
+                if not bool(
+                    self.get_parameter("storage_open_gate_before_backup").value
+                ):
+                    self._publish_status("storage_gate_open_skipped")
+                    self._send_backup_goal()
+                    return
                 self._send_gripper(
                     GripperCommand.OPEN,
                     "robot_fully_inside_storage",
