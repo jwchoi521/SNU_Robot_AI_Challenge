@@ -36,8 +36,8 @@ public:
     class_names_ = declare_parameter<std::vector<std::string>>(
       "class_names",
       {"cube_any", "octahedron", "dodecahedron", "icosahedron"});
-    conf_threshold_ = declare_parameter<double>("conf_threshold", 0.25);
-    nms_iou_threshold_ = declare_parameter<double>("nms_iou_threshold", 0.8);
+    conf_threshold_ = declare_parameter<double>("conf_threshold", 0.5);
+    nms_iou_threshold_ = declare_parameter<double>("nms_iou_threshold", 0.7);
     class_agnostic_nms_ = declare_parameter<bool>("class_agnostic_nms", true);
     inference_fps_ = declare_parameter<double>("inference_fps", 0.0);
     min_inference_period_sec_ =
