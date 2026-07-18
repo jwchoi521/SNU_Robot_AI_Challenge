@@ -176,6 +176,7 @@ def generate_launch_description():
         "motion_max_extrapolation_sec": LaunchConfiguration(
             "motion_max_extrapolation_sec"
         ),
+        "use_odom_prior": LaunchConfiguration("use_odom_prior"),
         "use_imu_yaw_prior": LaunchConfiguration("use_imu_yaw_prior"),
         "max_imu_age_sec": LaunchConfiguration("max_imu_age_sec"),
         "max_rays": LaunchConfiguration("max_rays"),
@@ -797,6 +798,7 @@ def generate_launch_description():
             DeclareLaunchArgument("enable_lidar_deskew", default_value="true"),
             DeclareLaunchArgument("motion_history_sec", default_value="3.0"),
             DeclareLaunchArgument("motion_max_extrapolation_sec", default_value="0.05"),
+            DeclareLaunchArgument("use_odom_prior", default_value="true"),
             DeclareLaunchArgument("use_imu_yaw_prior", default_value="true"),
             DeclareLaunchArgument("max_imu_age_sec", default_value="0.5"),
             DeclareLaunchArgument("max_rays", default_value="60"),
