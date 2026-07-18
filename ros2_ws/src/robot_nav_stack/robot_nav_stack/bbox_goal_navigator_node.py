@@ -16,7 +16,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from snu_robot_interfaces.msg import GripperCommand
 from std_msgs.msg import Bool, String
 
-from .core import Pose2D, angle_diff, quaternion_from_yaw, yaw_from_quaternion
+from .core import Pose2D, angle_diff, quaternion_from_yaw, wrap_angle, yaw_from_quaternion
 from .storage_dropoff import (
     StorageBounds,
     StoragePlan,
@@ -83,6 +83,7 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("goal_reached_tolerance_m", 0.12)
         self.declare_parameter("min_goal_separation_m", 0.15)
         self.declare_parameter("min_goal_yaw_delta_deg", 12.0)
+        self.declare_parameter("goal_heading_offset_deg", 0.0)
         self.declare_parameter("max_target_age_sec", 1.5)
         self.declare_parameter("target_selection_mode", "nearest")
         self.declare_parameter("target_association_radius_m", 0.15)
@@ -946,6 +947,7 @@ class BboxGoalNavigatorNode(Node):
         center_x = float(self.get_parameter("target_search_center_x_m").value)
         center_y = float(self.get_parameter("target_search_center_y_m").value)
         heading = math.atan2(center_y - y, center_x - x)
+        heading = self._apply_goal_heading_offset(heading)
         return Pose2D(x=x, y=y, theta=heading)
 
     def _target_search_points(self) -> list[tuple[float, float]]:
@@ -1118,7 +1120,14 @@ class BboxGoalNavigatorNode(Node):
             gx, gy = self._clamp_goal_to_arena(gx, gy)
             heading = math.atan2(dy, dx) if target_distance > 1e-6 else robot.theta
 
+        heading = self._apply_goal_heading_offset(heading)
         return Pose2D(x=gx, y=gy, theta=heading)
+
+    def _apply_goal_heading_offset(self, heading: float) -> float:
+        offset_deg = float(self.get_parameter("goal_heading_offset_deg").value)
+        if abs(offset_deg) <= 1e-9:
+            return heading
+        return wrap_angle(heading + math.radians(offset_deg))
 
     def _clamp_goal_to_arena(self, x: float, y: float) -> tuple[float, float]:
         width = float(self.get_parameter("arena_width_m").value)
