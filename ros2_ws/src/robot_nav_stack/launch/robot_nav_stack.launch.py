@@ -266,7 +266,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "bbox_goal_storage_heading_tolerance_deg",
-                default_value="10.0",
+                default_value="30.0",
             ),
             DeclareLaunchArgument(
                 "bbox_goal_storage_verify_timeout_sec",

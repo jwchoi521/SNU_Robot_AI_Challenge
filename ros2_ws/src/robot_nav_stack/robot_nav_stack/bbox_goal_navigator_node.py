@@ -118,7 +118,7 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("robot_half_length_m", 0.16)
         self.declare_parameter("robot_half_width_m", 0.165)
         self.declare_parameter("storage_containment_margin_m", 0.0)
-        self.declare_parameter("storage_heading_tolerance_deg", 10.0)
+        self.declare_parameter("storage_heading_tolerance_deg", 30.0)
         self.declare_parameter("storage_verify_timeout_sec", 3.0)
         self.declare_parameter("storage_nav_max_retries", 2)
         self.declare_parameter("storage_open_gate_before_backup", True)
