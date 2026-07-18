@@ -467,6 +467,9 @@ def generate_launch_description():
         "autostart": LaunchConfiguration("nav2_autostart"),
         "params_file": LaunchConfiguration("nav2_params_file"),
         "nav2_inflation_radius": LaunchConfiguration("nav2_inflation_radius"),
+        "nav2_behavior_max_rotational_vel": LaunchConfiguration(
+            "nav2_behavior_max_rotational_vel"
+        ),
     }
     known_map_arguments = {
         "use_sim_time": LaunchConfiguration("use_sim_time"),
@@ -707,6 +710,10 @@ def generate_launch_description():
             DeclareLaunchArgument("nav2_params_file", default_value=nav2_params_default),
             # 실험 중 장애물 회피 여유를 launch 옵션으로 바로 조절한다.
             DeclareLaunchArgument("nav2_inflation_radius", default_value="0.16"),
+            DeclareLaunchArgument(
+                "nav2_behavior_max_rotational_vel",
+                default_value="0.5",
+            ),
             DeclareLaunchArgument("enable_known_map_server", default_value="false"),
             DeclareLaunchArgument("known_map", default_value=known_map_default),
             DeclareLaunchArgument("slam_params_file", default_value=slam_params_default),

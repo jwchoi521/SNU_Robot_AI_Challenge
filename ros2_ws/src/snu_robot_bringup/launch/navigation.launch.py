@@ -19,6 +19,9 @@ def generate_launch_description() -> LaunchDescription:
         root_key="",
         param_rewrites={
             "inflation_radius": LaunchConfiguration("nav2_inflation_radius"),
+            "max_rotational_vel": LaunchConfiguration(
+                "nav2_behavior_max_rotational_vel"
+            ),
         },
         convert_types=True,
     )
@@ -29,6 +32,10 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("autostart", default_value="true"),
             DeclareLaunchArgument("params_file", default_value=default_params),
             DeclareLaunchArgument("nav2_inflation_radius", default_value="0.16"),
+            DeclareLaunchArgument(
+                "nav2_behavior_max_rotational_vel",
+                default_value="0.5",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(nav2_launch),
                 launch_arguments={
