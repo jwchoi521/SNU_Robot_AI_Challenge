@@ -345,6 +345,7 @@ def generate_launch_description():
             "bbox_goal_max_tracked_targets"
         ),
         "bbox_goal_margin_m": LaunchConfiguration("bbox_goal_margin_m"),
+        "ignore_storage_objects": LaunchConfiguration("ignore_storage_objects"),
         "bbox_goal_storage_dropoff_enabled": LaunchConfiguration(
             "bbox_goal_storage_dropoff_enabled"
         ),
@@ -588,6 +589,7 @@ def generate_launch_description():
             DeclareLaunchArgument("bbox_goal_target_lock_distance_m", default_value="0.30"),
             DeclareLaunchArgument("bbox_goal_max_tracked_targets", default_value="20"),
             DeclareLaunchArgument("bbox_goal_margin_m", default_value="0.20"),
+            DeclareLaunchArgument("ignore_storage_objects", default_value="true"),
             DeclareLaunchArgument(
                 "bbox_goal_storage_dropoff_enabled",
                 default_value="true",

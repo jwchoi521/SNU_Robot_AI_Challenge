@@ -14,6 +14,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 from .bbox_model import HomographyResidualBboxEstimator
 from .core import BBox, Detection, Pose2D, quaternion_from_yaw, wrap_angle, yaw_from_quaternion
 from .object_role import classify_object_role
+from .storage_dropoff import StorageBounds
 
 
 @dataclass
@@ -65,6 +66,11 @@ class ObjectLocalizerNode(Node):
         self.declare_parameter("object_association_radius_m", 0.35)
         self.declare_parameter("object_update_alpha", 0.4)
         self.declare_parameter("max_tracked_objects", 20)
+        self.declare_parameter("ignore_storage_objects", True)
+        self.declare_parameter("storage_min_x", -2.0)
+        self.declare_parameter("storage_max_x", -1.6)
+        self.declare_parameter("storage_min_y", -2.0)
+        self.declare_parameter("storage_max_y", -1.6)
 
         model_path = self.get_parameter("model_path").get_parameter_value().string_value
         if not model_path:
@@ -89,6 +95,17 @@ class ObjectLocalizerNode(Node):
         self._warned_pending_tf_wait = False
         self.tracked_objects: list[TrackedMapObject] = []
         self.estimator = HomographyResidualBboxEstimator(model_path)
+        self.ignore_storage_objects = bool(
+            self.get_parameter("ignore_storage_objects").value
+        )
+        self.storage_bounds = StorageBounds(
+            min_x=float(self.get_parameter("storage_min_x").value),
+            max_x=float(self.get_parameter("storage_max_x").value),
+            min_y=float(self.get_parameter("storage_min_y").value),
+            max_y=float(self.get_parameter("storage_max_y").value),
+        )
+        if self.ignore_storage_objects:
+            self.storage_bounds.validate()
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self, spin_thread=True)
@@ -143,6 +160,9 @@ class ObjectLocalizerNode(Node):
     def _publish_object_pose(self, detection: Detection, object_map: Pose2D) -> None:
         role = self._detection_role(detection)
         raw_object_map = object_map
+        if self._in_storage_zone(object_map):
+            return
+
         # Obstacle association/smoothing happens once in the semantic cloud node.
         object_map = (
             raw_object_map
@@ -172,6 +192,11 @@ class ObjectLocalizerNode(Node):
             msg = String()
             msg.data = json.dumps(payload, separators=(",", ":"), sort_keys=True)
             self.json_pub.publish(msg)
+
+    def _in_storage_zone(self, pose: Pose2D) -> bool:
+        return self.ignore_storage_objects and self.storage_bounds.contains_point(
+            pose.x, pose.y
+        )
 
     def _make_pose_msg(self, pose: Pose2D, stamp_sec: float) -> PoseStamped:
         out = PoseStamped()

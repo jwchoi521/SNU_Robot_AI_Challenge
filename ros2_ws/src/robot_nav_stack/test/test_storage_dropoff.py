@@ -16,6 +16,13 @@ HALF_LENGTH = 0.16
 HALF_WIDTH = 0.165
 
 
+def test_storage_bounds_contains_only_points_inside_rectangle() -> None:
+    assert BOUNDS.contains_point(-1.8, -1.8)
+    assert BOUNDS.contains_point(-2.0, -1.6)
+    assert not BOUNDS.contains_point(-1.59, -1.8)
+    assert not BOUNDS.contains_point(-1.8, -1.59)
+
+
 def test_negative_x_plan_enters_from_right_and_faces_negative_x() -> None:
     plan = make_storage_plan(
         BOUNDS,

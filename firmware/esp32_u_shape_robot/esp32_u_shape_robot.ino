@@ -1090,7 +1090,12 @@ void updateIrSensor() {
   {
     stopIrCaptureAdvance();
     Serial.println("IR CAPTURE_ADVANCE_TIMEOUT");
-    setCaptureAdvanceArmed(false, "TIMEOUT");
+    // Stop the forced forward motion, but keep irPendingEntry set until the
+    // object clears the beam. Clearing it here would discard the BLOCKED ->
+    // CLEAR transition, so registerCargoEntry() would never schedule the gate
+    // close for an object that takes longer than the advance timeout to pass.
+    captureAdvanceArmed = false;
+    Serial.println("OK CAPTURE_ARM OFF TIMEOUT");
   }
 
   if (scheduledGateCloseAtMs != 0 && (int32_t)(now - scheduledGateCloseAtMs) >= 0) {

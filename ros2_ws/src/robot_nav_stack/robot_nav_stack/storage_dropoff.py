@@ -27,6 +27,12 @@ class StorageBounds:
     def center_y(self) -> float:
         return 0.5 * (self.min_y + self.max_y)
 
+    def contains_point(self, x: float, y: float) -> bool:
+        return (
+            self.min_x <= float(x) <= self.max_x
+            and self.min_y <= float(y) <= self.max_y
+        )
+
     def validate(self) -> None:
         if self.min_x >= self.max_x or self.min_y >= self.max_y:
             raise ValueError(f"invalid storage bounds: {self}")
