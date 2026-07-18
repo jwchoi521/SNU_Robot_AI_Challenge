@@ -326,6 +326,24 @@ def generate_launch_description():
         "bbox_goal_max_target_age_sec": LaunchConfiguration(
             "bbox_goal_max_target_age_sec"
         ),
+        "bbox_goal_target_search_enabled": LaunchConfiguration(
+            "bbox_goal_target_search_enabled"
+        ),
+        "bbox_goal_target_search_missing_timeout_sec": LaunchConfiguration(
+            "bbox_goal_target_search_missing_timeout_sec"
+        ),
+        "bbox_goal_target_search_radius_m": LaunchConfiguration(
+            "bbox_goal_target_search_radius_m"
+        ),
+        "bbox_goal_target_search_goal_timeout_sec": LaunchConfiguration(
+            "bbox_goal_target_search_goal_timeout_sec"
+        ),
+        "bbox_goal_target_search_center_x_m": LaunchConfiguration(
+            "bbox_goal_target_search_center_x_m"
+        ),
+        "bbox_goal_target_search_center_y_m": LaunchConfiguration(
+            "bbox_goal_target_search_center_y_m"
+        ),
         "bbox_goal_capture_stop_hold_sec": LaunchConfiguration(
             "bbox_goal_capture_stop_hold_sec"
         ),
@@ -579,6 +597,27 @@ def generate_launch_description():
             DeclareLaunchArgument("bbox_goal_reached_tolerance_m", default_value="0.05"),
             DeclareLaunchArgument("bbox_goal_min_separation_m", default_value="0.15"),
             DeclareLaunchArgument("bbox_goal_max_target_age_sec", default_value="1.5"),
+            DeclareLaunchArgument("bbox_goal_target_search_enabled", default_value="true"),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_missing_timeout_sec",
+                default_value="2.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_radius_m",
+                default_value="1.70",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_goal_timeout_sec",
+                default_value="12.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_center_x_m",
+                default_value="0.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_center_y_m",
+                default_value="0.0",
+            ),
             DeclareLaunchArgument("bbox_goal_capture_stop_hold_sec", default_value="0.8"),
             DeclareLaunchArgument("bbox_goal_capture_remove_radius_m", default_value="0.40"),
             DeclareLaunchArgument("bbox_goal_target_selection_mode", default_value="nearest"),

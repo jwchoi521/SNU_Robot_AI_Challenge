@@ -187,6 +187,27 @@ def generate_launch_description():
             DeclareLaunchArgument("bbox_goal_reached_tolerance_m", default_value="0.05"),
             DeclareLaunchArgument("bbox_goal_min_separation_m", default_value="0.15"),
             DeclareLaunchArgument("bbox_goal_max_target_age_sec", default_value="1.5"),
+            DeclareLaunchArgument("bbox_goal_target_search_enabled", default_value="true"),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_missing_timeout_sec",
+                default_value="2.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_radius_m",
+                default_value="1.70",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_goal_timeout_sec",
+                default_value="12.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_center_x_m",
+                default_value="0.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_center_y_m",
+                default_value="0.0",
+            ),
             DeclareLaunchArgument("bbox_goal_capture_stop_hold_sec", default_value="0.8"),
             DeclareLaunchArgument("bbox_goal_capture_remove_radius_m", default_value="0.40"),
             DeclareLaunchArgument("bbox_goal_target_selection_mode", default_value="nearest"),
@@ -619,6 +640,24 @@ def generate_launch_description():
                         ),
                         "max_target_age_sec": _float_arg(
                             "bbox_goal_max_target_age_sec"
+                        ),
+                        "target_search_enabled": _bool_arg(
+                            "bbox_goal_target_search_enabled"
+                        ),
+                        "target_search_missing_timeout_sec": _float_arg(
+                            "bbox_goal_target_search_missing_timeout_sec"
+                        ),
+                        "target_search_radius_m": _float_arg(
+                            "bbox_goal_target_search_radius_m"
+                        ),
+                        "target_search_goal_timeout_sec": _float_arg(
+                            "bbox_goal_target_search_goal_timeout_sec"
+                        ),
+                        "target_search_center_x_m": _float_arg(
+                            "bbox_goal_target_search_center_x_m"
+                        ),
+                        "target_search_center_y_m": _float_arg(
+                            "bbox_goal_target_search_center_y_m"
                         ),
                         "capture_stop_hold_sec": _float_arg(
                             "bbox_goal_capture_stop_hold_sec"

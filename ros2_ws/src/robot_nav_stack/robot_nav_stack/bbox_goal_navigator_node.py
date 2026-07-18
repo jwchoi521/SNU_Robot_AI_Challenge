@@ -89,6 +89,12 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("target_lock_distance_m", 0.30)
         self.declare_parameter("reclassification_radius_m", 0.25)
         self.declare_parameter("max_tracked_targets", 20)
+        self.declare_parameter("target_search_enabled", True)
+        self.declare_parameter("target_search_missing_timeout_sec", 2.0)
+        self.declare_parameter("target_search_radius_m", 1.70)
+        self.declare_parameter("target_search_goal_timeout_sec", 12.0)
+        self.declare_parameter("target_search_center_x_m", 0.0)
+        self.declare_parameter("target_search_center_y_m", 0.0)
         self.declare_parameter("control_period_sec", 0.2)
         self.declare_parameter("capture_stop_hold_sec", 0.8)
         self.declare_parameter("capture_remove_radius_m", 0.40)
@@ -154,6 +160,10 @@ class BboxGoalNavigatorNode(Node):
         self._tracked_targets: list[TrackedTarget] = []
         self._target_lock = TargetLock()
         self._selected_target_distance_m: float | None = None
+        self._no_target_since_sec: float | None = None
+        self._target_search_index: int | None = None
+        self._target_search_goal_started_sec = 0.0
+        self._target_search_lap_count = 0
         self._last_sent_goal: Pose2D | None = None
         self._goal_sequence = 0
         self._active_goal_sequence: int | None = None
@@ -280,6 +290,11 @@ class BboxGoalNavigatorNode(Node):
             stamp_sec = self._now_sec()
 
         self._upsert_tracked_target(pose, stamp_sec)
+        self._no_target_since_sec = None
+        if self._active_goal_purpose == "search":
+            self._nav_state = "search_canceling_target_found"
+            self._last_sent_goal = None
+            self._cancel_active_goal("target_found_during_search")
         if self._target_selection_mode() == "latest" and not self._target_lock.active:
             self._target_pose = pose
             self._target_stamp_sec = stamp_sec
@@ -763,15 +778,28 @@ class BboxGoalNavigatorNode(Node):
         if selected_target is not None:
             self._target_pose = selected_target.pose
             self._target_stamp_sec = selected_target.stamp_sec
+            self._no_target_since_sec = None
+            if self._active_goal_purpose == "search":
+                self._nav_state = "search_canceling_target_found"
+                self._last_sent_goal = None
+                self._cancel_active_goal("target_found_during_search")
+                self._publish_status(
+                    "search_canceling_target_found",
+                    target=_pose_to_dict(selected_target.pose),
+                )
+                return
 
         if self._target_pose is None or self._target_stamp_sec is None:
-            self._publish_status("waiting_for_target_pose")
+            self._control_target_search("waiting_for_target_pose")
             return
 
         target_age = self._now_sec() - self._target_stamp_sec
         max_age = float(self.get_parameter("max_target_age_sec").value)
         if not self._target_lock.active and max_age > 0.0 and target_age > max_age:
-            self._publish_status("target_stale", target_age_sec=target_age)
+            self._target_pose = None
+            self._target_stamp_sec = None
+            self._selected_target_distance_m = None
+            self._control_target_search("target_stale", target_age_sec=target_age)
             return
 
         self._publish_selected_target_pose(self._target_pose)
@@ -795,6 +823,161 @@ class BboxGoalNavigatorNode(Node):
             return
 
         self._send_goal(goal)
+
+    def _control_target_search(
+        self,
+        reason: str,
+        target_age_sec: float | None = None,
+    ) -> None:
+        now_sec = self._now_sec()
+        self._selected_target_distance_m = None
+        self._gate_open_latched = False
+        if self._no_target_since_sec is None:
+            self._no_target_since_sec = now_sec
+        missing_for_sec = max(0.0, now_sec - self._no_target_since_sec)
+
+        if not bool(self.get_parameter("target_search_enabled").value):
+            self._publish_status(
+                reason,
+                target_missing_for_sec=round(missing_for_sec, 3),
+                target_age_sec=target_age_sec,
+            )
+            return
+
+        missing_timeout = max(
+            0.0,
+            float(self.get_parameter("target_search_missing_timeout_sec").value),
+        )
+        if missing_for_sec < missing_timeout:
+            self._publish_status(
+                "waiting_before_target_search",
+                target_missing_reason=reason,
+                target_missing_for_sec=round(missing_for_sec, 3),
+                target_search_missing_timeout_sec=missing_timeout,
+                target_age_sec=target_age_sec,
+            )
+            return
+
+        if self._active_goal_sequence is not None:
+            if self._active_goal_purpose == "search":
+                timeout_sec = max(
+                    0.0,
+                    float(self.get_parameter("target_search_goal_timeout_sec").value),
+                )
+                elapsed_sec = max(0.0, now_sec - self._target_search_goal_started_sec)
+                if timeout_sec > 0.0 and elapsed_sec > timeout_sec:
+                    self._advance_target_search_index()
+                    self._last_sent_goal = None
+                    self._nav_state = "search_goal_timeout"
+                    self._cancel_active_goal("target_search_goal_timeout")
+                    self._publish_status(
+                        "search_goal_timeout",
+                        target_missing_reason=reason,
+                        target_missing_for_sec=round(missing_for_sec, 3),
+                        target_search_elapsed_sec=round(elapsed_sec, 3),
+                    )
+                    return
+                self._publish_status(
+                    "search_goal_active",
+                    target_missing_reason=reason,
+                    target_missing_for_sec=round(missing_for_sec, 3),
+                    target_search_elapsed_sec=round(elapsed_sec, 3),
+                    target_search_index=self._target_search_index,
+                    target_search_lap_count=self._target_search_lap_count,
+                )
+                return
+
+            self._publish_status(
+                "waiting_for_active_goal_before_search",
+                active_goal_purpose=self._active_goal_purpose,
+                target_missing_reason=reason,
+                target_missing_for_sec=round(missing_for_sec, 3),
+            )
+            return
+
+        goal = self._target_search_goal(self._robot_pose)
+        if goal is None:
+            self._publish_status(
+                "target_search_unavailable",
+                target_missing_reason=reason,
+                target_missing_for_sec=round(missing_for_sec, 3),
+            )
+            return
+
+        self._publish_goal_pose(goal)
+        if not self._send_nav2_goal:
+            self._publish_status(
+                "published_search_goal_only",
+                goal=goal,
+                target_missing_reason=reason,
+                target_missing_for_sec=round(missing_for_sec, 3),
+                target_search_index=self._target_search_index,
+                target_search_lap_count=self._target_search_lap_count,
+            )
+            return
+
+        if self._send_goal(goal, purpose="search"):
+            self._target_search_goal_started_sec = now_sec
+            self._publish_status(
+                "sending_search_goal",
+                goal=goal,
+                target_missing_reason=reason,
+                target_missing_for_sec=round(missing_for_sec, 3),
+                target_search_index=self._target_search_index,
+                target_search_lap_count=self._target_search_lap_count,
+            )
+
+    def _target_search_goal(self, robot: Pose2D) -> Pose2D | None:
+        points = self._target_search_points()
+        if not points:
+            return None
+        if self._target_search_index is None:
+            self._target_search_index = min(
+                range(len(points)),
+                key=lambda index: math.hypot(
+                    points[index][0] - robot.x,
+                    points[index][1] - robot.y,
+                ),
+            )
+
+        index = self._target_search_index % len(points)
+        x, y = points[index]
+        x, y = self._clamp_goal_to_arena(x, y)
+        center_x = float(self.get_parameter("target_search_center_x_m").value)
+        center_y = float(self.get_parameter("target_search_center_y_m").value)
+        heading = math.atan2(center_y - y, center_x - x)
+        return Pose2D(x=x, y=y, theta=heading)
+
+    def _target_search_points(self) -> list[tuple[float, float]]:
+        radius = max(0.0, float(self.get_parameter("target_search_radius_m").value))
+        if radius <= 0.0:
+            return []
+        center_x = float(self.get_parameter("target_search_center_x_m").value)
+        center_y = float(self.get_parameter("target_search_center_y_m").value)
+        diagonal = radius / math.sqrt(2.0)
+        offsets = [
+            (radius, 0.0),
+            (diagonal, diagonal),
+            (0.0, radius),
+            (-diagonal, diagonal),
+            (-radius, 0.0),
+            (-diagonal, -diagonal),
+            (0.0, -radius),
+            (diagonal, -diagonal),
+        ]
+        return [(center_x + dx, center_y + dy) for dx, dy in offsets]
+
+    def _advance_target_search_index(self) -> None:
+        points = self._target_search_points()
+        if not points:
+            self._target_search_index = None
+            return
+        if self._target_search_index is None:
+            self._target_search_index = 0
+            return
+        self._target_search_index = (self._target_search_index + 1) % len(points)
+        if self._target_search_index == 0:
+            self._target_search_lap_count += 1
 
     def _upsert_tracked_target(self, pose: Pose2D, stamp_sec: float) -> None:
         now_sec = self._now_sec()
@@ -1106,6 +1289,9 @@ class BboxGoalNavigatorNode(Node):
 
         if purpose == "target":
             self._publish_mission_event("target_reached")
+        elif purpose == "search":
+            self._advance_target_search_index()
+            self._last_sent_goal = None
         elif (
             purpose == "storage_approach"
             and self._storage_phase == StoragePhase.APPROACHING
@@ -1132,6 +1318,11 @@ class BboxGoalNavigatorNode(Node):
             not in (StoragePhase.COMPLETE, StoragePhase.FAILED)
         ):
             self._retry_storage_navigation(purpose, reason)
+            return
+        if purpose == "search":
+            self._advance_target_search_index()
+            self._nav_state = f"search_retry_after_{reason}"
+            self._last_sent_goal = None
             return
         if purpose == "target":
             self._send_capture_arm(False, f"target_navigation_failure:{reason}")
@@ -1167,6 +1358,8 @@ class BboxGoalNavigatorNode(Node):
         self._cmd_vel_pub.publish(Twist())
 
     def _update_gate_for_target_distance(self) -> None:
+        if self._active_goal_purpose == "search":
+            return
         if self._selected_target_distance_m is None:
             return
         open_distance = max(
@@ -1271,6 +1464,11 @@ class BboxGoalNavigatorNode(Node):
                 0.0,
                 float(self.get_parameter("target_lock_distance_m").value),
             ),
+            "target_search_enabled": bool(
+                self.get_parameter("target_search_enabled").value
+            ),
+            "target_search_index": self._target_search_index,
+            "target_search_lap_count": self._target_search_lap_count,
             "tracked_target_count": len(self._tracked_targets),
             "gate_state": self._gate_state,
             "gate_open_latched": self._gate_open_latched,
