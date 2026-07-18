@@ -1110,12 +1110,14 @@ class BboxGoalNavigatorNode(Node):
         if target_distance > 1e-6 and approach_distance > 0.0:
             gx = target.x - approach_distance * dx / target_distance
             gy = target.y - approach_distance * dy / target_distance
+            gx, gy = self._clamp_goal_to_arena(gx, gy)
+            heading = math.atan2(target.y - gy, target.x - gx)
         else:
             gx = target.x
             gy = target.y
+            gx, gy = self._clamp_goal_to_arena(gx, gy)
+            heading = math.atan2(dy, dx) if target_distance > 1e-6 else robot.theta
 
-        gx, gy = self._clamp_goal_to_arena(gx, gy)
-        heading = math.atan2(target.y - gy, target.x - gx)
         return Pose2D(x=gx, y=gy, theta=heading)
 
     def _clamp_goal_to_arena(self, x: float, y: float) -> tuple[float, float]:
