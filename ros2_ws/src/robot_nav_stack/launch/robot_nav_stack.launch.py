@@ -391,6 +391,12 @@ def generate_launch_description():
                         ),
                         "object_update_alpha": _float_arg("object_update_alpha"),
                         "max_tracked_objects": _int_arg("max_tracked_objects"),
+                        "target_lock_status_topic": LaunchConfiguration(
+                            "bbox_goal_status_topic"
+                        ),
+                        "locked_target_radius_m": _float_arg(
+                            "semantic_target_clear_radius_m"
+                        ),
                         "ignore_storage_objects": _bool_arg("ignore_storage_objects"),
                         "storage_min_x": _float_arg("bbox_goal_storage_min_x"),
                         "storage_max_x": _float_arg("bbox_goal_storage_max_x"),
@@ -441,6 +447,12 @@ def generate_launch_description():
                         ),
                         "object_update_alpha": _float_arg("object_update_alpha"),
                         "max_tracked_objects": _int_arg("max_tracked_objects"),
+                        "target_lock_status_topic": LaunchConfiguration(
+                            "bbox_goal_status_topic"
+                        ),
+                        "locked_target_radius_m": _float_arg(
+                            "semantic_target_clear_radius_m"
+                        ),
                         "ignore_storage_objects": _bool_arg("ignore_storage_objects"),
                         "storage_min_x": _float_arg("bbox_goal_storage_min_x"),
                         "storage_max_x": _float_arg("bbox_goal_storage_max_x"),
@@ -703,6 +715,12 @@ def generate_launch_description():
                         "point_spacing_m": _float_arg("semantic_obstacle_point_spacing_m"),
                         "ttl_sec": _float_arg("semantic_obstacle_ttl_sec"),
                         "target_clear_radius_m": _float_arg(
+                            "semantic_target_clear_radius_m"
+                        ),
+                        "target_lock_status_topic": LaunchConfiguration(
+                            "bbox_goal_status_topic"
+                        ),
+                        "locked_target_radius_m": _float_arg(
                             "semantic_target_clear_radius_m"
                         ),
                         # Obstacle poses bypass ObjectLocalizer stabilization, so

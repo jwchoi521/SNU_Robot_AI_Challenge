@@ -13,6 +13,7 @@ from tf2_ros import Buffer, TransformException, TransformListener
 
 from .bbox_model import HomographyResidualBboxEstimator
 from .core import BBox, Detection, Pose2D, quaternion_from_yaw, wrap_angle, yaw_from_quaternion
+from .locked_target_state import LockedTargetState
 from .object_role import classify_object_role
 from .storage_dropoff import StorageBounds
 
@@ -66,6 +67,11 @@ class ObjectLocalizerNode(Node):
         self.declare_parameter("object_association_radius_m", 0.35)
         self.declare_parameter("object_update_alpha", 0.4)
         self.declare_parameter("max_tracked_objects", 20)
+        self.declare_parameter(
+            "target_lock_status_topic",
+            "/bbox_goal_navigator/status",
+        )
+        self.declare_parameter("locked_target_radius_m", 0.25)
         self.declare_parameter("ignore_storage_objects", True)
         self.declare_parameter("storage_min_x", -2.0)
         self.declare_parameter("storage_max_x", -1.6)
@@ -94,6 +100,9 @@ class ObjectLocalizerNode(Node):
         self.pending_detections: list[PendingLocalization] = []
         self._warned_pending_tf_wait = False
         self.tracked_objects: list[TrackedMapObject] = []
+        self.locked_target = LockedTargetState()
+        self._warned_target_lock_status = False
+        self._logged_locked_target_override = False
         self.estimator = HomographyResidualBboxEstimator(model_path)
         self.ignore_storage_objects = bool(
             self.get_parameter("ignore_storage_objects").value
@@ -115,6 +124,9 @@ class ObjectLocalizerNode(Node):
         object_pose_json_topic = str(self.get_parameter("object_pose_json_topic").value).strip()
         target_object_pose_topic = str(self.get_parameter("target_object_pose_topic").value)
         obstacle_object_pose_topic = str(self.get_parameter("obstacle_object_pose_topic").value)
+        target_lock_status_topic = str(
+            self.get_parameter("target_lock_status_topic").value
+        ).strip()
         self.target_shape = self._clean_name(str(self.get_parameter("target_shape").value))
         self.target_fruit = self._clean_name(str(self.get_parameter("target_fruit").value))
         self.no_fruit_class = self._clean_name(str(self.get_parameter("no_fruit_class").value))
@@ -127,6 +139,16 @@ class ObjectLocalizerNode(Node):
         )
         self.target_pub = self.create_publisher(PoseStamped, target_object_pose_topic, 10)
         self.obstacle_pub = self.create_publisher(PoseStamped, obstacle_object_pose_topic, 10)
+        self.target_lock_status_sub = (
+            self.create_subscription(
+                String,
+                target_lock_status_topic,
+                self._on_target_lock_status,
+                10,
+            )
+            if target_lock_status_topic
+            else None
+        )
         retry_period = max(0.01, float(self.get_parameter("pending_tf_retry_period_sec").value))
         self.retry_timer = self.create_timer(retry_period, self._retry_pending_detections)
         self.get_logger().info(
@@ -163,6 +185,24 @@ class ObjectLocalizerNode(Node):
         if self._in_storage_zone(object_map):
             return
 
+        lock_radius = max(
+            0.0,
+            float(self.get_parameter("locked_target_radius_m").value),
+        )
+        if self.locked_target.protects(object_map, lock_radius):
+            # Once navigation has locked this physical object, preserve the same
+            # target role and map pose even if close-range YOLO changes class.
+            assert self.locked_target.pose is not None
+            object_map = self.locked_target.pose
+            raw_object_map = object_map
+            role = "target"
+            if not self._logged_locked_target_override:
+                self.get_logger().info(
+                    "holding locked target classification and map pose against "
+                    "close-range reclassification"
+                )
+                self._logged_locked_target_override = True
+
         # Obstacle association/smoothing happens once in the semantic cloud node.
         object_map = (
             raw_object_map
@@ -192,6 +232,19 @@ class ObjectLocalizerNode(Node):
             msg = String()
             msg.data = json.dumps(payload, separators=(",", ":"), sort_keys=True)
             self.json_pub.publish(msg)
+
+    def _on_target_lock_status(self, msg: String) -> None:
+        try:
+            self.locked_target.update_json(msg.data)
+        except (ValueError, json.JSONDecodeError) as exc:
+            if not self._warned_target_lock_status:
+                self.get_logger().warn(f"ignoring invalid target-lock status: {exc}")
+                self._warned_target_lock_status = True
+            return
+
+        self._warned_target_lock_status = False
+        if not self.locked_target.active:
+            self._logged_locked_target_override = False
 
     def _in_storage_zone(self, pose: Pose2D) -> bool:
         return self.ignore_storage_objects and self.storage_bounds.contains_point(

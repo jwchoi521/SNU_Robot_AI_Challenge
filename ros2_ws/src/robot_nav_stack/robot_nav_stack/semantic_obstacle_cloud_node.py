@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import json
 import math
 import struct
 
@@ -8,7 +9,9 @@ from geometry_msgs.msg import PoseStamped
 from nav2_msgs.srv import ClearEntireCostmap
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2, PointField
+from std_msgs.msg import String
 
+from .locked_target_state import LockedTargetState
 from .semantic_obstacle_state import TimedObstacle, remove_obstacles_near
 
 
@@ -42,6 +45,11 @@ class SemanticObstacleCloudNode(Node):
         self.declare_parameter("clear_costmaps_on_expiry", True)
         self.declare_parameter("clear_costmaps_on_target", True)
         self.declare_parameter("target_clear_radius_m", 0.25)
+        self.declare_parameter(
+            "target_lock_status_topic",
+            "/bbox_goal_navigator/status",
+        )
+        self.declare_parameter("locked_target_radius_m", 0.25)
         self.declare_parameter("clear_costmap_cooldown_sec", 1.0)
         self.declare_parameter(
             "local_clear_service",
@@ -58,11 +66,16 @@ class SemanticObstacleCloudNode(Node):
         self._warned_clear_services_unavailable = False
         self._warned_stale_input = False
         self._warned_target_frame = False
+        self._warned_target_lock_status = False
         self._clear_futures = []
+        self.locked_target = LockedTargetState()
 
         input_topic = str(self.get_parameter("input_topic").value)
         target_input_topic = str(self.get_parameter("target_input_topic").value).strip()
         output_topic = str(self.get_parameter("output_topic").value)
+        target_lock_status_topic = str(
+            self.get_parameter("target_lock_status_topic").value
+        ).strip()
         publish_hz = float(self.get_parameter("publish_hz").value)
 
         self.sub = self.create_subscription(PoseStamped, input_topic, self.on_object_pose, 20)
@@ -74,6 +87,16 @@ class SemanticObstacleCloudNode(Node):
                 20,
             )
             if target_input_topic
+            else None
+        )
+        self.target_lock_status_sub = (
+            self.create_subscription(
+                String,
+                target_lock_status_topic,
+                self.on_target_lock_status,
+                10,
+            )
+            if target_lock_status_topic
             else None
         )
         self.pub = self.create_publisher(PointCloud2, output_topic, 10)
@@ -113,6 +136,14 @@ class SemanticObstacleCloudNode(Node):
             self._schedule_costmap_clear()
         x = float(msg.pose.position.x)
         y = float(msg.pose.position.y)
+        lock_radius = max(
+            0.0,
+            float(self.get_parameter("locked_target_radius_m").value),
+        )
+        if self.locked_target.protects_xy(x, y, lock_radius):
+            # This is the locked target being misclassified at close range.
+            # Never let it re-enter the semantic obstacle cloud or Nav2 costmaps.
+            return
         z = float(self.get_parameter("z_m").value)
         match = self._nearest_obstacle(x, y)
         if match is not None:
@@ -168,6 +199,42 @@ class SemanticObstacleCloudNode(Node):
         if bool(self.get_parameter("clear_costmaps_on_target").value):
             self._schedule_costmap_clear()
         # Do not wait for the periodic timer to publish the corrected cloud.
+        self.publish_cloud()
+
+    def on_target_lock_status(self, msg: String) -> None:
+        was_active = self.locked_target.active
+        try:
+            changed = self.locked_target.update_json(msg.data)
+        except (ValueError, json.JSONDecodeError) as exc:
+            if not self._warned_target_lock_status:
+                self.get_logger().warn(f"ignoring invalid target-lock status: {exc}")
+                self._warned_target_lock_status = True
+            return
+
+        self._warned_target_lock_status = False
+        if not self.locked_target.active:
+            return
+        assert self.locked_target.pose is not None
+        radius = max(
+            0.0,
+            float(self.get_parameter("locked_target_radius_m").value),
+        )
+        self.obstacles, removed = remove_obstacles_near(
+            self.obstacles,
+            self.locked_target.pose.x,
+            self.locked_target.pose.y,
+            radius,
+        )
+        if not changed and was_active and removed == 0:
+            return
+
+        self.get_logger().info(
+            "protected locked target from semantic obstacles at "
+            f"({self.locked_target.pose.x:.2f}, {self.locked_target.pose.y:.2f}); "
+            f"removed={removed}"
+        )
+        if bool(self.get_parameter("clear_costmaps_on_target").value):
+            self._schedule_costmap_clear()
         self.publish_cloud()
 
     def publish_cloud(self) -> None:
