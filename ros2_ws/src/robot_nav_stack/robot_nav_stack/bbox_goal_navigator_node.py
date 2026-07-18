@@ -166,6 +166,7 @@ class BboxGoalNavigatorNode(Node):
         self._target_lock = TargetLock()
         self._selected_target_distance_m: float | None = None
         self._no_target_since_sec: float | None = None
+        self._has_seen_target_since_start = False
         self._target_search_phase = "idle"
         self._target_search_index: int | None = None
         self._target_search_spin_start_yaw: float | None = None
@@ -799,6 +800,7 @@ class BboxGoalNavigatorNode(Node):
             self._target_pose = selected_target.pose
             self._target_stamp_sec = selected_target.stamp_sec
             self._no_target_since_sec = None
+            self._has_seen_target_since_start = True
             self._reset_target_search_runtime()
             if self._active_goal_purpose == "search":
                 self._nav_state = "search_canceling_target_found"
@@ -991,7 +993,10 @@ class BboxGoalNavigatorNode(Node):
     def _ensure_target_search_started(self, robot: Pose2D) -> None:
         if self._target_search_phase != "idle":
             return
-        if bool(self.get_parameter("target_search_initial_spin_enabled").value):
+        if (
+            self._has_seen_target_since_start
+            and bool(self.get_parameter("target_search_initial_spin_enabled").value)
+        ):
             self._target_search_phase = "initial_spin"
             self._target_search_spin_start_yaw = robot.theta
             self._target_search_spin_index = 0
@@ -1606,6 +1611,7 @@ class BboxGoalNavigatorNode(Node):
             "target_search_enabled": bool(
                 self.get_parameter("target_search_enabled").value
             ),
+            "target_seen_since_start": self._has_seen_target_since_start,
             "target_search_phase": self._target_search_phase,
             "target_search_spin_index": self._target_search_spin_index,
             "target_search_dwell_active": self._target_search_dwell_until_sec
