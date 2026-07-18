@@ -203,6 +203,18 @@ def generate_launch_description():
                 default_value="12.0",
             ),
             DeclareLaunchArgument(
+                "bbox_goal_target_search_initial_spin_enabled",
+                default_value="true",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_initial_spin_step_deg",
+                default_value="60.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_dwell_sec",
+                default_value="1.0",
+            ),
+            DeclareLaunchArgument(
                 "bbox_goal_target_search_center_x_m",
                 default_value="0.0",
             ),
@@ -657,6 +669,15 @@ def generate_launch_description():
                         ),
                         "target_search_goal_timeout_sec": _float_arg(
                             "bbox_goal_target_search_goal_timeout_sec"
+                        ),
+                        "target_search_initial_spin_enabled": _bool_arg(
+                            "bbox_goal_target_search_initial_spin_enabled"
+                        ),
+                        "target_search_initial_spin_step_deg": _float_arg(
+                            "bbox_goal_target_search_initial_spin_step_deg"
+                        ),
+                        "target_search_dwell_sec": _float_arg(
+                            "bbox_goal_target_search_dwell_sec"
                         ),
                         "target_search_center_x_m": _float_arg(
                             "bbox_goal_target_search_center_x_m"
