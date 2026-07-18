@@ -121,8 +121,8 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("storage_gate_open_wait_sec", 1.0)
         self.declare_parameter("storage_backup_action_name", "backup")
         self.declare_parameter("storage_backup_distance_m", 0.50)
-        self.declare_parameter("storage_backup_speed_mps", 0.08)
-        self.declare_parameter("storage_backup_time_allowance_sec", 12.0)
+        self.declare_parameter("storage_backup_speed_mps", 0.50)
+        self.declare_parameter("storage_backup_time_allowance_sec", 1.0)
 
         self._map_frame = str(self.get_parameter("map_frame").value)
         self._send_nav2_goal = bool(self.get_parameter("send_nav2_goal").value)

@@ -691,11 +691,11 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "bbox_goal_storage_backup_speed_mps",
-                default_value="0.08",
+                default_value="0.50",
             ),
             DeclareLaunchArgument(
                 "bbox_goal_storage_backup_time_allowance_sec",
-                default_value="12.0",
+                default_value="1.0",
             ),
             DeclareLaunchArgument("enable_nav2", default_value="false"),
             DeclareLaunchArgument("enable_slam", default_value="false"),
