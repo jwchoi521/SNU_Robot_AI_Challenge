@@ -26,6 +26,9 @@ def generate_launch_description() -> LaunchDescription:
     close_gate_on_start = ParameterValue(
         LaunchConfiguration("close_gate_on_start"), value_type=bool
     )
+    disarm_capture_on_start = ParameterValue(
+        LaunchConfiguration("disarm_capture_on_start"), value_type=bool
+    )
     publish_cargo_events = ParameterValue(
         LaunchConfiguration("publish_cargo_events"), value_type=bool
     )
@@ -71,7 +74,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("u_shape_pwm_max", default_value="120"),
             DeclareLaunchArgument("log_serial_writes", default_value="false"),
             DeclareLaunchArgument("gripper_command_topic", default_value="/gripper/command"),
+            DeclareLaunchArgument("capture_arm_topic", default_value="/capture/arm"),
             DeclareLaunchArgument("close_gate_on_start", default_value="true"),
+            DeclareLaunchArgument("disarm_capture_on_start", default_value="true"),
             DeclareLaunchArgument("mission_event_topic", default_value="/mission/event"),
             DeclareLaunchArgument("publish_cargo_events", default_value="true"),
             DeclareLaunchArgument("cargo_entry_event_name", default_value="object_captured"),
@@ -108,7 +113,11 @@ def generate_launch_description() -> LaunchDescription:
                         "gripper_command_topic": LaunchConfiguration(
                             "gripper_command_topic"
                         ),
+                        "capture_arm_topic": LaunchConfiguration(
+                            "capture_arm_topic"
+                        ),
                         "close_gate_on_start": close_gate_on_start,
+                        "disarm_capture_on_start": disarm_capture_on_start,
                         "mission_event_topic": LaunchConfiguration(
                             "mission_event_topic"
                         ),

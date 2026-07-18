@@ -8,6 +8,7 @@ esp32_serial_bridge:
     esp32_command_mode: encoder_velocity
     command_topic: /wheel_commands
     gripper_command_topic: /gripper/command
+    capture_arm_topic: /capture/arm
     joint_states_topic: /joint_states
     command_timeout_sec: 0.5
     read_rate_hz: 100.0
@@ -15,6 +16,7 @@ esp32_serial_bridge:
     u_shape_pwm_max: 120
     log_serial_writes: false
     close_gate_on_start: true
+    disarm_capture_on_start: true
     publish_imu: true
     imu_topic: /imu
     imu_frame: base_link

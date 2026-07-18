@@ -12,8 +12,9 @@ from geometry_msgs.msg import PoseStamped, Twist
 from nav2_msgs.action import BackUp, NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from snu_robot_interfaces.msg import GripperCommand
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
 from .core import Pose2D, angle_diff, quaternion_from_yaw, yaw_from_quaternion
 from .storage_dropoff import (
@@ -69,12 +70,14 @@ class BboxGoalNavigatorNode(Node):
             "object_captured,cargo_entry,pickup_success,target_captured",
         )
         self.declare_parameter("gripper_command_topic", "/gripper/command")
+        self.declare_parameter("capture_arm_topic", "/capture/arm")
         self.declare_parameter("cmd_vel_topic", "/cmd_vel")
         self.declare_parameter("nav_action_name", "navigate_to_pose")
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("send_nav2_goal", True)
         self.declare_parameter("publish_mission_events", True)
         self.declare_parameter("control_gripper_gate", True)
+        self.declare_parameter("control_capture_arm", True)
         self.declare_parameter("gate_open_distance_m", 0.70)
         self.declare_parameter("approach_distance_m", 0.0)
         self.declare_parameter("goal_reached_tolerance_m", 0.12)
@@ -122,6 +125,9 @@ class BboxGoalNavigatorNode(Node):
         self._control_gripper_gate = bool(
             self.get_parameter("control_gripper_gate").value
         )
+        self._control_capture_arm = bool(
+            self.get_parameter("control_capture_arm").value
+        )
         self._nav_server_wait_sec = float(
             self.get_parameter("nav_server_wait_sec").value
         )
@@ -157,6 +163,7 @@ class BboxGoalNavigatorNode(Node):
         self._nav_state = "idle"
         self._gate_state = "closed"
         self._gate_open_latched = False
+        self._capture_arm_armed = False
         self._stop_until_sec = 0.0
         self._last_status: dict[str, Any] = {}
         self._warned_nav_server_unavailable = False
@@ -212,6 +219,17 @@ class BboxGoalNavigatorNode(Node):
             str(self.get_parameter("gripper_command_topic").value),
             10,
         )
+        capture_arm_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self._capture_arm_pub = self.create_publisher(
+            Bool,
+            str(self.get_parameter("capture_arm_topic").value),
+            capture_arm_qos,
+        )
+        self._send_capture_arm(False, "startup", force=True)
         self.create_subscription(
             String,
             str(self.get_parameter("mission_event_topic").value),
@@ -354,6 +372,7 @@ class BboxGoalNavigatorNode(Node):
         self._publish_stop_cmd()
         hold_sec = max(0.0, float(self.get_parameter("capture_stop_hold_sec").value))
         self._stop_until_sec = max(self._stop_until_sec, self._now_sec() + hold_sec)
+        self._send_capture_arm(False, f"capture_event:{event_name}")
         self._send_gripper(GripperCommand.CLOSE, f"capture_event:{event_name}")
         self._gate_open_latched = False
         removed = self._remove_selected_target()
@@ -383,6 +402,7 @@ class BboxGoalNavigatorNode(Node):
         self._storage_gate_opened_at_sec = 0.0
         self._storage_stage_goal_sent = False
         self._nav_state = "storage_dropoff_start"
+        self._send_capture_arm(False, "storage_dropoff_start")
         self._send_gripper(GripperCommand.CLOSE, "storage_dropoff_start")
         self._gate_open_latched = False
         self._set_storage_phase(StoragePhase.APPROACHING)
@@ -393,6 +413,7 @@ class BboxGoalNavigatorNode(Node):
         self._storage_cycle_id += 1
         self._cancel_active_goal("mission_reset")
         self._cancel_backup_goal("mission_reset")
+        self._send_capture_arm(False, "mission_reset", force=True)
         self._send_gripper(GripperCommand.CLOSE, "mission_reset")
         self._captured_object_count = 0
         self._storage_plan = None
@@ -613,6 +634,7 @@ class BboxGoalNavigatorNode(Node):
         )
 
     def _fail_storage_dropoff(self, reason: str) -> None:
+        self._send_capture_arm(False, f"storage_failure:{reason}")
         self._send_gripper(GripperCommand.CLOSE, f"storage_failure:{reason}")
         self._publish_stop_cmd()
         self._set_storage_phase(StoragePhase.FAILED)
@@ -715,6 +737,7 @@ class BboxGoalNavigatorNode(Node):
             return
 
         self._publish_stop_cmd()
+        self._send_capture_arm(False, "storage_backup_complete")
         self._send_gripper(GripperCommand.CLOSE, "storage_backup_complete")
         self._set_storage_phase(StoragePhase.COMPLETE)
         self._publish_mission_event("storage_dropoff_complete")
@@ -1110,6 +1133,10 @@ class BboxGoalNavigatorNode(Node):
         ):
             self._retry_storage_navigation(purpose, reason)
             return
+        if purpose == "target":
+            self._send_capture_arm(False, f"target_navigation_failure:{reason}")
+            self._send_gripper(GripperCommand.CLOSE, "target_navigation_failure")
+            self._gate_open_latched = False
         self._last_sent_goal = None
 
     def _cancel_active_goal(self, reason: str) -> None:
@@ -1148,10 +1175,12 @@ class BboxGoalNavigatorNode(Node):
         )
         if self._gate_open_latched:
             self._send_gripper(GripperCommand.OPEN, "gate_open_latched")
+            self._send_capture_arm(True, "gate_open_latched")
             return
         if self._selected_target_distance_m <= open_distance:
             self._gate_open_latched = True
             self._send_gripper(GripperCommand.OPEN, "target_within_gate_open_distance")
+            self._send_capture_arm(True, "target_within_gate_open_distance")
 
     def _remove_selected_target(self) -> int:
         target = self._target_pose
@@ -1211,6 +1240,20 @@ class BboxGoalNavigatorNode(Node):
         self._gate_state = desired_state
         self.get_logger().info(f"gripper gate {desired_state}: {reason}")
 
+    def _send_capture_arm(
+        self, armed: bool, reason: str, *, force: bool = False
+    ) -> None:
+        if not self._control_capture_arm:
+            return
+        if self._capture_arm_armed == armed and not force:
+            return
+        msg = Bool()
+        msg.data = armed
+        self._capture_arm_pub.publish(msg)
+        self._capture_arm_armed = armed
+        state = "ON" if armed else "OFF"
+        self.get_logger().info(f"capture arm {state}: {reason}")
+
     def _publish_status(self, state: str, **extra: Any) -> None:
         payload: dict[str, Any] = {
             "state": state,
@@ -1231,6 +1274,7 @@ class BboxGoalNavigatorNode(Node):
             "tracked_target_count": len(self._tracked_targets),
             "gate_state": self._gate_state,
             "gate_open_latched": self._gate_open_latched,
+            "capture_arm_armed": self._capture_arm_armed,
         }
         if self._storage_plan is not None:
             payload["storage_entry_direction"] = (

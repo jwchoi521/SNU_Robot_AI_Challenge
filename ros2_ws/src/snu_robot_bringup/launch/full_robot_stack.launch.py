@@ -305,7 +305,11 @@ def generate_launch_description():
         "bbox_goal_control_gripper_gate": LaunchConfiguration(
             "bbox_goal_control_gripper_gate"
         ),
+        "bbox_goal_control_capture_arm": LaunchConfiguration(
+            "bbox_goal_control_capture_arm"
+        ),
         "gripper_command_topic": LaunchConfiguration("gripper_command_topic"),
+        "capture_arm_topic": LaunchConfiguration("capture_arm_topic"),
         "bbox_goal_cmd_vel_topic": LaunchConfiguration("bbox_goal_cmd_vel_topic"),
         "bbox_goal_gate_open_distance_m": LaunchConfiguration(
             "bbox_goal_gate_open_distance_m"
@@ -475,7 +479,11 @@ def generate_launch_description():
         "u_shape_pwm_max": LaunchConfiguration("esp32_u_shape_pwm_max"),
         "log_serial_writes": LaunchConfiguration("esp32_log_serial_writes"),
         "gripper_command_topic": LaunchConfiguration("gripper_command_topic"),
+        "capture_arm_topic": LaunchConfiguration("capture_arm_topic"),
         "close_gate_on_start": LaunchConfiguration("esp32_close_gate_on_start"),
+        "disarm_capture_on_start": LaunchConfiguration(
+            "esp32_disarm_capture_on_start"
+        ),
         "mission_event_topic": LaunchConfiguration("object_track_mission_event_topic"),
         "publish_cargo_events": LaunchConfiguration("esp32_publish_cargo_events"),
         "cargo_entry_event_name": LaunchConfiguration("esp32_cargo_entry_event_name"),
@@ -558,7 +566,12 @@ def generate_launch_description():
                 default_value="object_captured,cargo_entry,pickup_success,target_captured",
             ),
             DeclareLaunchArgument("bbox_goal_control_gripper_gate", default_value="true"),
+            DeclareLaunchArgument(
+                "bbox_goal_control_capture_arm",
+                default_value="true",
+            ),
             DeclareLaunchArgument("gripper_command_topic", default_value="/gripper/command"),
+            DeclareLaunchArgument("capture_arm_topic", default_value="/capture/arm"),
             DeclareLaunchArgument("bbox_goal_cmd_vel_topic", default_value="/cmd_vel"),
             DeclareLaunchArgument("bbox_goal_gate_open_distance_m", default_value="0.70"),
             DeclareLaunchArgument("bbox_goal_approach_distance_m", default_value="0.0"),
@@ -666,6 +679,7 @@ def generate_launch_description():
             DeclareLaunchArgument("esp32_u_shape_pwm_max", default_value="120"),
             DeclareLaunchArgument("esp32_log_serial_writes", default_value="false"),
             DeclareLaunchArgument("esp32_close_gate_on_start", default_value="true"),
+            DeclareLaunchArgument("esp32_disarm_capture_on_start", default_value="true"),
             DeclareLaunchArgument("esp32_publish_cargo_events", default_value="true"),
             DeclareLaunchArgument("esp32_cargo_entry_event_name", default_value="object_captured"),
             DeclareLaunchArgument("esp32_publish_imu", default_value="true"),

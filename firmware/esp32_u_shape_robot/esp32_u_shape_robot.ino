@@ -24,6 +24,7 @@
     BATCH <0|1|2>
     CAPACITY <1..3>
     AUTO_GATE ON | AUTO_GATE OFF
+    CAPTURE_ARM ON | CAPTURE_ARM OFF | CAPTURE_ARM?
     UNLOAD
     HELP
 */
@@ -204,6 +205,7 @@ bool irStableBlocked = false;
 bool countedThisBlock = false;
 bool irPendingEntry = false;
 bool irCaptureAdvanceActive = false;
+bool captureAdvanceArmed = false;
 uint32_t irLastRawChangeMs = 0;
 uint32_t scheduledGateCloseAtMs = 0;
 uint32_t irCaptureAdvanceStartedMs = 0;
@@ -967,6 +969,8 @@ void printCargoStatus() {
   Serial.print(activeBatchIndex);
   Serial.print(" ir_blocked=");
   Serial.print(irStableBlocked ? 1 : 0);
+  Serial.print(" capture_armed=");
+  Serial.print(captureAdvanceArmed ? 1 : 0);
   Serial.print(" gate=");
   Serial.print(gateOpen ? "open" : "closed");
   Serial.print(" full=");
@@ -1016,6 +1020,28 @@ void stopIrCaptureAdvance() {
   Serial.println("IR CAPTURE_STOP");
 }
 
+void setCaptureAdvanceArmed(bool armed, const char *reason) {
+  captureAdvanceArmed = armed;
+  if (!armed) {
+    irPendingEntry = false;
+    stopIrCaptureAdvance();
+  } else if (irStableBlocked && !irPendingEntry) {
+    // If the arm command arrives just after the object breaks the beam, start
+    // the same capture sequence without waiting for another IR edge.
+    countedThisBlock = true;
+    irPendingEntry = true;
+    startIrCaptureAdvance();
+  }
+
+  Serial.print("OK CAPTURE_ARM ");
+  Serial.print(armed ? "ON" : "OFF");
+  if (reason != nullptr && reason[0] != '\0') {
+    Serial.print(' ');
+    Serial.print(reason);
+  }
+  Serial.println();
+}
+
 void registerCargoEntry() {
   if (cargoCount < MAX_CARGO_CAPACITY) {
     cargoCount++;
@@ -1040,7 +1066,7 @@ void updateIrSensor() {
     irStableBlocked = irRawBlocked;
     if (irStableBlocked) {
       Serial.println("IR BLOCKED");
-      if (!countedThisBlock) {
+      if (captureAdvanceArmed && !countedThisBlock) {
         countedThisBlock = true;
         irPendingEntry = true;
         startIrCaptureAdvance();
@@ -1051,6 +1077,7 @@ void updateIrSensor() {
         stopIrCaptureAdvance();
         registerCargoEntry();
         irPendingEntry = false;
+        setCaptureAdvanceArmed(false, "AUTO");
       }
       countedThisBlock = false;
     }
@@ -1063,6 +1090,7 @@ void updateIrSensor() {
   {
     stopIrCaptureAdvance();
     Serial.println("IR CAPTURE_ADVANCE_TIMEOUT");
+    setCaptureAdvanceArmed(false, "TIMEOUT");
   }
 
   if (scheduledGateCloseAtMs != 0 && (int32_t)(now - scheduledGateCloseAtMs) >= 0) {
@@ -1333,8 +1361,7 @@ void handleCargoCommand(char *&cursor) {
   }
   uppercaseToken(mode);
   if (strcmp(mode, "RESET") == 0) {
-    irPendingEntry = false;
-    stopIrCaptureAdvance();
+    setCaptureAdvanceArmed(false, "CARGO_RESET");
     cargoCount = 0;
     countedThisBlock = false;
     Serial.println("OK CARGO RESET");
@@ -1353,8 +1380,7 @@ void handleBatchCommand(char *&cursor) {
   }
   activeBatchIndex = batchIndex;
   targetCapacity = BATCH_CAPACITIES[batchIndex];
-  irPendingEntry = false;
-  stopIrCaptureAdvance();
+  setCaptureAdvanceArmed(false, "BATCH");
   cargoCount = 0;
   countedThisBlock = false;
   closeGate();
@@ -1393,6 +1419,28 @@ void handleAutoGateCommand(char *&cursor) {
     return;
   }
   Serial.println("ERR AUTO_GATE needs ON|OFF");
+}
+
+void handleCaptureArmCommand(char *&cursor) {
+  char *mode = strtok_r(cursor, " ", &cursor);
+  if (mode == nullptr) {
+    Serial.println("ERR CAPTURE_ARM needs ON|OFF|?");
+    return;
+  }
+  uppercaseToken(mode);
+  if (strcmp(mode, "ON") == 0) {
+    setCaptureAdvanceArmed(true, "HOST");
+    return;
+  }
+  if (strcmp(mode, "OFF") == 0) {
+    setCaptureAdvanceArmed(false, "HOST");
+    return;
+  }
+  if (strcmp(mode, "?") == 0 || strcmp(mode, "STATUS") == 0) {
+    printCargoStatus();
+    return;
+  }
+  Serial.println("ERR CAPTURE_ARM needs ON|OFF|?");
 }
 
 void handleServoCommand(char *&cursor) {
@@ -1581,7 +1629,7 @@ void handleCommand(String line) {
   }
 
   if (strcmp(command, "STOP") == 0) {
-    irPendingEntry = false;
+    setCaptureAdvanceArmed(false, "STOP");
     countedThisBlock = false;
     forceStopAllMotors();
     Serial.println("OK STOP");
@@ -1752,9 +1800,18 @@ void handleCommand(String line) {
     return;
   }
 
+  if (strcmp(command, "CAPTURE_ARM?") == 0) {
+    printCargoStatus();
+    return;
+  }
+
+  if (strcmp(command, "CAPTURE_ARM") == 0) {
+    handleCaptureArmCommand(cursor);
+    return;
+  }
+
   if (strcmp(command, "UNLOAD") == 0) {
-    irPendingEntry = false;
-    stopIrCaptureAdvance();
+    setCaptureAdvanceArmed(false, "UNLOAD");
     openGate();
     cargoCount = 0;
     countedThisBlock = false;
@@ -1764,7 +1821,7 @@ void handleCommand(String line) {
   }
 
   if (strcmp(command, "HELP") == 0) {
-    Serial.println("Commands: PING | STOP | SET <fl> <fr> <bl> <br> (fixed+PI) | SET1 <fl_cps> <fr_cps> <bl_cps> <br_cps> | DRIVE <base> <fl_s> <fr_s> <bl_s> <br_s> | RUN <base> <fl_s> <fr_s> <bl_s> <br_s> <ms> | STRAIGHT <base> <ms> | ENC? | ENC RESET | ENC ON|OFF | ENC TEST <base> <ms> | IMU ON|OFF | ZERO_YAW | GATE OPEN|CLOSE|? | SERVO LEFT <deg> | SERVO RIGHT <deg> | SERVO BOTH <left_deg> <right_deg> | SERVO TEST | CARGO? | CARGO RESET | BATCH <0|1|2> | CAPACITY <1..3> | AUTO_GATE ON|OFF | UNLOAD");
+    Serial.println("Commands: PING | STOP | SET <fl> <fr> <bl> <br> (fixed+PI) | SET1 <fl_cps> <fr_cps> <bl_cps> <br_cps> | DRIVE <base> <fl_s> <fr_s> <bl_s> <br_s> | RUN <base> <fl_s> <fr_s> <bl_s> <br_s> <ms> | STRAIGHT <base> <ms> | ENC? | ENC RESET | ENC ON|OFF | ENC TEST <base> <ms> | IMU ON|OFF | ZERO_YAW | GATE OPEN|CLOSE|? | SERVO LEFT <deg> | SERVO RIGHT <deg> | SERVO BOTH <left_deg> <right_deg> | SERVO TEST | CARGO? | CARGO RESET | BATCH <0|1|2> | CAPACITY <1..3> | AUTO_GATE ON|OFF | CAPTURE_ARM ON|OFF|? | UNLOAD");
     return;
   }
 

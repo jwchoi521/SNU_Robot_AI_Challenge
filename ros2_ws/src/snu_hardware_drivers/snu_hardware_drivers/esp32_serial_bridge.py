@@ -13,9 +13,10 @@ from typing import Any
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Imu, JointState
 from snu_robot_interfaces.msg import FourWheelCommand, GripperCommand
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,9 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("log_serial_writes", False)
         self.declare_parameter("u_shape_stream_encoders", True)
         self.declare_parameter("gripper_command_topic", "/gripper/command")
+        self.declare_parameter("capture_arm_topic", "/capture/arm")
         self.declare_parameter("close_gate_on_start", True)
+        self.declare_parameter("disarm_capture_on_start", True)
         self.declare_parameter("mission_event_topic", "/mission/event")
         self.declare_parameter("publish_cargo_events", True)
         self.declare_parameter("cargo_entry_event_name", "object_captured")
@@ -100,6 +103,9 @@ class Esp32SerialBridge(Node):
         )
         self._close_gate_on_start = bool(
             self.get_parameter("close_gate_on_start").value
+        )
+        self._disarm_capture_on_start = bool(
+            self.get_parameter("disarm_capture_on_start").value
         )
         self._publish_cargo_events = bool(
             self.get_parameter("publish_cargo_events").value
@@ -216,6 +222,17 @@ class Esp32SerialBridge(Node):
             self._on_gripper_command,
             10,
         )
+        capture_arm_qos = QoSProfile(
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self._capture_arm_subscription = self.create_subscription(
+            Bool,
+            str(self.get_parameter("capture_arm_topic").value),
+            self._on_capture_arm,
+            capture_arm_qos,
+        )
         read_rate_hz = float(self.get_parameter("read_rate_hz").value)
         self._read_timer = self.create_timer(1.0 / max(1.0, read_rate_hz), self._read)
         self._watchdog_timer = self.create_timer(0.05, self._stop_if_timed_out)
@@ -255,6 +272,9 @@ class Esp32SerialBridge(Node):
             self._send_gate_command("CLOSE")
         else:
             self.get_logger().warn(f"Unsupported gripper command: {msg.command}")
+
+    def _on_capture_arm(self, msg: Bool) -> None:
+        self._send_capture_arm_command(bool(msg.data))
 
     def _normalize(self, value: float, command_mode: int) -> float:
         if not isfinite(value):
@@ -326,6 +346,15 @@ class Esp32SerialBridge(Node):
             return
         self._send_serial_line(f"GATE {action}\n")
 
+    def _send_capture_arm_command(self, armed: bool) -> None:
+        if self._esp32_protocol not in ("u_shape", "u_shape_pwm", "u_shape_robot"):
+            self.get_logger().warn(
+                "Ignoring capture arm command; "
+                f"esp32_protocol={self._esp32_protocol!r}"
+            )
+            return
+        self._send_serial_line(f"CAPTURE_ARM {'ON' if armed else 'OFF'}\n")
+
     def _u_shape_set_command(self, values: list[float]) -> str:
         scale = self._u_shape_pwm_max / max(self._max_power, 1.0e-6)
         pwm = [
@@ -351,6 +380,8 @@ class Esp32SerialBridge(Node):
             self._serial.write(b"ENC ON\n")
         if self._publish_imu:
             self._serial.write(b"IMU ON\n")
+        if self._disarm_capture_on_start:
+            self._send_capture_arm_command(False)
         if self._close_gate_on_start:
             # Start every real run with the front gate closed before Nav2 moves.
             self._send_serial_line("GATE CLOSE\n")
@@ -555,6 +586,7 @@ class Esp32SerialBridge(Node):
 
     def destroy_node(self) -> bool:
         if self._serial is not None:
+            self._send_capture_arm_command(False)
             if self._uses_u_shape_encoder_velocity():
                 self._send_serial_line(self._u_shape_set1_command([0.0, 0.0, 0.0, 0.0]))
             else:

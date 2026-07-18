@@ -176,7 +176,9 @@ def generate_launch_description():
                 default_value="object_captured,cargo_entry,pickup_success,target_captured",
             ),
             DeclareLaunchArgument("bbox_goal_control_gripper_gate", default_value="true"),
+            DeclareLaunchArgument("bbox_goal_control_capture_arm", default_value="true"),
             DeclareLaunchArgument("gripper_command_topic", default_value="/gripper/command"),
+            DeclareLaunchArgument("capture_arm_topic", default_value="/capture/arm"),
             DeclareLaunchArgument("bbox_goal_cmd_vel_topic", default_value="/cmd_vel"),
             DeclareLaunchArgument("bbox_goal_gate_open_distance_m", default_value="0.70"),
             # target 중심으로 들어가야 하므로 기본 접근 거리는 0m로 둔다.
@@ -572,9 +574,13 @@ def generate_launch_description():
                         "control_gripper_gate": _bool_arg(
                             "bbox_goal_control_gripper_gate"
                         ),
+                        "control_capture_arm": _bool_arg(
+                            "bbox_goal_control_capture_arm"
+                        ),
                         "gripper_command_topic": LaunchConfiguration(
                             "gripper_command_topic"
                         ),
+                        "capture_arm_topic": LaunchConfiguration("capture_arm_topic"),
                         "cmd_vel_topic": LaunchConfiguration("bbox_goal_cmd_vel_topic"),
                         "gate_open_distance_m": _float_arg(
                             "bbox_goal_gate_open_distance_m"
