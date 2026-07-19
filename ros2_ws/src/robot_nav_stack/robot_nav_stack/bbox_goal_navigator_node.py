@@ -1243,9 +1243,8 @@ class BboxGoalNavigatorNode(Node):
             return None
 
         if target_distance > 1e-6 and approach_distance > 0.0:
-            gx = target.x - approach_distance * dx / target_distance
-            gy = target.y - approach_distance * dy / target_distance
-            gx, gy = self._clamp_goal_to_arena(gx, gy)
+            gx = target.x
+            gy = target.y 
             heading = math.atan2(target.y - gy, target.x - gx)
         else:
             gx = target.x
