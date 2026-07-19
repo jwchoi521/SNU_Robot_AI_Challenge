@@ -536,6 +536,13 @@ def generate_launch_description():
         "imu_enable_retry_max_attempts": LaunchConfiguration(
             "esp32_imu_enable_retry_max_attempts"
         ),
+        "require_imu_before_motion": LaunchConfiguration(
+            "esp32_require_imu_before_motion"
+        ),
+        "required_imu_max_age_sec": LaunchConfiguration(
+            "esp32_required_imu_max_age_sec"
+        ),
+        "stop_repeat_sec": LaunchConfiguration("esp32_stop_repeat_sec"),
     }
 
     return LaunchDescription(
@@ -775,6 +782,9 @@ def generate_launch_description():
             DeclareLaunchArgument("esp32_imu_yaw_offset_deg", default_value="0.0"),
             DeclareLaunchArgument("esp32_imu_enable_retry_sec", default_value="1.0"),
             DeclareLaunchArgument("esp32_imu_enable_retry_max_attempts", default_value="0"),
+            DeclareLaunchArgument("esp32_require_imu_before_motion", default_value="true"),
+            DeclareLaunchArgument("esp32_required_imu_max_age_sec", default_value="1.0"),
+            DeclareLaunchArgument("esp32_stop_repeat_sec", default_value="0.25"),
             DeclareLaunchArgument("enable_sensor_tf", default_value="false"),
             DeclareLaunchArgument("enable_lidar_driver", default_value="true"),
             DeclareLaunchArgument("lidar_serial_port", default_value="/dev/ttyUSB0"),
@@ -946,6 +956,14 @@ def generate_launch_description():
             DeclareLaunchArgument("bbox_model_path", default_value=bbox_model_default),
             OpaqueFunction(function=_validate_tf_configuration),
             _include_launch(
+                "snu_hardware_drivers",
+                "esp32_serial_hardware.launch.py",
+                esp32_arguments,
+                condition=IfCondition(
+                    LaunchConfiguration("enable_esp32_serial_bridge")
+                ),
+            ),
+            _include_launch(
                 "robot_object_detector_ros",
                 "jetson_shape_fruit.launch.py",
                 detector_arguments,
@@ -999,14 +1017,6 @@ def generate_launch_description():
                 {},
                 condition=IfCondition(
                     LaunchConfiguration("enable_wheel_command_mapper")
-                ),
-            ),
-            _include_launch(
-                "snu_hardware_drivers",
-                "esp32_serial_hardware.launch.py",
-                esp32_arguments,
-                condition=IfCondition(
-                    LaunchConfiguration("enable_esp32_serial_bridge")
                 ),
             ),
             _include_launch(

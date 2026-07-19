@@ -49,6 +49,15 @@ def generate_launch_description() -> LaunchDescription:
     imu_enable_retry_max_attempts = ParameterValue(
         LaunchConfiguration("imu_enable_retry_max_attempts"), value_type=int
     )
+    require_imu_before_motion = ParameterValue(
+        LaunchConfiguration("require_imu_before_motion"), value_type=bool
+    )
+    required_imu_max_age_sec = ParameterValue(
+        LaunchConfiguration("required_imu_max_age_sec"), value_type=float
+    )
+    stop_repeat_sec = ParameterValue(
+        LaunchConfiguration("stop_repeat_sec"), value_type=float
+    )
     max_wheel_velocity_rad_s = ParameterValue(
         LaunchConfiguration("max_wheel_velocity_rad_s"), value_type=float
     )
@@ -96,6 +105,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("imu_yaw_offset_deg", default_value="0.0"),
             DeclareLaunchArgument("imu_enable_retry_sec", default_value="1.0"),
             DeclareLaunchArgument("imu_enable_retry_max_attempts", default_value="0"),
+            DeclareLaunchArgument("require_imu_before_motion", default_value="false"),
+            DeclareLaunchArgument("required_imu_max_age_sec", default_value="1.0"),
+            DeclareLaunchArgument("stop_repeat_sec", default_value="0.25"),
             DeclareLaunchArgument("max_wheel_velocity_rad_s", default_value="50.0"),
             DeclareLaunchArgument("encoder_counts_per_revolution", default_value="684.8"),
             DeclareLaunchArgument("front_left_motor_sign", default_value="1.0"),
@@ -144,6 +156,9 @@ def generate_launch_description() -> LaunchDescription:
                         "imu_yaw_offset_deg": imu_yaw_offset_deg,
                         "imu_enable_retry_sec": imu_enable_retry_sec,
                         "imu_enable_retry_max_attempts": imu_enable_retry_max_attempts,
+                        "require_imu_before_motion": require_imu_before_motion,
+                        "required_imu_max_age_sec": required_imu_max_age_sec,
+                        "stop_repeat_sec": stop_repeat_sec,
                         "max_wheel_velocity_rad_s": max_wheel_velocity_rad_s,
                         "encoder_counts_per_revolution": encoder_counts_per_revolution,
                         "front_left_motor_sign": front_left_motor_sign,

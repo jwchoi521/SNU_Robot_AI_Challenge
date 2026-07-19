@@ -64,6 +64,9 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("imu_yaw_offset_deg", 0.0)
         self.declare_parameter("imu_enable_retry_sec", 1.0)
         self.declare_parameter("imu_enable_retry_max_attempts", 0)
+        self.declare_parameter("require_imu_before_motion", False)
+        self.declare_parameter("required_imu_max_age_sec", 1.0)
+        self.declare_parameter("stop_repeat_sec", 0.25)
         self.declare_parameter("max_wheel_velocity_rad_s", 20.0)
         self.declare_parameter("encoder_counts_per_revolution", 684.8)
 
@@ -140,6 +143,17 @@ class Esp32SerialBridge(Node):
             0,
             int(self.get_parameter("imu_enable_retry_max_attempts").value),
         )
+        self._require_imu_before_motion = bool(
+            self.get_parameter("require_imu_before_motion").value
+        )
+        self._required_imu_max_age_sec = max(
+            0.0,
+            float(self.get_parameter("required_imu_max_age_sec").value),
+        )
+        self._stop_repeat_sec = max(
+            0.0,
+            float(self.get_parameter("stop_repeat_sec").value),
+        )
         self._max_wheel_velocity_rad_s = max(
             0.01,
             float(self.get_parameter("max_wheel_velocity_rad_s").value),
@@ -188,6 +202,15 @@ class Esp32SerialBridge(Node):
         self._last_dry_run_log_sec = 0.0
         self._last_serial_write_log_sec = 0.0
         self._last_serial_backlog_warn_sec = 0.0
+        self._last_required_imu_block_log_sec = 0.0
+        self._last_stop_command_time_sec: float | None = None
+        self._last_sent_was_stop = False
+        self._pending_startup_gate_close = (
+            self._close_gate_on_start
+            and self._require_imu_before_motion
+            and self._publish_imu
+            and self._esp32_protocol in ("u_shape", "u_shape_pwm", "u_shape_robot")
+        )
         self._serial_rx_buffer = bytearray()
 
         if self._dry_run:
@@ -195,6 +218,11 @@ class Esp32SerialBridge(Node):
                 "ESP32 serial bridge is in dry_run mode; serial port will not be opened"
             )
         else:
+            self.get_logger().info(
+                f"Opening ESP32 serial port {self._serial_port} at {self._baud_rate} "
+                f"(reset_on_open={self._reset_on_open}, "
+                f"reset_wait={self._serial_reset_wait_sec:.1f}s)"
+            )
             self._serial = _open_serial(
                 self._serial_port,
                 self._baud_rate,
@@ -267,8 +295,21 @@ class Esp32SerialBridge(Node):
             for wheel in self._wheels:
                 raw_value = float(getattr(msg, wheel.field))
                 wheel_rad_s = self._wheel_velocity_rad_s(raw_value, msg.command_mode)
-                values.append(wheel_rad_s * wheel.motor_sign * self._counts_per_revolution / (2.0 * pi))
+                values.append(
+                    wheel_rad_s
+                    * wheel.motor_sign
+                    * self._counts_per_revolution
+                    / (2.0 * pi)
+                )
+            if not _has_nonzero_values(values):
+                self._send_stop_command()
+                return
+            if not self._required_imu_is_fresh():
+                self._send_stop_command()
+                self._log_blocked_by_required_imu("wheel motion")
+                return
             self._send_serial_line(self._u_shape_set1_command(values))
+            self._last_sent_was_stop = False
             return
 
         values = []
@@ -279,10 +320,22 @@ class Esp32SerialBridge(Node):
                 * wheel.motor_sign
             )
             values.append(_clamp(normalized, -self._max_power, self._max_power))
+        if not _has_nonzero_values(values):
+            self._send_stop_command()
+            return
+        if not self._required_imu_is_fresh():
+            self._send_stop_command()
+            self._log_blocked_by_required_imu("wheel motion")
+            return
         self._send_wheel_command(self._serial_command_prefix(), values)
+        self._last_sent_was_stop = False
 
     def _on_gripper_command(self, msg: GripperCommand) -> None:
         if msg.command == GripperCommand.OPEN:
+            if not self._required_imu_is_fresh():
+                self._send_gate_command("CLOSE")
+                self._log_blocked_by_required_imu("gate open")
+                return
             self._send_gate_command("OPEN")
         elif msg.command == GripperCommand.CLOSE:
             self._send_gate_command("CLOSE")
@@ -292,7 +345,12 @@ class Esp32SerialBridge(Node):
             self.get_logger().warn(f"Unsupported gripper command: {msg.command}")
 
     def _on_capture_arm(self, msg: Bool) -> None:
-        self._send_capture_arm_command(bool(msg.data))
+        armed = bool(msg.data)
+        if armed and not self._required_imu_is_fresh():
+            self._send_capture_arm_command(False)
+            self._log_blocked_by_required_imu("capture arm on")
+            return
+        self._send_capture_arm_command(armed)
 
     def _normalize(self, value: float, command_mode: int) -> float:
         if not isfinite(value):
@@ -328,6 +386,56 @@ class Esp32SerialBridge(Node):
         if self._esp32_command_mode in ("velocity", "closed_loop", "closed_loop_velocity"):
             return "V"
         return "M"
+
+    def _send_stop_command(self, *, force: bool = False) -> None:
+        now_sec = self.get_clock().now().nanoseconds * 1.0e-9
+        if (
+            not force
+            and self._last_sent_was_stop
+            and self._last_stop_command_time_sec is not None
+            and now_sec - self._last_stop_command_time_sec < self._stop_repeat_sec
+        ):
+            return
+
+        if self._uses_u_shape_encoder_velocity():
+            self._send_serial_line(self._u_shape_set1_command([0.0, 0.0, 0.0, 0.0]))
+        else:
+            self._send_wheel_command(
+                self._serial_command_prefix(), [0.0, 0.0, 0.0, 0.0]
+            )
+        self._last_stop_command_time_sec = now_sec
+        self._last_sent_was_stop = True
+
+    def _required_imu_is_fresh(self) -> bool:
+        if not self._require_imu_before_motion or not self._publish_imu:
+            return True
+        if self._last_imu_yaw is None:
+            return False
+        if self._required_imu_max_age_sec <= 0.0:
+            return True
+        age = (self.get_clock().now() - self._last_imu_time).nanoseconds * 1.0e-9
+        return age <= self._required_imu_max_age_sec
+
+    def _required_imu_status(self) -> str:
+        if self._last_imu_yaw is None:
+            return "no sample"
+        age = (self.get_clock().now() - self._last_imu_time).nanoseconds * 1.0e-9
+        if (
+            self._required_imu_max_age_sec > 0.0
+            and age > self._required_imu_max_age_sec
+        ):
+            return f"stale {age:.2f}s > {self._required_imu_max_age_sec:.2f}s"
+        return "fresh"
+
+    def _log_blocked_by_required_imu(self, action: str) -> None:
+        now_sec = self.get_clock().now().nanoseconds * 1.0e-9
+        if now_sec - self._last_required_imu_block_log_sec < 1.0:
+            return
+        self._last_required_imu_block_log_sec = now_sec
+        self.get_logger().warn(
+            f"Blocked {action} until ESP32 IMU is publishing "
+            f"({self._required_imu_status()})"
+        )
 
     def _send_wheel_command(self, prefix: str, values: list[float]) -> None:
         if self._esp32_protocol in ("u_shape", "u_shape_pwm", "u_shape_robot"):
@@ -401,8 +509,13 @@ class Esp32SerialBridge(Node):
         if self._disarm_capture_on_start:
             self._send_capture_arm_command(False)
         if self._close_gate_on_start:
-            # Start every real run with the front gate closed before Nav2 moves.
-            self._send_serial_line("GATE CLOSE\n")
+            if self._pending_startup_gate_close:
+                self.get_logger().info(
+                    "Delaying startup GATE CLOSE until first ESP32 IMU sample"
+                )
+            else:
+                # Start every real run with the front gate closed before Nav2 moves.
+                self._send_serial_line("GATE CLOSE\n")
 
     def _should_retry_imu_enable(self) -> bool:
         if self._dry_run or self._serial is None:
@@ -440,6 +553,15 @@ class Esp32SerialBridge(Node):
             "No IMU sample received yet; resent IMU ON "
             f"(attempt {self._imu_enable_retry_attempts})"
         )
+
+    def _send_pending_startup_gate_close_if_ready(self) -> None:
+        if not self._pending_startup_gate_close:
+            return
+        if not self._required_imu_is_fresh():
+            return
+        self._pending_startup_gate_close = False
+        self.get_logger().info("Closing startup gate after first ESP32 IMU sample")
+        self._send_gate_command("CLOSE")
 
     def _log_dry_run(self, line: str) -> None:
         now_sec = self.get_clock().now().nanoseconds * 1.0e-9
@@ -612,9 +734,17 @@ class Esp32SerialBridge(Node):
         self._last_imu_time = now
         if self._imu_enable_retry_timer is not None:
             self._imu_enable_retry_timer.cancel()
+        self._send_pending_startup_gate_close_if_ready()
         if not self._logged_first_imu_sample:
             self._logged_first_imu_sample = True
-            self.get_logger().info("Received first IMU sample; publishing /imu")
+            suffix = (
+                "; releasing motion gate"
+                if self._require_imu_before_motion
+                else ""
+            )
+            self.get_logger().info(
+                f"Received first IMU sample; publishing /imu{suffix}"
+            )
 
     def _publish_joint_states(self, counts: list[int]) -> None:
         now = self.get_clock().now()
@@ -649,18 +779,12 @@ class Esp32SerialBridge(Node):
     def _stop_if_timed_out(self) -> None:
         age = (self.get_clock().now() - self._last_command_time).nanoseconds * 1.0e-9
         if age > self._command_timeout_sec:
-            if self._uses_u_shape_encoder_velocity():
-                self._send_serial_line(self._u_shape_set1_command([0.0, 0.0, 0.0, 0.0]))
-                return
-            self._send_wheel_command(self._serial_command_prefix(), [0.0, 0.0, 0.0, 0.0])
+            self._send_stop_command()
 
     def destroy_node(self) -> bool:
         if self._serial is not None:
             self._send_capture_arm_command(False)
-            if self._uses_u_shape_encoder_velocity():
-                self._send_serial_line(self._u_shape_set1_command([0.0, 0.0, 0.0, 0.0]))
-            else:
-                self._send_wheel_command(self._serial_command_prefix(), [0.0, 0.0, 0.0, 0.0])
+            self._send_stop_command(force=True)
             self._serial.close()
         return super().destroy_node()
 
@@ -836,6 +960,10 @@ def _parse_imu_line(parts: list[str]) -> tuple[float, float, float] | None:
     else:
         yaw, pitch, roll = values[0], values[1], values[2]
     return yaw, pitch, roll
+
+
+def _has_nonzero_values(values: list[float], eps: float = 1.0e-6) -> bool:
+    return any(isfinite(value) and abs(value) > eps for value in values)
 
 
 def _clamp(value: float, low: float, high: float) -> float:

@@ -118,6 +118,8 @@ const float SET1_YAW_RATE_ERROR_DEADBAND_RAD_S = 0.02f;
 
 const int I2C_SDA_PIN = 21;
 const int I2C_SCL_PIN = 22;
+const uint32_t I2C_CLOCK_HZ = 100000;
+const uint32_t IMU_STARTUP_SETTLE_MS = 100;
 const uint32_t IMU_REPORT_INTERVAL_US = 20000;
 const uint32_t IMU_PRINT_INTERVAL_MS = 50;
 
@@ -1251,10 +1253,20 @@ bool enableRotationVector() {
 
 uint32_t lastImuRetryMs = 0;
 
+bool beginBno08xI2c() {
+  if (bno08x.begin_I2C(BNO08x_I2CADDR_DEFAULT, &Wire)) {
+    return true;
+  }
+  delay(10);
+  return bno08x.begin_I2C(0x4B, &Wire);
+}
+
 void setupImu() {
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.setClock(I2C_CLOCK_HZ);
+  delay(IMU_STARTUP_SETTLE_MS);
 
-  if (!bno08x.begin_I2C(BNO08x_I2CADDR_DEFAULT, &Wire) && !bno08x.begin_I2C(0x4B, &Wire)) {
+  if (!beginBno08xI2c()) {
     Serial.println("WARN IMU not found");
     imuReady = false;
     return;
@@ -1270,7 +1282,7 @@ void updateImu() {
   if (!imuReady) {
     if (millis() - lastImuRetryMs >= 2000) {
       lastImuRetryMs = millis();
-      if (bno08x.begin_I2C(BNO08x_I2CADDR_DEFAULT, &Wire) || bno08x.begin_I2C(0x4B, &Wire)) {
+      if (beginBno08xI2c()) {
         imuReady = enableRotationVector();
         if (imuReady) {
           Serial.println("OK IMU READY");
@@ -1862,6 +1874,9 @@ void setup() {
   }
   setupEncoders();
 
+  // Bring up the BNO08x before gate servos draw startup current.
+  setupImu();
+
   pinMode(LEFT_GATE_SERVO_PIN, OUTPUT);
   pinMode(RIGHT_GATE_SERVO_PIN, OUTPUT);
   digitalWrite(LEFT_GATE_SERVO_PIN, LOW);
@@ -1874,7 +1889,6 @@ void setup() {
   irStableBlocked = irRawBlocked;
   irLastRawChangeMs = millis();
 
-  setupImu();
   Serial.println("ESP32 U-shape robot ready. Send HELP.");
   printCargoStatus();
 }
