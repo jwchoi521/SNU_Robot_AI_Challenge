@@ -7,6 +7,12 @@ from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
+ESP32_SERIAL_PORT_DEFAULT = (
+    "/dev/serial/by-id/"
+    "usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"
+)
+
+
 def generate_launch_description() -> LaunchDescription:
     default_params = PathJoinSubstitution(
         [FindPackageShare("snu_hardware_drivers"), "config", "esp32_serial.yaml"]
@@ -81,9 +87,12 @@ def generate_launch_description() -> LaunchDescription:
         [
             DeclareLaunchArgument("params_file", default_value=default_params),
             DeclareLaunchArgument("dry_run", default_value="true"),
-            DeclareLaunchArgument("serial_port", default_value="/dev/ttyUSB1"),
+            DeclareLaunchArgument(
+                "serial_port",
+                default_value=ESP32_SERIAL_PORT_DEFAULT,
+            ),
             DeclareLaunchArgument("baud_rate", default_value="115200"),
-            DeclareLaunchArgument("reset_on_open", default_value="true"),
+            DeclareLaunchArgument("reset_on_open", default_value="false"),
             DeclareLaunchArgument("reset_pulse_sec", default_value="0.1"),
             DeclareLaunchArgument("serial_reset_wait_sec", default_value="2.0"),
             DeclareLaunchArgument("esp32_protocol", default_value="u_shape"),

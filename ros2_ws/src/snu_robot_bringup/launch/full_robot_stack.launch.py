@@ -7,6 +7,17 @@ from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
 
+ESP32_SERIAL_PORT_DEFAULT = (
+    "/dev/serial/by-id/"
+    "usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"
+)
+LIDAR_SERIAL_PORT_DEFAULT = (
+    "/dev/serial/by-id/"
+    "usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_"
+    "7a8886e03870f01196fd88301045c30f-if00-port0"
+)
+
+
 def _include_launch(package_name: str, launch_file: str, arguments: dict, condition=None):
     include_kwargs = {"launch_arguments": arguments.items()}
     if condition is not None:
@@ -759,9 +770,12 @@ def generate_launch_description():
             DeclareLaunchArgument("enable_wheel_command_mapper", default_value="false"),
             DeclareLaunchArgument("enable_esp32_serial_bridge", default_value="false"),
             DeclareLaunchArgument("esp32_dry_run", default_value="true"),
-            DeclareLaunchArgument("esp32_serial_port", default_value="/dev/ttyUSB1"),
+            DeclareLaunchArgument(
+                "esp32_serial_port",
+                default_value=ESP32_SERIAL_PORT_DEFAULT,
+            ),
             DeclareLaunchArgument("esp32_baud_rate", default_value="115200"),
-            DeclareLaunchArgument("esp32_reset_on_open", default_value="true"),
+            DeclareLaunchArgument("esp32_reset_on_open", default_value="false"),
             DeclareLaunchArgument("esp32_reset_pulse_sec", default_value="0.1"),
             DeclareLaunchArgument("esp32_serial_reset_wait_sec", default_value="2.0"),
             DeclareLaunchArgument("esp32_protocol", default_value="u_shape"),
@@ -787,7 +801,10 @@ def generate_launch_description():
             DeclareLaunchArgument("esp32_stop_repeat_sec", default_value="0.25"),
             DeclareLaunchArgument("enable_sensor_tf", default_value="false"),
             DeclareLaunchArgument("enable_lidar_driver", default_value="true"),
-            DeclareLaunchArgument("lidar_serial_port", default_value="/dev/ttyUSB0"),
+            DeclareLaunchArgument(
+                "lidar_serial_port",
+                default_value=LIDAR_SERIAL_PORT_DEFAULT,
+            ),
             DeclareLaunchArgument("lidar_serial_baudrate", default_value="460800"),
             DeclareLaunchArgument("lidar_scan_mode", default_value="Standard"),
             DeclareLaunchArgument("lidar_inverted", default_value="false"),

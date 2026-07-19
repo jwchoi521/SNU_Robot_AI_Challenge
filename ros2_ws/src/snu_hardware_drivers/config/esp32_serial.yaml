@@ -1,9 +1,9 @@
 esp32_serial_bridge:
   ros__parameters:
     dry_run: true
-    serial_port: /dev/ttyUSB1
+    serial_port: /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
     baud_rate: 115200
-    reset_on_open: true
+    reset_on_open: false
     reset_pulse_sec: 0.1
     serial_reset_wait_sec: 2.0
     esp32_protocol: u_shape

@@ -202,6 +202,7 @@ class Esp32SerialBridge(Node):
         self._last_dry_run_log_sec = 0.0
         self._last_serial_write_log_sec = 0.0
         self._last_serial_backlog_warn_sec = 0.0
+        self._last_no_newline_warn_sec = 0.0
         self._last_required_imu_block_log_sec = 0.0
         self._last_stop_command_time_sec: float | None = None
         self._last_sent_was_stop = False
@@ -606,9 +607,7 @@ class Esp32SerialBridge(Node):
                 len(self._serial_rx_buffer) > 8192
                 and b"\n" not in self._serial_rx_buffer
             ):
-                self.get_logger().warn(
-                    "Dropping oversized partial ESP32 serial line with no newline"
-                )
+                self._warn_oversized_partial_serial_line()
                 self._serial_rx_buffer.clear()
 
         if (
@@ -631,6 +630,34 @@ class Esp32SerialBridge(Node):
         raw_line = bytes(self._serial_rx_buffer[:newline_index])
         del self._serial_rx_buffer[: newline_index + 1]
         return raw_line.decode("ascii", errors="replace").strip()
+
+    def _warn_oversized_partial_serial_line(self) -> None:
+        now_sec = self.get_clock().now().nanoseconds * 1.0e-9
+        if now_sec - self._last_no_newline_warn_sec < 2.0:
+            return
+        self._last_no_newline_warn_sec = now_sec
+        sample = bytes(self._serial_rx_buffer[:32])
+        non_printable = sum(
+            1
+            for value in sample
+            if value not in (9, 13) and (value < 32 or value > 126)
+        )
+        ratio = non_printable / max(1, len(sample))
+        detail = (
+            "binary-looking data; check esp32_serial_port/baud_rate. "
+            "This often means the ESP32 bridge is connected to the LiDAR port."
+            if ratio > 0.25
+            else "text data without newline; check ESP32 firmware line endings."
+        )
+        ascii_preview = "".join(
+            chr(value) if 32 <= value <= 126 else "."
+            for value in sample
+        )
+        self.get_logger().warn(
+            "Dropping oversized partial ESP32 serial line with no newline "
+            f"({len(self._serial_rx_buffer)} bytes, sample_hex={sample.hex()}, "
+            f"sample_ascii={ascii_preview!r}); {detail}"
+        )
 
     def _handle_line(self, line: str) -> None:
         parts = line.split()
