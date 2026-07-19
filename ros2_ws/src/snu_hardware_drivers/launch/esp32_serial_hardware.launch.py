@@ -55,6 +55,9 @@ def generate_launch_description() -> LaunchDescription:
     imu_enable_retry_max_attempts = ParameterValue(
         LaunchConfiguration("imu_enable_retry_max_attempts"), value_type=int
     )
+    imu_reset_retry_attempts = ParameterValue(
+        LaunchConfiguration("imu_reset_retry_attempts"), value_type=int
+    )
     require_imu_before_motion = ParameterValue(
         LaunchConfiguration("require_imu_before_motion"), value_type=bool
     )
@@ -114,6 +117,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("imu_yaw_offset_deg", default_value="0.0"),
             DeclareLaunchArgument("imu_enable_retry_sec", default_value="1.0"),
             DeclareLaunchArgument("imu_enable_retry_max_attempts", default_value="0"),
+            DeclareLaunchArgument("imu_reset_retry_attempts", default_value="5"),
             DeclareLaunchArgument("require_imu_before_motion", default_value="false"),
             DeclareLaunchArgument("required_imu_max_age_sec", default_value="1.0"),
             DeclareLaunchArgument("stop_repeat_sec", default_value="0.25"),
@@ -165,6 +169,7 @@ def generate_launch_description() -> LaunchDescription:
                         "imu_yaw_offset_deg": imu_yaw_offset_deg,
                         "imu_enable_retry_sec": imu_enable_retry_sec,
                         "imu_enable_retry_max_attempts": imu_enable_retry_max_attempts,
+                        "imu_reset_retry_attempts": imu_reset_retry_attempts,
                         "require_imu_before_motion": require_imu_before_motion,
                         "required_imu_max_age_sec": required_imu_max_age_sec,
                         "stop_repeat_sec": stop_repeat_sec,

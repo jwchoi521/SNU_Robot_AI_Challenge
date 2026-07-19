@@ -547,6 +547,9 @@ def generate_launch_description():
         "imu_enable_retry_max_attempts": LaunchConfiguration(
             "esp32_imu_enable_retry_max_attempts"
         ),
+        "imu_reset_retry_attempts": LaunchConfiguration(
+            "esp32_imu_reset_retry_attempts"
+        ),
         "require_imu_before_motion": LaunchConfiguration(
             "esp32_require_imu_before_motion"
         ),
@@ -796,6 +799,7 @@ def generate_launch_description():
             DeclareLaunchArgument("esp32_imu_yaw_offset_deg", default_value="0.0"),
             DeclareLaunchArgument("esp32_imu_enable_retry_sec", default_value="1.0"),
             DeclareLaunchArgument("esp32_imu_enable_retry_max_attempts", default_value="0"),
+            DeclareLaunchArgument("esp32_imu_reset_retry_attempts", default_value="5"),
             DeclareLaunchArgument("esp32_require_imu_before_motion", default_value="true"),
             DeclareLaunchArgument("esp32_required_imu_max_age_sec", default_value="1.0"),
             DeclareLaunchArgument("esp32_stop_repeat_sec", default_value="0.25"),

@@ -28,6 +28,9 @@ esp32_serial_bridge:
     # keep retrying, useful when ESP32 ignores the first command during reset.
     imu_enable_retry_sec: 1.0
     imu_enable_retry_max_attempts: 0
+    # With updated U-shape firmware, send IMU RESET every N failed IMU ON retries.
+    # Set 0 to disable reset retries.
+    imu_reset_retry_attempts: 5
     # Full robot launch can enable this so Nav2 cannot drive before IMU is ready.
     require_imu_before_motion: false
     required_imu_max_age_sec: 1.0

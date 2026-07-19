@@ -16,7 +16,8 @@
     RUN <base> <fl_scale> <fr_scale> <bl_scale> <br_scale> <duration_ms>
     STRAIGHT <base> <duration_ms>
     ENC? | ENC RESET | ENC ON | ENC OFF | ENC TEST <base> <duration_ms>
-    IMU ON | IMU OFF
+    IMU ON | IMU OFF | IMU RESET
+    I2C?
     ZERO_YAW
     GATE OPEN | GATE CLOSE | GATE?
     SERVO LEFT <deg> | SERVO RIGHT <deg> | SERVO BOTH <left_deg> <right_deg> | SERVO TEST
@@ -39,6 +40,10 @@
 
 #ifndef ESP_ARDUINO_VERSION_MAJOR
 #define ESP_ARDUINO_VERSION_MAJOR 2
+#endif
+
+#ifndef OUTPUT_OPEN_DRAIN
+#define OUTPUT_OPEN_DRAIN OUTPUT
 #endif
 
 struct Motor {
@@ -120,6 +125,9 @@ const int I2C_SDA_PIN = 21;
 const int I2C_SCL_PIN = 22;
 const uint32_t I2C_CLOCK_HZ = 100000;
 const uint32_t IMU_STARTUP_SETTLE_MS = 100;
+const uint32_t IMU_RETRY_INTERVAL_MS = 1500;
+const int IMU_INIT_ATTEMPTS = 3;
+const int I2C_RECOVERY_CLOCK_PULSES = 18;
 const uint32_t IMU_REPORT_INTERVAL_US = 20000;
 const uint32_t IMU_PRINT_INTERVAL_MS = 50;
 
@@ -1253,48 +1261,137 @@ bool enableRotationVector() {
 
 uint32_t lastImuRetryMs = 0;
 
-bool beginBno08xI2c() {
-  if (bno08x.begin_I2C(BNO08x_I2CADDR_DEFAULT, &Wire)) {
-    return true;
-  }
-  delay(10);
-  return bno08x.begin_I2C(0x4B, &Wire);
-}
-
-void setupImu() {
+void beginI2cBus() {
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   Wire.setClock(I2C_CLOCK_HZ);
-  delay(IMU_STARTUP_SETTLE_MS);
+}
 
+void resetImuRuntimeState(bool keepRequest) {
+  imuReady = false;
+  imuStreaming = false;
+  haveImuSample = false;
+  haveImuYawRateReference = false;
+  haveImuYawRateSample = false;
+  latestImuSampleMs = 0;
+  lastYawRateUs = 0;
+  yawZeroRad = 0.0f;
+  latestYawRad = 0.0f;
+  latestImuWzRadS = 0.0f;
+  latestPitchRad = 0.0f;
+  latestRollRad = 0.0f;
+  latestQi = 0.0f;
+  latestQj = 0.0f;
+  latestQk = 0.0f;
+  latestQr = 1.0f;
+  if (!keepRequest) {
+    imuRequested = false;
+  }
+}
+
+void recoverI2cBus() {
+  Wire.end();
+  delay(2);
+
+  pinMode(I2C_SDA_PIN, INPUT_PULLUP);
+  pinMode(I2C_SCL_PIN, INPUT_PULLUP);
+  delay(2);
+
+  pinMode(I2C_SCL_PIN, OUTPUT_OPEN_DRAIN);
+  digitalWrite(I2C_SCL_PIN, HIGH);
+  for (int i = 0; i < I2C_RECOVERY_CLOCK_PULSES; i++) {
+    digitalWrite(I2C_SCL_PIN, LOW);
+    delayMicroseconds(8);
+    digitalWrite(I2C_SCL_PIN, HIGH);
+    delayMicroseconds(8);
+  }
+
+  pinMode(I2C_SDA_PIN, OUTPUT_OPEN_DRAIN);
+  digitalWrite(I2C_SDA_PIN, LOW);
+  delayMicroseconds(8);
+  digitalWrite(I2C_SCL_PIN, HIGH);
+  delayMicroseconds(8);
+  digitalWrite(I2C_SDA_PIN, HIGH);
+  delayMicroseconds(8);
+
+  beginI2cBus();
+  delay(20);
+}
+
+void printI2cScan() {
+  int found = 0;
+  Serial.print("I2C");
+  for (uint8_t address = 1; address < 127; address++) {
+    Wire.beginTransmission(address);
+    uint8_t error = Wire.endTransmission();
+    if (error == 0) {
+      Serial.print(" 0x");
+      if (address < 16) Serial.print('0');
+      Serial.print(address, HEX);
+      found++;
+    }
+  }
+  if (found == 0) {
+    Serial.print(" none");
+  }
+  Serial.println();
+}
+
+bool beginBno08xI2c() {
+  const uint8_t addresses[] = {BNO08x_I2CADDR_DEFAULT, 0x4B};
+  const int addressCount = sizeof(addresses) / sizeof(addresses[0]);
+
+  for (int attempt = 0; attempt < IMU_INIT_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      recoverI2cBus();
+    }
+    for (int i = 0; i < addressCount; i++) {
+      const uint8_t address = addresses[i];
+      if (bno08x.begin_I2C(address, &Wire)) {
+        Serial.print("OK IMU I2C addr=0x");
+        if (address < 16) Serial.print('0');
+        Serial.println(address, HEX);
+        return true;
+      }
+      delay(20);
+    }
+  }
+  return false;
+}
+
+bool initializeImu(bool keepRequest) {
+  resetImuRuntimeState(keepRequest);
+  recoverI2cBus();
   if (!beginBno08xI2c()) {
     Serial.println("WARN IMU not found");
-    imuReady = false;
-    return;
+    return false;
   }
 
   imuReady = enableRotationVector();
-  if (imuReady) {
-    Serial.println("OK IMU READY");
+  if (!imuReady) {
+    return false;
   }
+
+  Serial.println("OK IMU READY");
+  if (imuRequested) {
+    imuStreaming = true;
+    nextImuPrintMs = millis();
+    Serial.println("OK IMU ON");
+  }
+  return true;
+}
+
+void setupImu() {
+  beginI2cBus();
+  delay(IMU_STARTUP_SETTLE_MS);
+
+  initializeImu(false);
 }
 
 void updateImu() {
   if (!imuReady) {
-    if (millis() - lastImuRetryMs >= 2000) {
+    if (millis() - lastImuRetryMs >= IMU_RETRY_INTERVAL_MS) {
       lastImuRetryMs = millis();
-      if (beginBno08xI2c()) {
-        imuReady = enableRotationVector();
-        if (imuReady) {
-          Serial.println("OK IMU READY");
-          if (imuRequested && !imuStreaming) {
-            imuStreaming = true;
-            nextImuPrintMs = millis();
-            Serial.println("OK IMU ON");
-          }
-        }
-      } else {
-        Serial.println("WARN IMU not found");
-      }
+      initializeImu(true);
     }
     return;
   }
@@ -1748,15 +1845,40 @@ void handleCommand(String line) {
     return;
   }
 
+  if (strcmp(command, "I2C?") == 0) {
+    recoverI2cBus();
+    printI2cScan();
+    return;
+  }
+
+  if (strcmp(command, "I2C") == 0) {
+    char *mode = strtok_r(cursor, " ", &cursor);
+    if (mode == nullptr) {
+      Serial.println("ERR I2C needs: I2C SCAN");
+      return;
+    }
+    uppercaseToken(mode);
+    if (strcmp(mode, "SCAN") == 0) {
+      recoverI2cBus();
+      printI2cScan();
+      return;
+    }
+    Serial.println("ERR I2C needs: I2C SCAN");
+    return;
+  }
+
   if (strcmp(command, "IMU") == 0) {
     char *mode = strtok_r(cursor, " ", &cursor);
     if (mode == nullptr) {
-      Serial.println("ERR IMU needs: IMU ON|OFF");
+      Serial.println("ERR IMU needs: IMU ON|OFF|RESET");
       return;
     }
     uppercaseToken(mode);
     if (strcmp(mode, "ON") == 0) {
       imuRequested = true;
+      if (!imuReady) {
+        initializeImu(true);
+      }
       imuStreaming = imuReady;
       nextImuPrintMs = millis();
       Serial.println(imuReady ? "OK IMU ON" : "ERR IMU not ready");
@@ -1768,7 +1890,16 @@ void handleCommand(String line) {
       Serial.println("OK IMU OFF");
       return;
     }
-    Serial.println("ERR IMU needs: IMU ON|OFF");
+    if (strcmp(mode, "RESET") == 0) {
+      imuRequested = true;
+      Serial.println("OK IMU RESET");
+      initializeImu(true);
+      if (!imuReady) {
+        Serial.println("ERR IMU not ready");
+      }
+      return;
+    }
+    Serial.println("ERR IMU needs: IMU ON|OFF|RESET");
     return;
   }
 
@@ -1838,7 +1969,7 @@ void handleCommand(String line) {
   }
 
   if (strcmp(command, "HELP") == 0) {
-    Serial.println("Commands: PING | STOP | SET <fl> <fr> <bl> <br> (fixed+PI) | SET1 <fl_cps> <fr_cps> <bl_cps> <br_cps> | DRIVE <base> <fl_s> <fr_s> <bl_s> <br_s> | RUN <base> <fl_s> <fr_s> <bl_s> <br_s> <ms> | STRAIGHT <base> <ms> | ENC? | ENC RESET | ENC ON|OFF | ENC TEST <base> <ms> | IMU ON|OFF | ZERO_YAW | GATE OPEN|CLOSE|? | SERVO LEFT <deg> | SERVO RIGHT <deg> | SERVO BOTH <left_deg> <right_deg> | SERVO TEST | CARGO? | CARGO RESET | BATCH <0|1|2> | CAPACITY <1..3> | AUTO_GATE ON|OFF | CAPTURE_ARM ON|OFF|? | UNLOAD");
+    Serial.println("Commands: PING | STOP | SET <fl> <fr> <bl> <br> (fixed+PI) | SET1 <fl_cps> <fr_cps> <bl_cps> <br_cps> | DRIVE <base> <fl_s> <fr_s> <bl_s> <br_s> | RUN <base> <fl_s> <fr_s> <bl_s> <br_s> <ms> | STRAIGHT <base> <ms> | ENC? | ENC RESET | ENC ON|OFF | ENC TEST <base> <ms> | IMU ON|OFF|RESET | I2C? | ZERO_YAW | GATE OPEN|CLOSE|? | SERVO LEFT <deg> | SERVO RIGHT <deg> | SERVO BOTH <left_deg> <right_deg> | SERVO TEST | CARGO? | CARGO RESET | BATCH <0|1|2> | CAPACITY <1..3> | AUTO_GATE ON|OFF | CAPTURE_ARM ON|OFF|? | UNLOAD");
     return;
   }
 

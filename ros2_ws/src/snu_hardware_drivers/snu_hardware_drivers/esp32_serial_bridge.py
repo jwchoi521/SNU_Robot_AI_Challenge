@@ -64,6 +64,7 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("imu_yaw_offset_deg", 0.0)
         self.declare_parameter("imu_enable_retry_sec", 1.0)
         self.declare_parameter("imu_enable_retry_max_attempts", 0)
+        self.declare_parameter("imu_reset_retry_attempts", 5)
         self.declare_parameter("require_imu_before_motion", False)
         self.declare_parameter("required_imu_max_age_sec", 1.0)
         self.declare_parameter("stop_repeat_sec", 0.25)
@@ -142,6 +143,10 @@ class Esp32SerialBridge(Node):
         self._imu_enable_retry_max_attempts = max(
             0,
             int(self.get_parameter("imu_enable_retry_max_attempts").value),
+        )
+        self._imu_reset_retry_attempts = max(
+            0,
+            int(self.get_parameter("imu_reset_retry_attempts").value),
         )
         self._require_imu_before_motion = bool(
             self.get_parameter("require_imu_before_motion").value
@@ -549,9 +554,16 @@ class Esp32SerialBridge(Node):
             return
 
         self._imu_enable_retry_attempts += 1
+        sent_reset = (
+            self._imu_reset_retry_attempts > 0
+            and self._imu_enable_retry_attempts % self._imu_reset_retry_attempts == 0
+        )
+        if sent_reset:
+            self._send_serial_line("IMU RESET\n")
         self._send_serial_line("IMU ON\n")
+        action = "sent IMU RESET and resent IMU ON" if sent_reset else "resent IMU ON"
         self.get_logger().warn(
-            "No IMU sample received yet; resent IMU ON "
+            f"No IMU sample received yet; {action} "
             f"(attempt {self._imu_enable_retry_attempts})"
         )
 
