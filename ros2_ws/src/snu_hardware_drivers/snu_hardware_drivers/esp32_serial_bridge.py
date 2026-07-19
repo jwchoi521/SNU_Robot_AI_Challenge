@@ -45,6 +45,7 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("joint_states_topic", "/joint_states")
         self.declare_parameter("command_timeout_sec", 0.5)
         self.declare_parameter("read_rate_hz", 100.0)
+        self.declare_parameter("max_serial_lines_per_read", 64)
         self.declare_parameter("max_power", 0.12)
         self.declare_parameter("u_shape_pwm_max", 120)
         self.declare_parameter("log_serial_writes", False)
@@ -109,6 +110,10 @@ class Esp32SerialBridge(Node):
         self._log_pwm_status = bool(self.get_parameter("log_pwm_status").value)
         self._u_shape_stream_encoders = bool(
             self.get_parameter("u_shape_stream_encoders").value
+        )
+        self._max_serial_lines_per_read = max(
+            1,
+            int(self.get_parameter("max_serial_lines_per_read").value),
         )
         self._close_gate_on_start = bool(
             self.get_parameter("close_gate_on_start").value
@@ -182,6 +187,8 @@ class Esp32SerialBridge(Node):
         self._logged_first_imu_sample = False
         self._last_dry_run_log_sec = 0.0
         self._last_serial_write_log_sec = 0.0
+        self._last_serial_backlog_warn_sec = 0.0
+        self._serial_rx_buffer = bytearray()
 
         if self._dry_run:
             self.get_logger().warn(
@@ -388,9 +395,9 @@ class Esp32SerialBridge(Node):
         if self._esp32_protocol not in ("u_shape", "u_shape_pwm", "u_shape_robot"):
             return
         if self._u_shape_stream_encoders:
-            self._serial.write(b"ENC ON\n")
+            self._send_serial_line("ENC ON\n")
         if self._publish_imu:
-            self._serial.write(b"IMU ON\n")
+            self._send_serial_line("IMU ON\n")
         if self._disarm_capture_on_start:
             self._send_capture_arm_command(False)
         if self._close_gate_on_start:
@@ -445,7 +452,10 @@ class Esp32SerialBridge(Node):
         if not self._log_serial_writes:
             return
         now_sec = self.get_clock().now().nanoseconds * 1.0e-9
-        if now_sec - self._last_serial_write_log_sec < 0.5:
+        if (
+            line.startswith(("SET ", "SET1 "))
+            and now_sec - self._last_serial_write_log_sec < 0.5
+        ):
             return
         self._last_serial_write_log_sec = now_sec
         self.get_logger().info(f"serial write: {line}")
@@ -454,11 +464,51 @@ class Esp32SerialBridge(Node):
         if self._dry_run or self._serial is None:
             return
 
-        while self._serial.in_waiting:
-            line = self._serial.readline().decode("ascii", errors="replace").strip()
-            if not line:
+        lines_read = 0
+        while lines_read < self._max_serial_lines_per_read:
+            line = self._pop_serial_line()
+            if line is not None:
+                lines_read += 1
+                if line:
+                    self._handle_line(line)
                 continue
-            self._handle_line(line)
+
+            waiting = self._serial.in_waiting
+            if not waiting:
+                break
+            chunk = self._serial.read(min(int(waiting), 4096))
+            if not chunk:
+                break
+            self._serial_rx_buffer.extend(chunk)
+            if (
+                len(self._serial_rx_buffer) > 8192
+                and b"\n" not in self._serial_rx_buffer
+            ):
+                self.get_logger().warn(
+                    "Dropping oversized partial ESP32 serial line with no newline"
+                )
+                self._serial_rx_buffer.clear()
+
+        if (
+            lines_read >= self._max_serial_lines_per_read
+            and (self._serial.in_waiting or b"\n" in self._serial_rx_buffer)
+        ):
+            now_sec = self.get_clock().now().nanoseconds * 1.0e-9
+            if now_sec - self._last_serial_backlog_warn_sec >= 5.0:
+                self._last_serial_backlog_warn_sec = now_sec
+                self.get_logger().warn(
+                    "ESP32 serial backlog still has data after reading "
+                    f"{lines_read} lines; limiting per-cycle reads so ROS timers run"
+                )
+
+    def _pop_serial_line(self) -> str | None:
+        try:
+            newline_index = self._serial_rx_buffer.index(ord("\n"))
+        except ValueError:
+            return None
+        raw_line = bytes(self._serial_rx_buffer[:newline_index])
+        del self._serial_rx_buffer[: newline_index + 1]
+        return raw_line.decode("ascii", errors="replace").strip()
 
     def _handle_line(self, line: str) -> None:
         parts = line.split()
@@ -482,8 +532,14 @@ class Esp32SerialBridge(Node):
         elif parts[0] == "PWM":
             if self._log_pwm_status:
                 self.get_logger().info(f"ESP32: {line}")
-        elif parts[0] not in ("OK", "READY"):
+        elif parts[0] == "OK" and len(parts) >= 2 and parts[1] == "IMU":
             self.get_logger().info(f"ESP32: {line}")
+        elif parts[0] == "I2C":
+            self.get_logger().warn(f"ESP32: {line}")
+        elif parts[0] in ("WARN", "ERR"):
+            self.get_logger().warn(f"ESP32: {line}")
+        elif parts[0] not in ("OK", "READY"):
+            self.get_logger().debug(f"ESP32: {line}")
 
     def _handle_event_line(self, parts: list[str], line: str) -> None:
         if len(parts) >= 2 and parts[1].upper() == "CARGO_ENTRY":
@@ -686,6 +742,12 @@ class _RawSerialPort:
     def in_waiting(self) -> int:
         data = fcntl.ioctl(self.fd, termios.FIONREAD, b"\0\0\0\0")
         return int.from_bytes(data, byteorder="little")
+
+    def read(self, size: int = 1) -> bytes:
+        try:
+            return os.read(self.fd, max(1, int(size)))
+        except BlockingIOError:
+            return b""
 
     def write(self, data: bytes) -> int:
         return os.write(self.fd, data)
