@@ -1,4 +1,4 @@
-from math import pi
+from math import isclose, pi
 
 from robot_nav_stack.core import Pose2D
 from robot_nav_stack.storage_dropoff import (
@@ -33,7 +33,8 @@ def test_negative_x_plan_enters_from_right_and_faces_negative_x() -> None:
     )
 
     assert plan.approach_pose.x > BOUNDS.max_x
-    assert plan.approach_pose.y == BOUNDS.center_y
+    assert isclose(plan.approach_pose.x, -1.39, abs_tol=1.0e-12)
+    assert plan.approach_pose.y == -1.6
     assert plan.inside_pose == Pose2D(-1.8, -1.8, pi)
     assert plan.exit_direction == "positive_x"
 
@@ -48,7 +49,8 @@ def test_negative_y_plan_enters_from_top_and_faces_negative_y() -> None:
     )
 
     assert plan.approach_pose.y > BOUNDS.max_y
-    assert plan.approach_pose.x == BOUNDS.center_x
+    assert plan.approach_pose.x == -1.6
+    assert isclose(plan.approach_pose.y, -1.39, abs_tol=1.0e-12)
     assert plan.inside_pose == Pose2D(-1.8, -1.8, -0.5 * pi)
     assert plan.exit_direction == "positive_y"
 

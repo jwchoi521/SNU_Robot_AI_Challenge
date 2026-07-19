@@ -66,13 +66,13 @@ def make_storage_plan(
         heading = pi
         approach = Pose2D(
             x=bounds.max_x + robot_half_length_m + clearance,
-            y=bounds.center_y,
+            y=bounds.max_y,
             theta=heading,
         )
     elif entry_direction == StorageEntryDirection.NEGATIVE_Y:
         heading = -0.5 * pi
         approach = Pose2D(
-            x=bounds.center_x,
+            x=bounds.max_x,
             y=bounds.max_y + robot_half_length_m + clearance,
             theta=heading,
         )
