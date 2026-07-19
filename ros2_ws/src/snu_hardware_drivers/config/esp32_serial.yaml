@@ -15,6 +15,7 @@ esp32_serial_bridge:
     max_power: 0.35
     u_shape_pwm_max: 120
     log_serial_writes: false
+    log_pwm_status: false
     close_gate_on_start: true
     disarm_capture_on_start: true
     publish_imu: true

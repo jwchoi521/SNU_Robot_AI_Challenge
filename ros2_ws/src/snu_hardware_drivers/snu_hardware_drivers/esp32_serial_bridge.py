@@ -46,6 +46,7 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("max_power", 0.12)
         self.declare_parameter("u_shape_pwm_max", 120)
         self.declare_parameter("log_serial_writes", False)
+        self.declare_parameter("log_pwm_status", False)
         self.declare_parameter("u_shape_stream_encoders", True)
         self.declare_parameter("gripper_command_topic", "/gripper/command")
         self.declare_parameter("capture_arm_topic", "/capture/arm")
@@ -98,6 +99,7 @@ class Esp32SerialBridge(Node):
         self._log_serial_writes = bool(
             self.get_parameter("log_serial_writes").value
         )
+        self._log_pwm_status = bool(self.get_parameter("log_pwm_status").value)
         self._u_shape_stream_encoders = bool(
             self.get_parameter("u_shape_stream_encoders").value
         )
@@ -468,6 +470,9 @@ class Esp32SerialBridge(Node):
             self._publish_imu_sample(parts, line)
         elif parts[0] == "EVENT":
             self._handle_event_line(parts, line)
+        elif parts[0] == "PWM":
+            if self._log_pwm_status:
+                self.get_logger().info(f"ESP32: {line}")
         elif parts[0] not in ("OK", "READY"):
             self.get_logger().info(f"ESP32: {line}")
 

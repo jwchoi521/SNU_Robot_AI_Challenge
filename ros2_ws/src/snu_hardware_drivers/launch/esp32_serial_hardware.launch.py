@@ -23,6 +23,9 @@ def generate_launch_description() -> LaunchDescription:
     log_serial_writes = ParameterValue(
         LaunchConfiguration("log_serial_writes"), value_type=bool
     )
+    log_pwm_status = ParameterValue(
+        LaunchConfiguration("log_pwm_status"), value_type=bool
+    )
     close_gate_on_start = ParameterValue(
         LaunchConfiguration("close_gate_on_start"), value_type=bool
     )
@@ -73,6 +76,7 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("max_power", default_value="0.35"),
             DeclareLaunchArgument("u_shape_pwm_max", default_value="120"),
             DeclareLaunchArgument("log_serial_writes", default_value="false"),
+            DeclareLaunchArgument("log_pwm_status", default_value="false"),
             DeclareLaunchArgument("gripper_command_topic", default_value="/gripper/command"),
             DeclareLaunchArgument("capture_arm_topic", default_value="/capture/arm"),
             DeclareLaunchArgument("close_gate_on_start", default_value="true"),
@@ -110,6 +114,7 @@ def generate_launch_description() -> LaunchDescription:
                         "max_power": max_power,
                         "u_shape_pwm_max": u_shape_pwm_max,
                         "log_serial_writes": log_serial_writes,
+                        "log_pwm_status": log_pwm_status,
                         "gripper_command_topic": LaunchConfiguration(
                             "gripper_command_topic"
                         ),
