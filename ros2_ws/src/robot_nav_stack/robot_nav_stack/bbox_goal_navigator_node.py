@@ -176,6 +176,7 @@ class BboxGoalNavigatorNode(Node):
         self._target_search_dwell_phase: str | None = None
         self._target_search_dwell_goal: Pose2D | None = None
         self._target_search_lap_count = 0
+        self._skip_next_target_search_initial_spin = False
         self._last_sent_goal: Pose2D | None = None
         self._goal_sequence = 0
         self._active_goal_sequence: int | None = None
@@ -783,6 +784,26 @@ class BboxGoalNavigatorNode(Node):
                 self.get_parameter("storage_backup_distance_m").value
             ),
         )
+        self._resume_collection_after_storage_complete()
+
+    def _resume_collection_after_storage_complete(self) -> None:
+        self._captured_object_count = 0
+        self._storage_plan = None
+        self._storage_stage_goal_sent = False
+        self._storage_nav_retry_count = 0
+        self._storage_verify_deadline_sec = 0.0
+        self._storage_gate_opened_at_sec = 0.0
+        self._storage_phase = StoragePhase.INACTIVE
+        self._nav_state = "idle"
+        self._target_lock.clear()
+        self._reset_target_search_runtime()
+        self._last_sent_goal = None
+        self._target_pose = None
+        self._target_stamp_sec = None
+        self._selected_target_distance_m = None
+        self._no_target_since_sec = None
+        self._gate_open_latched = False
+        self._skip_next_target_search_initial_spin = True
 
     def _control_step(self) -> None:
         if self._now_sec() <= self._stop_until_sec:
@@ -992,6 +1013,10 @@ class BboxGoalNavigatorNode(Node):
 
     def _ensure_target_search_started(self, robot: Pose2D) -> None:
         if self._target_search_phase != "idle":
+            return
+        if self._skip_next_target_search_initial_spin:
+            self._skip_next_target_search_initial_spin = False
+            self._target_search_phase = "patrol"
             return
         if (
             self._has_seen_target_since_start
@@ -1617,6 +1642,9 @@ class BboxGoalNavigatorNode(Node):
             > self._now_sec(),
             "target_search_index": self._target_search_index,
             "target_search_lap_count": self._target_search_lap_count,
+            "skip_next_target_search_initial_spin": (
+                self._skip_next_target_search_initial_spin
+            ),
             "tracked_target_count": len(self._tracked_targets),
             "gate_state": self._gate_state,
             "gate_open_latched": self._gate_open_latched,
