@@ -77,7 +77,7 @@ const int ENCODER_A_PINS[] = {18, 16, 32, 26};  // FL, FR, BL, BR
 const int ENCODER_B_PINS[] = {19, 17, 34, 27};  // GPIO34 is input-only and has no internal pull-up.
 const int ENCODER_DIRECTIONS[] = {1, 1, 1, -1};
 volatile int32_t encoderTicks[MOTOR_COUNT] = {0, 0, 0, 0};
-const uint32_t ENCODER_PRINT_INTERVAL_MS = 200;
+const uint32_t ENCODER_PRINT_INTERVAL_MS = 50;
 
 const float FIXED_WHEEL_SCALE_FL = 1.17f;
 const float FIXED_WHEEL_SCALE_FR = 0.89f;
