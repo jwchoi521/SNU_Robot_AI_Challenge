@@ -13,6 +13,10 @@ def generate_launch_description() -> LaunchDescription:
     )
     dry_run = ParameterValue(LaunchConfiguration("dry_run"), value_type=bool)
     baud_rate = ParameterValue(LaunchConfiguration("baud_rate"), value_type=int)
+    reset_on_open = ParameterValue(LaunchConfiguration("reset_on_open"), value_type=bool)
+    reset_pulse_sec = ParameterValue(
+        LaunchConfiguration("reset_pulse_sec"), value_type=float
+    )
     serial_reset_wait_sec = ParameterValue(
         LaunchConfiguration("serial_reset_wait_sec"), value_type=float
     )
@@ -70,6 +74,8 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("dry_run", default_value="true"),
             DeclareLaunchArgument("serial_port", default_value="/dev/ttyUSB1"),
             DeclareLaunchArgument("baud_rate", default_value="115200"),
+            DeclareLaunchArgument("reset_on_open", default_value="true"),
+            DeclareLaunchArgument("reset_pulse_sec", default_value="0.1"),
             DeclareLaunchArgument("serial_reset_wait_sec", default_value="2.0"),
             DeclareLaunchArgument("esp32_protocol", default_value="u_shape"),
             DeclareLaunchArgument("esp32_command_mode", default_value="encoder_velocity"),
@@ -108,6 +114,8 @@ def generate_launch_description() -> LaunchDescription:
                         "dry_run": dry_run,
                         "serial_port": LaunchConfiguration("serial_port"),
                         "baud_rate": baud_rate,
+                        "reset_on_open": reset_on_open,
+                        "reset_pulse_sec": reset_pulse_sec,
                         "serial_reset_wait_sec": serial_reset_wait_sec,
                         "esp32_protocol": LaunchConfiguration("esp32_protocol"),
                         "esp32_command_mode": LaunchConfiguration("esp32_command_mode"),

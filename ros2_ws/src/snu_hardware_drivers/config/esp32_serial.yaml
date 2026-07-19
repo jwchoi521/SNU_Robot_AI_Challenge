@@ -3,6 +3,8 @@ esp32_serial_bridge:
     dry_run: true
     serial_port: /dev/ttyUSB1
     baud_rate: 115200
+    reset_on_open: true
+    reset_pulse_sec: 0.1
     serial_reset_wait_sec: 2.0
     esp32_protocol: u_shape
     esp32_command_mode: encoder_velocity

@@ -1867,7 +1867,7 @@ void setup() {
   digitalWrite(LEFT_GATE_SERVO_PIN, LOW);
   digitalWrite(RIGHT_GATE_SERVO_PIN, LOW);
   closeGate();
-  holdServos(500);
+  holdServos(1500);
 
   pinMode(IR_BEAM_PIN, INPUT);
   irRawBlocked = readIrBlockedRaw();

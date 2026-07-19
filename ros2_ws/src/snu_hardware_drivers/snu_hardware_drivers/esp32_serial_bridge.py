@@ -36,6 +36,8 @@ class Esp32SerialBridge(Node):
         self.declare_parameter("dry_run", True)
         self.declare_parameter("serial_port", "/dev/ttyUSB0")
         self.declare_parameter("baud_rate", 115200)
+        self.declare_parameter("reset_on_open", True)
+        self.declare_parameter("reset_pulse_sec", 0.1)
         self.declare_parameter("serial_reset_wait_sec", 2.0)
         self.declare_parameter("esp32_protocol", "motor_bridge")
         self.declare_parameter("esp32_command_mode", "velocity")
@@ -81,6 +83,11 @@ class Esp32SerialBridge(Node):
         self._dry_run = bool(self.get_parameter("dry_run").value)
         self._serial_port = str(self.get_parameter("serial_port").value)
         self._baud_rate = int(self.get_parameter("baud_rate").value)
+        self._reset_on_open = bool(self.get_parameter("reset_on_open").value)
+        self._reset_pulse_sec = max(
+            0.0,
+            float(self.get_parameter("reset_pulse_sec").value),
+        )
         self._serial_reset_wait_sec = max(
             0.0,
             float(self.get_parameter("serial_reset_wait_sec").value),
@@ -184,6 +191,8 @@ class Esp32SerialBridge(Node):
             self._serial = _open_serial(
                 self._serial_port,
                 self._baud_rate,
+                self._reset_on_open,
+                self._reset_pulse_sec,
                 self._serial_reset_wait_sec,
             )
             self._configure_firmware_after_open()
@@ -600,7 +609,13 @@ class Esp32SerialBridge(Node):
         return super().destroy_node()
 
 
-def _open_serial(port: str, baud_rate: int, reset_wait_sec: float) -> Any:
+def _open_serial(
+    port: str,
+    baud_rate: int,
+    reset_on_open: bool,
+    reset_pulse_sec: float,
+    reset_wait_sec: float,
+) -> Any:
     try:
         import serial
     except ImportError as exc:
@@ -621,8 +636,17 @@ def _open_serial(port: str, baud_rate: int, reset_wait_sec: float) -> Any:
         serial_port.rts = False
         serial_port.open()
         try:
-            serial_port.setDTR(False)
-            serial_port.setRTS(False)
+            if reset_on_open:
+                # ESP32 USB adapters commonly wire DTR/RTS through the auto-reset
+                # circuit. Pulse them once so firmware starts from a clean state.
+                serial_port.setDTR(False)
+                serial_port.setRTS(True)
+                sleep(max(0.01, reset_pulse_sec))
+                serial_port.setDTR(False)
+                serial_port.setRTS(False)
+            else:
+                serial_port.setDTR(False)
+                serial_port.setRTS(False)
         except OSError:
             pass
     except OSError as exc:
