@@ -107,7 +107,11 @@ const int SET1_MAX_CORRECTION = 90;
 const float SET1_INTEGRAL_LIMIT = 250.0f;
 const float SET1_MAX_TARGET_CPS = 5449.0f;  // 50 rad/s * 109.0 counts/rad.
 const uint32_t SET1_DEBUG_INTERVAL_MS = 1000;
-const bool SET1_IMU_YAW_FEEDBACK_ENABLED = true;
+// Keep the BNO085 completely disabled while the robot runs without an IMU.
+// Set this to true and flash the firmware again to restore IMU initialization,
+// serial streaming, and SET1 yaw-rate feedback.
+const bool IMU_ENABLED = false;
+const bool SET1_IMU_YAW_FEEDBACK_ENABLED = IMU_ENABLED;
 const float SET1_WHEEL_RADIUS_M = 0.033f;
 const float SET1_TRACK_WIDTH_M = 0.30f;
 const float SET1_ENCODER_COUNTS_PER_REV = 684.8f;
@@ -1359,6 +1363,11 @@ bool beginBno08xI2c() {
 }
 
 bool initializeImu(bool keepRequest) {
+  if (!IMU_ENABLED) {
+    resetImuRuntimeState(false);
+    return false;
+  }
+
   resetImuRuntimeState(keepRequest);
   recoverI2cBus();
   if (!beginBno08xI2c()) {
@@ -1381,6 +1390,11 @@ bool initializeImu(bool keepRequest) {
 }
 
 void setupImu() {
+  if (!IMU_ENABLED) {
+    resetImuRuntimeState(false);
+    return;
+  }
+
   beginI2cBus();
   delay(IMU_STARTUP_SETTLE_MS);
 
@@ -1388,6 +1402,10 @@ void setupImu() {
 }
 
 void updateImu() {
+  if (!IMU_ENABLED) {
+    return;
+  }
+
   if (!imuReady) {
     if (millis() - lastImuRetryMs >= IMU_RETRY_INTERVAL_MS) {
       lastImuRetryMs = millis();
@@ -1640,7 +1658,9 @@ void serviceRobotFor(uint32_t durationMs) {
   while ((uint32_t)(millis() - startMs) < durationMs) {
     updateMotorRamp();
     updateServos();
-    updateImu();
+    if (IMU_ENABLED) {
+      updateImu();
+    }
     updateIrSensor();
     delay(1);
   }
@@ -1874,6 +1894,15 @@ void handleCommand(String line) {
       return;
     }
     uppercaseToken(mode);
+    if (!IMU_ENABLED) {
+      resetImuRuntimeState(false);
+      if (strcmp(mode, "OFF") == 0) {
+        Serial.println("OK IMU OFF");
+      } else {
+        Serial.println("ERR IMU disabled in firmware");
+      }
+      return;
+    }
     if (strcmp(mode, "ON") == 0) {
       imuRequested = true;
       if (!imuReady) {
@@ -2005,8 +2034,10 @@ void setup() {
   }
   setupEncoders();
 
-  // Bring up the BNO08x before gate servos draw startup current.
-  setupImu();
+  if (IMU_ENABLED) {
+    // Bring up the BNO08x before gate servos draw startup current.
+    setupImu();
+  }
 
   pinMode(LEFT_GATE_SERVO_PIN, OUTPUT);
   pinMode(RIGHT_GATE_SERVO_PIN, OUTPUT);
@@ -2031,7 +2062,9 @@ void loop() {
   updateStraightRun();
   updateMotorRamp();
   updateServos();
-  updateImu();
+  if (IMU_ENABLED) {
+    updateImu();
+  }
   updateIrSensor();
   updateEncoderStreaming();
 
