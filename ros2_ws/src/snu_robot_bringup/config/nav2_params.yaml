@@ -51,7 +51,7 @@ controller_server:
       regulated_linear_scaling_min_speed: 0.05
       use_rotate_to_heading: true
       rotate_to_heading_min_angle: 0.25
-      max_angular_accel: 50.0
+      max_angular_accel: 30.0
       max_robot_pose_search_dist: 10.0
 
 planner_server:
@@ -117,10 +117,10 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: false
     feedback: OPEN_LOOP
-    max_velocity: [0.20, 0.0, 20.0]
-    min_velocity: [-0.50, 0.0, -20.0]
-    max_accel: [0.2, 0.0, 50.0]
-    max_decel: [-2.0, 0.0, -50.0]
+    max_velocity: [0.20, 0.0, 10.0]
+    min_velocity: [-0.50, 0.0, -10.0]
+    max_accel: [0.2, 0.0, 30.0]
+    max_decel: [-2.0, 0.0, -30.0]
     odom_topic: /odometry/filtered
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]

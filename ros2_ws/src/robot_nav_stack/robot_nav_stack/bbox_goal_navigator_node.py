@@ -713,7 +713,7 @@ class BboxGoalNavigatorNode(Node):
             (allowance - int(allowance)) * 1_000_000_000
         )
         if hasattr(goal_msg, "disable_collision_checks"):
-            goal_msg.disable_collision_checks = False
+            goal_msg.disable_collision_checks = True
 
         cycle_id = self._storage_cycle_id
         try:
