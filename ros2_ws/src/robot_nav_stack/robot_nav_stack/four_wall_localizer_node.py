@@ -107,8 +107,8 @@ class FourWallLocalizerNode(Node):
         self.declare_parameter("use_symmetry_seeds", False)
         self.declare_parameter("global_seed_step_m", 0.75)
         self.declare_parameter("global_seed_yaw_step_deg", 90.0)
-        self.declare_parameter("prior_xy_weight", 0.003)
-        self.declare_parameter("prior_yaw_weight", 0.003)
+        self.declare_parameter("prior_xy_weight", 0.0003)
+        self.declare_parameter("prior_yaw_weight", 0.0003)
         self.declare_parameter("symmetry_range_score_ratio", 1.20)
 
         self.map_frame = str(self.get_parameter("map_frame").value)
