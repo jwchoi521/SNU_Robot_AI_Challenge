@@ -3,17 +3,27 @@ from __future__ import annotations
 from math import isfinite
 
 import rclpy
+from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import OccupancyGrid
 from rclpy.node import Node
+from sensor_msgs.msg import Image
 from snu_robot_interfaces.msg import FourWheelCommand
 
 
 class StartupLateralEscape(Node):
-    """Publish a short lateral wheel command at launch to clear a tight start area."""
+    """Publish a short startup wheel command after perception/localization is ready."""
 
     def __init__(self) -> None:
         super().__init__("startup_lateral_escape")
 
         self.declare_parameter("wheel_command_topic", "/wheel_commands")
+        self.declare_parameter("require_map_ready", True)
+        self.declare_parameter("map_topic", "/map")
+        self.declare_parameter("require_robot_pose_ready", True)
+        self.declare_parameter("robot_pose_topic", "/robot_pose_map")
+        self.declare_parameter("require_camera_ready", True)
+        self.declare_parameter("camera_topic", "/camera/image_raw")
+        self.declare_parameter("ready_timeout_sec", 20.0)
         self.declare_parameter("start_delay_sec", 6.0)
         self.declare_parameter("distance_m", 0.50)
         self.declare_parameter("speed_mps", 0.30)
@@ -28,6 +38,17 @@ class StartupLateralEscape(Node):
             10,
         )
 
+        self._require_map_ready = bool(self.get_parameter("require_map_ready").value)
+        self._require_robot_pose_ready = bool(
+            self.get_parameter("require_robot_pose_ready").value
+        )
+        self._require_camera_ready = bool(
+            self.get_parameter("require_camera_ready").value
+        )
+        self._ready_timeout_sec = max(
+            0.0,
+            _finite_or_default(self.get_parameter("ready_timeout_sec").value, 20.0),
+        )
         self._start_delay_sec = max(
             0.0,
             _finite_or_default(self.get_parameter("start_delay_sec").value, 6.0),
@@ -55,10 +76,45 @@ class StartupLateralEscape(Node):
         )
 
         now_sec = self._now_sec()
+        self._created_sec = now_sec
+        self._ready_sec: float | None = None
         run_sec = self._distance_m / self._speed_mps if self._speed_mps > 0.0 else 0.0
-        self._start_sec = now_sec + self._start_delay_sec
-        self._end_sec = self._start_sec + run_sec
-        self._stop_until_sec = self._end_sec + self._stop_hold_sec
+        self._start_sec: float | None = None
+        self._run_sec = run_sec
+        self._end_sec: float | None = None
+        self._stop_until_sec: float | None = None
+        self._have_map = not self._require_map_ready
+        self._have_robot_pose = not self._require_robot_pose_ready
+        self._have_camera = not self._require_camera_ready
+        self._last_wait_log_sec = 0.0
+        self._subscriptions = []
+        if self._require_map_ready:
+            self._subscriptions.append(
+                self.create_subscription(
+                    OccupancyGrid,
+                    str(self.get_parameter("map_topic").value),
+                    self._on_map,
+                    1,
+                )
+            )
+        if self._require_robot_pose_ready:
+            self._subscriptions.append(
+                self.create_subscription(
+                    PoseStamped,
+                    str(self.get_parameter("robot_pose_topic").value),
+                    self._on_robot_pose,
+                    10,
+                )
+            )
+        if self._require_camera_ready:
+            self._subscriptions.append(
+                self.create_subscription(
+                    Image,
+                    str(self.get_parameter("camera_topic").value),
+                    self._on_camera,
+                    1,
+                )
+            )
         self.done = self._distance_m <= 0.0 or self._speed_mps <= 0.0
         self._started = False
         self._stopping = False
@@ -69,45 +125,100 @@ class StartupLateralEscape(Node):
         )
         self._timer = self.create_timer(1.0 / publish_hz, self._on_timer)
         self.get_logger().info(
-            "startup lateral escape armed: "
+            "startup forward escape armed: "
+            f"require_map={self._require_map_ready}, "
+            f"require_robot_pose={self._require_robot_pose_ready}, "
+            f"require_camera={self._require_camera_ready}, "
+            f"ready_timeout={self._ready_timeout_sec:.2f}s, "
             f"delay={self._start_delay_sec:.2f}s, "
             f"distance={self._distance_m:.2f}m, speed={self._speed_mps:.2f}m/s, "
             f"direction_sign={self._direction_sign:+.0f}"
         )
+
+    def _on_map(self, _msg: OccupancyGrid) -> None:
+        self._have_map = True
+
+    def _on_robot_pose(self, _msg: PoseStamped) -> None:
+        self._have_robot_pose = True
+
+    def _on_camera(self, _msg: Image) -> None:
+        self._have_camera = True
 
     def _on_timer(self) -> None:
         if self.done:
             return
 
         now_sec = self._now_sec()
+        if self._start_sec is None:
+            if not self._ready():
+                if (
+                    self._ready_timeout_sec <= 0.0
+                    or now_sec - self._created_sec < self._ready_timeout_sec
+                ):
+                    self._log_waiting_if_needed(now_sec)
+                    return
+                self.get_logger().warn(
+                    "startup escape readiness timeout; running with missing inputs: "
+                    + ", ".join(self._missing_inputs())
+                )
+            self._ready_sec = now_sec
+            self._start_sec = now_sec + self._start_delay_sec
+            self._end_sec = self._start_sec + self._run_sec
+            self._stop_until_sec = self._end_sec + self._stop_hold_sec
+            self.get_logger().info(
+                "startup escape ready; "
+                f"starting in {self._start_delay_sec:.2f}s"
+            )
+
         if now_sec < self._start_sec:
             return
 
-        if now_sec < self._end_sec:
+        if self._end_sec is not None and now_sec < self._end_sec:
             if not self._started:
                 self._started = True
-                self.get_logger().info("starting +Y startup lateral escape")
-            self._publish_lateral_command()
+                self.get_logger().info("starting startup forward escape")
+            self._publish_forward_command()
             return
 
-        if now_sec < self._stop_until_sec:
+        if self._stop_until_sec is not None and now_sec < self._stop_until_sec:
             if not self._stopping:
                 self._stopping = True
-                self.get_logger().info("startup lateral escape complete; stopping wheels")
+                self.get_logger().info("startup forward escape complete; stopping wheels")
             self._publish_stop()
             return
 
         self._publish_stop()
         self.done = True
-        self.get_logger().info("startup lateral escape node done")
+        self.get_logger().info("startup forward escape node done")
 
-    def _publish_lateral_command(self) -> None:
+    def _ready(self) -> bool:
+        return self._have_map and self._have_robot_pose and self._have_camera
+
+    def _missing_inputs(self) -> list[str]:
+        missing = []
+        if not self._have_map:
+            missing.append(str(self.get_parameter("map_topic").value))
+        if not self._have_robot_pose:
+            missing.append(str(self.get_parameter("robot_pose_topic").value))
+        if not self._have_camera:
+            missing.append(str(self.get_parameter("camera_topic").value))
+        return missing
+
+    def _log_waiting_if_needed(self, now_sec: float) -> None:
+        if now_sec - self._last_wait_log_sec < 1.0:
+            return
+        self._last_wait_log_sec = now_sec
+        self.get_logger().info(
+            "waiting before startup escape for: " + ", ".join(self._missing_inputs())
+        )
+
+    def _publish_forward_command(self) -> None:
         wheel_rad_s = self._direction_sign * self._speed_mps / self._wheel_radius_m
         self._publish_wheels(
-            front_left=-wheel_rad_s,
+            front_left=wheel_rad_s,
             front_right=wheel_rad_s,
             rear_left=wheel_rad_s,
-            rear_right=-wheel_rad_s,
+            rear_right=wheel_rad_s,
         )
 
     def _publish_stop(self) -> None:

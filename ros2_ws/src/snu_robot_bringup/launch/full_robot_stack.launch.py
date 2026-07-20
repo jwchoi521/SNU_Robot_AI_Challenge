@@ -566,6 +566,25 @@ def generate_launch_description():
 
     startup_escape_parameters = {
         "wheel_command_topic": "/wheel_commands",
+        "require_map_ready": ParameterValue(
+            LaunchConfiguration("startup_escape_require_map_ready"),
+            value_type=bool,
+        ),
+        "map_topic": LaunchConfiguration("startup_escape_map_topic"),
+        "require_robot_pose_ready": ParameterValue(
+            LaunchConfiguration("startup_escape_require_robot_pose_ready"),
+            value_type=bool,
+        ),
+        "robot_pose_topic": LaunchConfiguration("robot_pose_topic"),
+        "require_camera_ready": ParameterValue(
+            LaunchConfiguration("startup_escape_require_camera_ready"),
+            value_type=bool,
+        ),
+        "camera_topic": LaunchConfiguration("camera_topic"),
+        "ready_timeout_sec": ParameterValue(
+            LaunchConfiguration("startup_escape_ready_timeout_sec"),
+            value_type=float,
+        ),
         "start_delay_sec": ParameterValue(
             LaunchConfiguration("startup_escape_start_delay_sec"),
             value_type=float,
@@ -810,7 +829,18 @@ def generate_launch_description():
             DeclareLaunchArgument("enable_wheel_command_mapper", default_value="false"),
             DeclareLaunchArgument("enable_esp32_serial_bridge", default_value="false"),
             DeclareLaunchArgument("enable_startup_escape", default_value="true"),
-            DeclareLaunchArgument("startup_escape_start_delay_sec", default_value="6.0"),
+            DeclareLaunchArgument("startup_escape_require_map_ready", default_value="true"),
+            DeclareLaunchArgument("startup_escape_map_topic", default_value="/map"),
+            DeclareLaunchArgument(
+                "startup_escape_require_robot_pose_ready",
+                default_value="true",
+            ),
+            DeclareLaunchArgument(
+                "startup_escape_require_camera_ready",
+                default_value="true",
+            ),
+            DeclareLaunchArgument("startup_escape_ready_timeout_sec", default_value="20.0"),
+            DeclareLaunchArgument("startup_escape_start_delay_sec", default_value="1.0"),
             DeclareLaunchArgument("startup_escape_distance_m", default_value="0.50"),
             DeclareLaunchArgument("startup_escape_speed_mps", default_value="0.30"),
             DeclareLaunchArgument("startup_escape_wheel_radius_m", default_value="0.033"),
