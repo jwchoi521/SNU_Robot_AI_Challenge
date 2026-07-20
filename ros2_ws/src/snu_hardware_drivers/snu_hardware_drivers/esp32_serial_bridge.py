@@ -347,6 +347,12 @@ class Esp32SerialBridge(Node):
             self._send_gate_command("CLOSE")
         elif msg.command == GripperCommand.STOP:
             self._send_gate_command("CLOSE")
+        elif msg.command == GripperCommand.UNLOAD:
+            if not self._required_imu_is_fresh():
+                self._send_gate_command("CLOSE")
+                self._log_blocked_by_required_imu("gate unload")
+                return
+            self._send_serial_line("UNLOAD\n")
         else:
             self.get_logger().warn(f"Unsupported gripper command: {msg.command}")
 
@@ -694,6 +700,12 @@ class Esp32SerialBridge(Node):
             if self._log_pwm_status:
                 self.get_logger().info(f"ESP32: {line}")
         elif parts[0] == "OK" and len(parts) >= 2 and parts[1] == "IMU":
+            self.get_logger().info(f"ESP32: {line}")
+        elif (
+            parts[0] == "OK"
+            and len(parts) >= 2
+            and parts[1] in ("GATE", "UNLOAD")
+        ):
             self.get_logger().info(f"ESP32: {line}")
         elif parts[0] == "I2C":
             self.get_logger().warn(f"ESP32: {line}")

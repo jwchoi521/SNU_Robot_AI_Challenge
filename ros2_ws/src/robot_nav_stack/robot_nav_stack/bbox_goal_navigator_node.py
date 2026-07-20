@@ -122,7 +122,7 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("storage_verify_timeout_sec", 3.0)
         self.declare_parameter("storage_nav_max_retries", 2)
         self.declare_parameter("storage_open_gate_before_backup", True)
-        self.declare_parameter("storage_gate_open_wait_sec", 1.0)
+        self.declare_parameter("storage_gate_open_wait_sec", 2.0)
         self.declare_parameter("storage_backup_action_name", "backup")
         self.declare_parameter("storage_backup_distance_m", 0.50)
         self.declare_parameter("storage_backup_speed_mps", 0.20)
@@ -577,7 +577,7 @@ class BboxGoalNavigatorNode(Node):
                     self._send_backup_goal()
                     return
                 self._send_gripper(
-                    GripperCommand.OPEN,
+                    GripperCommand.UNLOAD,
                     "robot_fully_inside_storage",
                 )
                 self._storage_gate_opened_at_sec = self._now_sec()
@@ -1590,8 +1590,11 @@ class BboxGoalNavigatorNode(Node):
     def _send_gripper(self, command: int, reason: str) -> None:
         if not self._control_gripper_gate:
             return
-        desired_state = "open" if command == GripperCommand.OPEN else "closed"
-        if self._gate_state == desired_state:
+        opens_gate = command in (GripperCommand.OPEN, GripperCommand.UNLOAD)
+        desired_state = "open" if opens_gate else "closed"
+        # UNLOAD must always be sent because it also clears the firmware's
+        # cargo count, even when the gate is already believed to be open.
+        if command != GripperCommand.UNLOAD and self._gate_state == desired_state:
             return
         msg = GripperCommand()
         msg.header.stamp = self.get_clock().now().to_msg()

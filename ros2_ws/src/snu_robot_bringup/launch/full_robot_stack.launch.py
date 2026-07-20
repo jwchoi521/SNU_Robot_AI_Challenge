@@ -772,7 +772,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "bbox_goal_storage_gate_open_wait_sec",
-                default_value="1.0",
+                default_value="2.0",
             ),
             DeclareLaunchArgument(
                 "bbox_goal_storage_backup_action_name",
