@@ -21,7 +21,6 @@ from .storage_dropoff import (
     StorageBounds,
     StoragePlan,
     choose_storage_plan,
-    heading_matches_entry,
 )
 from .target_lock import TargetLock
 
@@ -434,7 +433,7 @@ class BboxGoalNavigatorNode(Node):
         self._send_gripper(GripperCommand.CLOSE, "storage_dropoff_start")
         self._gate_open_latched = False
         self._reset_target_search_runtime()
-        self._set_storage_phase(StoragePhase.APPROACHING)
+        self._set_storage_phase(StoragePhase.ENTERING)
         self._publish_stop_cmd()
         self._publish_status("storage_dropoff_start")
 
@@ -526,49 +525,35 @@ class BboxGoalNavigatorNode(Node):
 
         plan = self._storage_plan
         if self._storage_phase == StoragePhase.APPROACHING:
-            self._publish_goal_pose(plan.approach_pose)
-            if not self._send_nav2_goal:
-                self._publish_status(
-                    "storage_approach_goal_published_only",
-                    goal=plan.approach_pose,
-                )
-                return
-            if not self._storage_stage_goal_sent:
-                self._storage_stage_goal_sent = self._send_goal(
-                    plan.approach_pose,
-                    purpose="storage_approach",
-                )
-            self._publish_status(
-                "storage_approaching",
-                goal=plan.approach_pose,
-            )
+            self._set_storage_phase(StoragePhase.ENTERING)
+            self._publish_status("storage_approach_skipped")
             return
 
         if self._storage_phase == StoragePhase.ENTERING:
-            self._publish_goal_pose(plan.inside_pose)
+            storage_goal = self._storage_goal_pose(plan)
+            self._publish_goal_pose(storage_goal)
             if not self._send_nav2_goal:
                 self._publish_status(
                     "storage_inside_goal_published_only",
-                    goal=plan.inside_pose,
+                    goal=storage_goal,
                 )
                 return
             if not self._storage_stage_goal_sent:
                 self._storage_stage_goal_sent = self._send_goal(
-                    plan.inside_pose,
+                    storage_goal,
                     purpose="storage_enter",
                 )
-            self._publish_status("storage_entering", goal=plan.inside_pose)
+            self._publish_status("storage_entering", goal=storage_goal)
             return
 
         if self._storage_phase == StoragePhase.VERIFYING_INSIDE:
             self._publish_stop_cmd()
-            robot_center_inside, heading_aligned = self._storage_ready_to_unload()
+            robot_center_inside = self._storage_ready_to_unload()
             self._publish_status(
                 "storage_verifying_inside",
                 robot_center_inside=robot_center_inside,
-                heading_aligned=heading_aligned,
             )
-            if robot_center_inside and heading_aligned:
+            if robot_center_inside:
                 if not bool(
                     self.get_parameter("storage_open_gate_before_backup").value
                 ):
@@ -577,7 +562,7 @@ class BboxGoalNavigatorNode(Node):
                     return
                 self._send_gripper(
                     GripperCommand.UNLOAD,
-                    "robot_center_inside_storage_and_heading_aligned",
+                    "robot_center_inside_storage",
                 )
                 self._storage_gate_opened_at_sec = self._now_sec()
                 self._set_storage_phase(StoragePhase.OPENING_GATE)
@@ -585,7 +570,7 @@ class BboxGoalNavigatorNode(Node):
             if self._now_sec() >= self._storage_verify_deadline_sec:
                 self._retry_storage_navigation(
                     "storage_enter",
-                    "robot_center_or_heading_not_ready",
+                    "robot_center_not_inside_storage",
                 )
             return
 
@@ -614,28 +599,20 @@ class BboxGoalNavigatorNode(Node):
                 exit_direction=plan.exit_direction,
             )
 
-    def _storage_ready_to_unload(self) -> tuple[bool, bool]:
+    def _storage_goal_pose(self, plan: StoragePlan) -> Pose2D:
         assert self._robot_pose is not None
-        assert self._storage_plan is not None
-        robot_center_inside = self._storage_bounds.contains_point(
+        return Pose2D(
+            x=plan.inside_pose.x,
+            y=plan.inside_pose.y,
+            theta=self._robot_pose.theta,
+        )
+
+    def _storage_ready_to_unload(self) -> bool:
+        assert self._robot_pose is not None
+        return self._storage_bounds.contains_point(
             self._robot_pose.x,
             self._robot_pose.y,
         )
-        heading_aligned = heading_matches_entry(
-            robot_pose=self._robot_pose,
-            plan=self._storage_plan,
-            tolerance_rad=math.radians(
-                max(
-                    0.0,
-                    float(
-                        self.get_parameter(
-                            "storage_heading_tolerance_deg"
-                        ).value
-                    ),
-                )
-            ),
-        )
-        return robot_center_inside, heading_aligned
 
     def _retry_storage_navigation(self, purpose: str, reason: str) -> None:
         self._storage_nav_retry_count += 1

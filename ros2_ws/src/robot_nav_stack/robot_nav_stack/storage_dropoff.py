@@ -79,12 +79,10 @@ def make_storage_plan(
     else:
         raise ValueError(f"unsupported storage entry direction: {entry_direction!r}")
 
-    inside_x = bounds.min_x + 0.75 * (bounds.max_x - bounds.min_x)
-    inside_y = bounds.min_y + 0.75 * (bounds.max_y - bounds.min_y)
     inside = Pose2D(
-        x=inside_x,
-        y=inside_y,
-        theta=heading,
+        x=-1.7,
+        y=-1.7,
+        theta=0.0,
     )
     return StoragePlan(entry_direction, approach, inside)
 

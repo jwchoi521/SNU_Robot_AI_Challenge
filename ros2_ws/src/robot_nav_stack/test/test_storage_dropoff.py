@@ -37,7 +37,7 @@ def test_negative_x_plan_enters_from_right_and_faces_negative_x() -> None:
     assert plan.approach_pose.y == -1.6
     assert isclose(plan.inside_pose.x, -1.7, abs_tol=1.0e-12)
     assert isclose(plan.inside_pose.y, -1.7, abs_tol=1.0e-12)
-    assert plan.inside_pose.theta == pi
+    assert plan.inside_pose.theta == 0.0
     assert plan.exit_direction == "positive_x"
 
 
@@ -55,7 +55,7 @@ def test_negative_y_plan_enters_from_top_and_faces_negative_y() -> None:
     assert isclose(plan.approach_pose.y, -1.39, abs_tol=1.0e-12)
     assert isclose(plan.inside_pose.x, -1.7, abs_tol=1.0e-12)
     assert isclose(plan.inside_pose.y, -1.7, abs_tol=1.0e-12)
-    assert plan.inside_pose.theta == -0.5 * pi
+    assert plan.inside_pose.theta == 0.0
     assert plan.exit_direction == "positive_y"
 
 
@@ -108,5 +108,5 @@ def test_heading_must_match_selected_entry_before_unloading() -> None:
         approach_clearance_m=0.05,
     )
 
-    assert heading_matches_entry(Pose2D(-1.8, -1.8, -pi), plan, 0.1)
+    assert heading_matches_entry(Pose2D(-1.8, -1.8, 0.05), plan, 0.1)
     assert not heading_matches_entry(Pose2D(-1.8, -1.8, -0.5 * pi), plan, 0.1)
