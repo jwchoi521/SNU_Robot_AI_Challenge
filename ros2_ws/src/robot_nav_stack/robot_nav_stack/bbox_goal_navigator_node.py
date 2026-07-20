@@ -21,7 +21,6 @@ from .storage_dropoff import (
     StorageBounds,
     StoragePlan,
     choose_storage_plan,
-    footprint_fully_contained,
     heading_matches_entry,
 )
 from .target_lock import TargetLock
@@ -563,13 +562,13 @@ class BboxGoalNavigatorNode(Node):
 
         if self._storage_phase == StoragePhase.VERIFYING_INSIDE:
             self._publish_stop_cmd()
-            footprint_inside, heading_aligned = self._storage_ready_to_unload()
+            robot_center_inside, heading_aligned = self._storage_ready_to_unload()
             self._publish_status(
                 "storage_verifying_inside",
-                footprint_fully_inside=footprint_inside,
+                robot_center_inside=robot_center_inside,
                 heading_aligned=heading_aligned,
             )
-            if footprint_inside and heading_aligned:
+            if robot_center_inside and heading_aligned:
                 if not bool(
                     self.get_parameter("storage_open_gate_before_backup").value
                 ):
@@ -578,7 +577,7 @@ class BboxGoalNavigatorNode(Node):
                     return
                 self._send_gripper(
                     GripperCommand.UNLOAD,
-                    "robot_fully_inside_storage",
+                    "robot_center_inside_storage_and_heading_aligned",
                 )
                 self._storage_gate_opened_at_sec = self._now_sec()
                 self._set_storage_phase(StoragePhase.OPENING_GATE)
@@ -586,7 +585,7 @@ class BboxGoalNavigatorNode(Node):
             if self._now_sec() >= self._storage_verify_deadline_sec:
                 self._retry_storage_navigation(
                     "storage_enter",
-                    "footprint_or_heading_not_inside",
+                    "robot_center_or_heading_not_ready",
                 )
             return
 
@@ -618,14 +617,9 @@ class BboxGoalNavigatorNode(Node):
     def _storage_ready_to_unload(self) -> tuple[bool, bool]:
         assert self._robot_pose is not None
         assert self._storage_plan is not None
-        footprint_inside = footprint_fully_contained(
-            robot_pose=self._robot_pose,
-            bounds=self._storage_bounds,
-            robot_half_length_m=self._robot_half_length_m,
-            robot_half_width_m=self._robot_half_width_m,
-            containment_margin_m=float(
-                self.get_parameter("storage_containment_margin_m").value
-            ),
+        robot_center_inside = self._storage_bounds.contains_point(
+            self._robot_pose.x,
+            self._robot_pose.y,
         )
         heading_aligned = heading_matches_entry(
             robot_pose=self._robot_pose,
@@ -641,7 +635,7 @@ class BboxGoalNavigatorNode(Node):
                 )
             ),
         )
-        return footprint_inside, heading_aligned
+        return robot_center_inside, heading_aligned
 
     def _retry_storage_navigation(self, purpose: str, reason: str) -> None:
         self._storage_nav_retry_count += 1

@@ -79,21 +79,13 @@ def make_storage_plan(
     else:
         raise ValueError(f"unsupported storage entry direction: {entry_direction!r}")
 
+    inside_x = bounds.min_x + 0.75 * (bounds.max_x - bounds.min_x)
+    inside_y = bounds.min_y + 0.75 * (bounds.max_y - bounds.min_y)
     inside = Pose2D(
-        x=bounds.center_x,
-        y=bounds.center_y,
+        x=inside_x,
+        y=inside_y,
         theta=heading,
     )
-    if not footprint_fully_contained(
-        inside,
-        bounds,
-        robot_half_length_m,
-        robot_half_width_m,
-    ):
-        raise ValueError(
-            "storage zone is too small for the configured robot footprint "
-            f"when entering {entry_direction.value}"
-        )
     return StoragePlan(entry_direction, approach, inside)
 
 
