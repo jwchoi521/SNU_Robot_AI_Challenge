@@ -6,6 +6,7 @@ import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
 from snu_robot_interfaces.msg import FourWheelCommand
+from std_msgs.msg import Bool
 
 
 class CmdVelToFourWheel(Node):
@@ -26,6 +27,8 @@ class CmdVelToFourWheel(Node):
         self.declare_parameter("front_right_sign", 1.0)
         self.declare_parameter("rear_left_sign", 1.0)
         self.declare_parameter("rear_right_sign", 1.0)
+        self.declare_parameter("startup_escape_active_topic", "/startup_escape/active")
+        self.declare_parameter("startup_escape_block_on_start", False)
 
         self._drive_model = str(self.get_parameter("drive_model").value)
         self._command_mode = str(self.get_parameter("command_mode").value)
@@ -41,6 +44,10 @@ class CmdVelToFourWheel(Node):
             float(self.get_parameter("rear_left_sign").value),
             float(self.get_parameter("rear_right_sign").value),
         )
+        self._startup_escape_active = bool(
+            self.get_parameter("startup_escape_block_on_start").value
+        )
+        self._last_startup_block_log_sec = 0.0
 
         self._publisher = self.create_publisher(
             FourWheelCommand,
@@ -53,12 +60,26 @@ class CmdVelToFourWheel(Node):
             self._on_cmd_vel,
             10,
         )
+        startup_escape_active_topic = str(
+            self.get_parameter("startup_escape_active_topic").value
+        )
+        if startup_escape_active_topic:
+            self._startup_escape_subscription = self.create_subscription(
+                Bool,
+                startup_escape_active_topic,
+                self._on_startup_escape_active,
+                10,
+            )
 
         self.get_logger().info(
             f"Mapping /cmd_vel to four-wheel commands using {self._drive_model}"
         )
 
     def _on_cmd_vel(self, msg: Twist) -> None:
+        if self._startup_escape_active:
+            self._log_startup_block_if_needed()
+            return
+
         vx = _finite_or_zero(msg.linear.x)
         vy = _finite_or_zero(msg.linear.y)
         wz = _finite_or_zero(msg.angular.z)
@@ -85,6 +106,21 @@ class CmdVelToFourWheel(Node):
             command.rear_right,
         ) = values
         self._publisher.publish(command)
+
+    def _on_startup_escape_active(self, msg: Bool) -> None:
+        active = bool(msg.data)
+        if active == self._startup_escape_active:
+            return
+        self._startup_escape_active = active
+        state = "blocking" if active else "released"
+        self.get_logger().info(f"startup escape cmd_vel gate {state}")
+
+    def _log_startup_block_if_needed(self) -> None:
+        now_sec = self.get_clock().now().nanoseconds * 1.0e-9
+        if now_sec - self._last_startup_block_log_sec < 1.0:
+            return
+        self._last_startup_block_log_sec = now_sec
+        self.get_logger().info("ignoring /cmd_vel while startup escape is active")
 
     def _wheel_velocities_rad_s(
         self, vx: float, vy: float, wz: float

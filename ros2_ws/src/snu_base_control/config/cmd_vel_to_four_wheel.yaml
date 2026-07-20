@@ -20,3 +20,6 @@ cmd_vel_to_four_wheel:
     front_right_sign: 1.0
     rear_left_sign: 1.0
     rear_right_sign: 1.0
+
+    startup_escape_active_topic: /startup_escape/active
+    startup_escape_block_on_start: false

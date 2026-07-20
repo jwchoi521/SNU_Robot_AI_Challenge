@@ -566,6 +566,7 @@ def generate_launch_description():
 
     startup_escape_parameters = {
         "wheel_command_topic": "/wheel_commands",
+        "active_topic": LaunchConfiguration("startup_escape_active_topic"),
         "require_map_ready": ParameterValue(
             LaunchConfiguration("startup_escape_require_map_ready"),
             value_type=bool,
@@ -829,6 +830,10 @@ def generate_launch_description():
             DeclareLaunchArgument("enable_wheel_command_mapper", default_value="false"),
             DeclareLaunchArgument("enable_esp32_serial_bridge", default_value="false"),
             DeclareLaunchArgument("enable_startup_escape", default_value="true"),
+            DeclareLaunchArgument(
+                "startup_escape_active_topic",
+                default_value="/startup_escape/active",
+            ),
             DeclareLaunchArgument("startup_escape_require_map_ready", default_value="true"),
             DeclareLaunchArgument("startup_escape_map_topic", default_value="/map"),
             DeclareLaunchArgument(
@@ -1122,7 +1127,14 @@ def generate_launch_description():
             _include_launch(
                 "snu_base_control",
                 "cmd_vel_to_four_wheel.launch.py",
-                {},
+                {
+                    "startup_escape_active_topic": LaunchConfiguration(
+                        "startup_escape_active_topic"
+                    ),
+                    "startup_escape_block_on_start": LaunchConfiguration(
+                        "enable_startup_escape"
+                    ),
+                },
                 condition=IfCondition(
                     LaunchConfiguration("enable_wheel_command_mapper")
                 ),

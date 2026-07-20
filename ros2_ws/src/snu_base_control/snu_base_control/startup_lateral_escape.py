@@ -8,6 +8,7 @@ from nav_msgs.msg import OccupancyGrid
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from snu_robot_interfaces.msg import FourWheelCommand
+from std_msgs.msg import Bool
 
 
 class StartupLateralEscape(Node):
@@ -17,6 +18,7 @@ class StartupLateralEscape(Node):
         super().__init__("startup_lateral_escape")
 
         self.declare_parameter("wheel_command_topic", "/wheel_commands")
+        self.declare_parameter("active_topic", "/startup_escape/active")
         self.declare_parameter("require_map_ready", True)
         self.declare_parameter("map_topic", "/map")
         self.declare_parameter("require_robot_pose_ready", True)
@@ -35,6 +37,11 @@ class StartupLateralEscape(Node):
         self._publisher = self.create_publisher(
             FourWheelCommand,
             str(self.get_parameter("wheel_command_topic").value),
+            10,
+        )
+        self._active_publisher = self.create_publisher(
+            Bool,
+            str(self.get_parameter("active_topic").value),
             10,
         )
 
@@ -124,6 +131,7 @@ class StartupLateralEscape(Node):
             _finite_or_default(self.get_parameter("publish_hz").value, 30.0),
         )
         self._timer = self.create_timer(1.0 / publish_hz, self._on_timer)
+        self._publish_active(True)
         self.get_logger().info(
             "startup forward escape armed: "
             f"require_map={self._require_map_ready}, "
@@ -148,6 +156,7 @@ class StartupLateralEscape(Node):
         if self.done:
             return
 
+        self._publish_active(True)
         now_sec = self._now_sec()
         if self._start_sec is None:
             if not self._ready():
@@ -189,7 +198,13 @@ class StartupLateralEscape(Node):
 
         self._publish_stop()
         self.done = True
+        self._publish_active(False)
         self.get_logger().info("startup forward escape node done")
+
+    def _publish_active(self, active: bool) -> None:
+        msg = Bool()
+        msg.data = bool(active)
+        self._active_publisher.publish(msg)
 
     def _ready(self) -> bool:
         return self._have_map and self._have_robot_pose and self._have_camera
