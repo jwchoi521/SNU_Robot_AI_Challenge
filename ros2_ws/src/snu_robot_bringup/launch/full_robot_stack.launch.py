@@ -453,6 +453,9 @@ def generate_launch_description():
         "mapping_debug_topic": LaunchConfiguration("mapping_debug_topic"),
         "publish_tf": LaunchConfiguration("publish_tf"),
         "wall_tf_mode": LaunchConfiguration("wall_tf_mode"),
+        "wall_tf_transform_tolerance_sec": LaunchConfiguration(
+            "wall_tf_transform_tolerance_sec"
+        ),
         "publish_lidar_tf": LaunchConfiguration("publish_lidar_tf"),
         "bbox_model_path": LaunchConfiguration("bbox_model_path"),
     }
@@ -973,6 +976,10 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("publish_tf", default_value="true"),
             DeclareLaunchArgument("wall_tf_mode", default_value="map_to_base"),
+            DeclareLaunchArgument(
+                "wall_tf_transform_tolerance_sec",
+                default_value="0.20",
+            ),
             DeclareLaunchArgument("publish_lidar_tf", default_value="true"),
             DeclareLaunchArgument("bbox_model_path", default_value=bbox_model_default),
             OpaqueFunction(function=_validate_tf_configuration),

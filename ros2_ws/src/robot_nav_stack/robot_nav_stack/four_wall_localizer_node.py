@@ -91,6 +91,7 @@ class FourWallLocalizerNode(Node):
         self.declare_parameter("max_imu_age_sec", 0.5)
         self.declare_parameter("publish_tf", False)
         self.declare_parameter("tf_mode", "map_to_base")
+        self.declare_parameter("transform_tolerance_sec", 0.2)
         self.declare_parameter("publish_lidar_tf", True)
         self.declare_parameter("max_rays", 60)
         self.declare_parameter("min_rays", 40)
@@ -335,6 +336,9 @@ class FourWallLocalizerNode(Node):
                 ),
                 "arena_origin": self.arena_origin,
                 "tf_mode": str(self.get_parameter("tf_mode").value),
+                "transform_tolerance_sec": float(
+                    self.get_parameter("transform_tolerance_sec").value
+                ),
                 "arena_bounds": {
                     "min_x": self.min_x,
                     "max_x": self.max_x,
@@ -821,9 +825,10 @@ class FourWallLocalizerNode(Node):
     def _publish_tf(
         self, pose: Pose2D, stamp, odom_pose_at_stamp: Pose2D | None
     ) -> None:
+        tf_stamp = self._tf_publish_stamp(stamp)
         tf_mode = str(self.get_parameter("tf_mode").value).lower()
         if tf_mode in ("map_to_odom", "map_odom"):
-            self._publish_map_to_odom_tf(pose, stamp, odom_pose_at_stamp)
+            self._publish_map_to_odom_tf(pose, tf_stamp, odom_pose_at_stamp)
             return
         if tf_mode not in ("map_to_base", "map_base", "direct"):
             self.get_logger().warn(
@@ -831,7 +836,7 @@ class FourWallLocalizerNode(Node):
             )
 
         tf = TransformStamped()
-        tf.header.stamp = stamp
+        tf.header.stamp = tf_stamp
         tf.header.frame_id = self.map_frame
         tf.child_frame_id = self.base_frame
         tf.transform.translation.x = pose.x
@@ -863,7 +868,7 @@ class FourWallLocalizerNode(Node):
         )
 
         lidar_tf = TransformStamped()
-        lidar_tf.header.stamp = stamp
+        lidar_tf.header.stamp = tf_stamp
         lidar_tf.header.frame_id = self.map_frame
         lidar_tf.child_frame_id = lidar_frame
         lidar_tf.transform.translation.x = lidar_pose.x
@@ -909,6 +914,16 @@ class FourWallLocalizerNode(Node):
         tf.transform.rotation.z = qz
         tf.transform.rotation.w = qw
         self.tf_broadcaster.sendTransform(tf)
+
+    def _tf_publish_stamp(self, stamp):
+        tolerance_sec = max(
+            0.0,
+            float(self.get_parameter("transform_tolerance_sec").value),
+        )
+        if tolerance_sec <= 0.0:
+            return stamp
+        stamp_sec = self._stamp_to_seconds(stamp) + tolerance_sec
+        return Time(nanoseconds=int(round(stamp_sec * 1.0e9))).to_msg()
 
     def _publish_status(self, payload: dict) -> None:
         msg = String()

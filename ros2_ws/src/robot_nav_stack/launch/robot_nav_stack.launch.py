@@ -308,6 +308,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("publish_tf", default_value="true"),
             DeclareLaunchArgument("wall_tf_mode", default_value="map_to_base"),
+            DeclareLaunchArgument("wall_tf_transform_tolerance_sec", default_value="0.20"),
             DeclareLaunchArgument("publish_lidar_tf", default_value="true"),
             DeclareLaunchArgument(
                 "bbox_model_path",
@@ -368,6 +369,9 @@ def generate_launch_description():
                         "max_imu_age_sec": _float_arg("max_imu_age_sec"),
                         "publish_tf": _bool_arg("publish_tf"),
                         "tf_mode": LaunchConfiguration("wall_tf_mode"),
+                        "transform_tolerance_sec": _float_arg(
+                            "wall_tf_transform_tolerance_sec"
+                        ),
                         "publish_lidar_tf": _bool_arg("publish_lidar_tf"),
                     }
                 ],
