@@ -4,6 +4,8 @@ from launch.conditions import IfCondition
 from launch.actions import OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -562,6 +564,38 @@ def generate_launch_description():
         "stop_repeat_sec": LaunchConfiguration("esp32_stop_repeat_sec"),
     }
 
+    startup_escape_parameters = {
+        "wheel_command_topic": "/wheel_commands",
+        "start_delay_sec": ParameterValue(
+            LaunchConfiguration("startup_escape_start_delay_sec"),
+            value_type=float,
+        ),
+        "distance_m": ParameterValue(
+            LaunchConfiguration("startup_escape_distance_m"),
+            value_type=float,
+        ),
+        "speed_mps": ParameterValue(
+            LaunchConfiguration("startup_escape_speed_mps"),
+            value_type=float,
+        ),
+        "wheel_radius_m": ParameterValue(
+            LaunchConfiguration("startup_escape_wheel_radius_m"),
+            value_type=float,
+        ),
+        "direction_sign": ParameterValue(
+            LaunchConfiguration("startup_escape_direction_sign"),
+            value_type=float,
+        ),
+        "publish_hz": ParameterValue(
+            LaunchConfiguration("startup_escape_publish_hz"),
+            value_type=float,
+        ),
+        "stop_hold_sec": ParameterValue(
+            LaunchConfiguration("startup_escape_stop_hold_sec"),
+            value_type=float,
+        ),
+    }
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("use_sim_time", default_value="false"),
@@ -775,6 +809,14 @@ def generate_launch_description():
             DeclareLaunchArgument("ekf_params_file", default_value=ekf_params_default),
             DeclareLaunchArgument("enable_wheel_command_mapper", default_value="false"),
             DeclareLaunchArgument("enable_esp32_serial_bridge", default_value="false"),
+            DeclareLaunchArgument("enable_startup_escape", default_value="true"),
+            DeclareLaunchArgument("startup_escape_start_delay_sec", default_value="6.0"),
+            DeclareLaunchArgument("startup_escape_distance_m", default_value="0.50"),
+            DeclareLaunchArgument("startup_escape_speed_mps", default_value="0.30"),
+            DeclareLaunchArgument("startup_escape_wheel_radius_m", default_value="0.033"),
+            DeclareLaunchArgument("startup_escape_direction_sign", default_value="1.0"),
+            DeclareLaunchArgument("startup_escape_publish_hz", default_value="30.0"),
+            DeclareLaunchArgument("startup_escape_stop_hold_sec", default_value="0.40"),
             DeclareLaunchArgument("esp32_dry_run", default_value="true"),
             DeclareLaunchArgument(
                 "esp32_serial_port",
@@ -990,6 +1032,14 @@ def generate_launch_description():
                 condition=IfCondition(
                     LaunchConfiguration("enable_esp32_serial_bridge")
                 ),
+            ),
+            Node(
+                package="snu_base_control",
+                executable="startup_lateral_escape",
+                name="startup_lateral_escape",
+                output="screen",
+                parameters=[startup_escape_parameters],
+                condition=IfCondition(LaunchConfiguration("enable_startup_escape")),
             ),
             _include_launch(
                 "robot_object_detector_ros",
