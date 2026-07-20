@@ -233,7 +233,9 @@ class SemanticObstacleCloudNode(Node):
             f"({self.locked_target.pose.x:.2f}, {self.locked_target.pose.y:.2f}); "
             f"removed={removed}"
         )
-        if bool(self.get_parameter("clear_costmaps_on_target").value):
+        if removed > 0 and bool(
+            self.get_parameter("clear_costmaps_on_target").value
+        ):
             self._schedule_costmap_clear()
         self.publish_cloud()
 
