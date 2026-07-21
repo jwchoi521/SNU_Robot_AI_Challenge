@@ -180,6 +180,11 @@ class ObjectLocalizerNode(Node):
         self._publish_object_pose(detection, object_map)
 
     def _publish_object_pose(self, detection: Detection, object_map: Pose2D) -> None:
+        if not (-2.0 <= object_map.x <= 2.0):
+            return
+        if not (-2.0 <= object_map.y <= 2.0):
+            return
+
         role = self._detection_role(detection)
         raw_object_map = object_map
         if self._in_storage_zone(object_map):
