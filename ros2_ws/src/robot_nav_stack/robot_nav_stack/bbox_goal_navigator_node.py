@@ -530,6 +530,11 @@ class BboxGoalNavigatorNode(Node):
             return
 
         if self._storage_phase == StoragePhase.ENTERING:
+            if self._storage_ready_to_unload():
+                self._finish_storage_entry_without_nav2_success(
+                    "robot_center_inside_storage"
+                )
+                return
             storage_goal = self._storage_goal_pose(plan)
             self._publish_goal_pose(storage_goal)
             if not self._send_nav2_goal:
@@ -598,6 +603,17 @@ class BboxGoalNavigatorNode(Node):
                 ),
                 exit_direction=plan.exit_direction,
             )
+
+    def _finish_storage_entry_without_nav2_success(self, reason: str) -> None:
+        self._cancel_active_goal(reason)
+        verify_timeout = max(
+            0.0,
+            float(self.get_parameter("storage_verify_timeout_sec").value),
+        )
+        self._storage_verify_deadline_sec = self._now_sec() + verify_timeout
+        self._publish_stop_cmd()
+        self._set_storage_phase(StoragePhase.VERIFYING_INSIDE)
+        self._publish_status("storage_enter_complete_by_bounds")
 
     def _storage_goal_pose(self, plan: StoragePlan) -> Pose2D:
         assert self._robot_pose is not None
@@ -1451,10 +1467,13 @@ class BboxGoalNavigatorNode(Node):
             self._set_storage_phase(StoragePhase.VERIFYING_INSIDE)
 
     def _handle_navigation_failure(self, purpose: str, reason: str) -> None:
+        storage_retry_phase = {
+            "storage_approach": StoragePhase.APPROACHING,
+            "storage_enter": StoragePhase.ENTERING,
+        }.get(purpose)
         if (
-            purpose in ("storage_approach", "storage_enter")
-            and self._storage_phase
-            not in (StoragePhase.COMPLETE, StoragePhase.FAILED)
+            storage_retry_phase is not None
+            and self._storage_phase == storage_retry_phase
         ):
             self._retry_storage_navigation(purpose, reason)
             return

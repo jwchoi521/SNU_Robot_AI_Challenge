@@ -223,6 +223,7 @@ bool captureAdvanceArmed = false;
 uint32_t irLastRawChangeMs = 0;
 uint32_t scheduledGateCloseAtMs = 0;
 uint32_t irCaptureAdvanceStartedMs = 0;
+uint32_t irFollowThroughStartedMs = 0;
 
 struct SoftwareServo {
   int pin;
@@ -1087,12 +1088,7 @@ void updateIrSensor() {
       }
     } else {
       Serial.println("IR CLEAR");
-      if (irPendingEntry) {
-        stopIrCaptureAdvance();
-        registerCargoEntry();
-        irPendingEntry = false;
-        setCaptureAdvanceArmed(false, "AUTO");
-      }
+      // The follow-through logic now handles entry and stopping motors.
       countedThisBlock = false;
     }
   }
@@ -1104,12 +1100,22 @@ void updateIrSensor() {
   {
     stopIrCaptureAdvance();
     Serial.println("IR CAPTURE_ADVANCE_TIMEOUT");
-    // Stop the forced forward motion, but keep irPendingEntry set until the
-    // object clears the beam. Clearing it here would discard the BLOCKED ->
-    // CLEAR transition, so registerCargoEntry() would never schedule the gate
-    // close for an object that takes longer than the advance timeout to pass.
     captureAdvanceArmed = false;
     Serial.println("OK CAPTURE_ARM OFF TIMEOUT");
+  }
+
+  if (irPendingEntry && !irStableBlocked) {
+    if (irFollowThroughStartedMs == 0) {
+      // Start the 500ms follow-through timer
+      irFollowThroughStartedMs = now;
+    } else if ((uint32_t)(now - irFollowThroughStartedMs) >= 500) {
+      // Follow-through complete
+      stopIrCaptureAdvance();
+      registerCargoEntry();
+      irPendingEntry = false;
+      irFollowThroughStartedMs = 0;
+      setCaptureAdvanceArmed(false, "AUTO");
+    }
   }
 
   if (scheduledGateCloseAtMs != 0 && (int32_t)(now - scheduledGateCloseAtMs) >= 0) {
