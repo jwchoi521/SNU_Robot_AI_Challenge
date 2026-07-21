@@ -40,6 +40,9 @@ class StoragePhase(str, Enum):
     VERIFYING_INSIDE = "verifying_inside"
     OPENING_GATE = "opening_gate"
     BACKING_UP = "backing_up"
+    CLOSING_GATE_AFTER_BACKUP = "closing_gate_after_backup"
+    DRIVING_FORWARD = "driving_forward"
+    BACKING_UP_SECOND = "backing_up_second"
     COMPLETE = "complete"
     FAILED = "failed"
 
@@ -125,6 +128,7 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("storage_backup_distance_m", 0.50)
         self.declare_parameter("storage_backup_speed_mps", 0.20)
         self.declare_parameter("storage_backup_time_allowance_sec", 4.0)
+        self.declare_parameter("storage_gate_close_wait_after_backup_sec", 0.5)
 
         self._map_frame = str(self.get_parameter("map_frame").value)
         self._send_nav2_goal = bool(self.get_parameter("send_nav2_goal").value)
@@ -199,6 +203,10 @@ class BboxGoalNavigatorNode(Node):
         self._backup_goal_pending = False
         self._backup_goal_handle = None
         self._warned_backup_server_unavailable = False
+        self._storage_backup_pass = 0  # 1=first backup, 2=second backup
+        self._storage_gate_close_sent_at_sec = 0.0
+        self._storage_forward_started_at_sec = 0.0
+        self._storage_forward_start_pose: Pose2D | None = None
 
         self._nav_client = ActionClient(
             self,
@@ -427,6 +435,10 @@ class BboxGoalNavigatorNode(Node):
         self._storage_nav_retry_count = 0
         self._storage_verify_deadline_sec = 0.0
         self._storage_gate_opened_at_sec = 0.0
+        self._storage_gate_close_sent_at_sec = 0.0
+        self._storage_forward_started_at_sec = 0.0
+        self._storage_forward_start_pose = None
+        self._storage_backup_pass = 0
         self._storage_stage_goal_sent = False
         self._nav_state = "storage_dropoff_start"
         self._send_capture_arm(False, "storage_dropoff_start")
@@ -442,13 +454,17 @@ class BboxGoalNavigatorNode(Node):
         self._cancel_active_goal("mission_reset")
         self._cancel_backup_goal("mission_reset")
         self._send_capture_arm(False, "mission_reset", force=True)
-        self._send_gripper(GripperCommand.CLOSE, "mission_reset")
+        self._send_gripper(GripperCommand.CLOSE, "mission_reset", force=True)
         self._captured_object_count = 0
         self._storage_plan = None
         self._storage_stage_goal_sent = False
         self._storage_nav_retry_count = 0
         self._storage_verify_deadline_sec = 0.0
         self._storage_gate_opened_at_sec = 0.0
+        self._storage_gate_close_sent_at_sec = 0.0
+        self._storage_forward_started_at_sec = 0.0
+        self._storage_forward_start_pose = None
+        self._storage_backup_pass = 0
         self._storage_phase = StoragePhase.INACTIVE
         self._nav_state = "idle"
         self._target_lock.clear()
@@ -598,11 +614,54 @@ class BboxGoalNavigatorNode(Node):
         if self._storage_phase == StoragePhase.BACKING_UP:
             self._publish_status(
                 "storage_backing_up",
+                backup_pass=1,
                 backup_distance_m=float(
                     self.get_parameter("storage_backup_distance_m").value
                 ),
                 exit_direction=plan.exit_direction,
             )
+            return
+
+        if self._storage_phase == StoragePhase.CLOSING_GATE_AFTER_BACKUP:
+            self._publish_stop_cmd()
+            wait_sec = max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "storage_gate_close_wait_after_backup_sec"
+                    ).value
+                ),
+            )
+            elapsed = self._now_sec() - self._storage_gate_close_sent_at_sec
+            if elapsed >= wait_sec:
+                self._start_storage_forward_motion(robot_pose)
+            else:
+                self._publish_status(
+                    "storage_waiting_for_gate_close",
+                    gate_wait_remaining_sec=max(0.0, wait_sec - elapsed),
+                )
+            return
+
+        if self._storage_phase == StoragePhase.DRIVING_FORWARD:
+            self._control_storage_forward_motion(robot_pose)
+            return
+
+        if self._storage_phase == StoragePhase.BACKING_UP_SECOND:
+            if (
+                not self._backup_goal_pending
+                and self._backup_goal_handle is None
+            ):
+                if not self._send_backup_goal(backup_pass=2):
+                    return
+            self._publish_status(
+                "storage_backing_up",
+                backup_pass=2,
+                backup_distance_m=float(
+                    self.get_parameter("storage_backup_distance_m").value
+                ),
+                exit_direction=plan.exit_direction,
+            )
+            return
 
     def _finish_storage_entry_without_nav2_success(self, reason: str) -> None:
         self._cancel_active_goal(reason)
@@ -660,12 +719,16 @@ class BboxGoalNavigatorNode(Node):
     def _fail_storage_dropoff(self, reason: str) -> None:
         self._send_capture_arm(False, f"storage_failure:{reason}")
         self._send_gripper(GripperCommand.CLOSE, f"storage_failure:{reason}")
+        self._storage_forward_started_at_sec = 0.0
+        self._storage_forward_start_pose = None
         self._publish_stop_cmd()
         self._set_storage_phase(StoragePhase.FAILED)
         self.get_logger().error(f"storage dropoff failed: {reason}")
         self._publish_status("storage_failed", failure_reason=reason)
 
-    def _send_backup_goal(self) -> bool:
+    def _send_backup_goal(self, *, backup_pass: int = 1) -> bool:
+        if backup_pass not in (1, 2):
+            raise ValueError(f"backup_pass must be 1 or 2, got {backup_pass}")
         if self._backup_goal_pending or self._backup_goal_handle is not None:
             return True
         if not self._backup_client.wait_for_server(
@@ -710,22 +773,36 @@ class BboxGoalNavigatorNode(Node):
             self._publish_status("storage_backup_send_failed", error=str(exc))
             return False
         self._backup_goal_pending = True
-        self._set_storage_phase(StoragePhase.BACKING_UP)
+        self._storage_backup_pass = backup_pass
+        backup_phase = (
+            StoragePhase.BACKING_UP
+            if backup_pass == 1
+            else StoragePhase.BACKING_UP_SECOND
+        )
+        self._set_storage_phase(backup_phase)
         future.add_done_callback(
             lambda done_future: self._on_backup_goal_response(
                 done_future,
                 cycle_id,
+                backup_pass,
             )
         )
         return True
 
-    def _on_backup_goal_response(self, future, cycle_id: int) -> None:
+    def _on_backup_goal_response(
+        self,
+        future,
+        cycle_id: int,
+        backup_pass: int,
+    ) -> None:
         self._backup_goal_pending = False
         try:
             goal_handle = future.result()
         except Exception as exc:  # noqa: BLE001 - report action-client failures.
             if cycle_id == self._storage_cycle_id:
-                self._fail_storage_dropoff(f"backup_send_failed:{exc}")
+                self._fail_storage_dropoff(
+                    f"backup_{backup_pass}_send_failed:{exc}"
+                )
             return
 
         if cycle_id != self._storage_cycle_id:
@@ -733,7 +810,9 @@ class BboxGoalNavigatorNode(Node):
                 goal_handle.cancel_goal_async()
             return
         if not goal_handle.accepted:
-            self._fail_storage_dropoff("backup_goal_rejected")
+            self._fail_storage_dropoff(
+                f"backup_{backup_pass}_goal_rejected"
+            )
             return
 
         self._backup_goal_handle = goal_handle
@@ -742,27 +821,57 @@ class BboxGoalNavigatorNode(Node):
             lambda done_future: self._on_backup_goal_result(
                 done_future,
                 cycle_id,
+                backup_pass,
             )
         )
 
-    def _on_backup_goal_result(self, future, cycle_id: int) -> None:
+    def _on_backup_goal_result(
+        self,
+        future,
+        cycle_id: int,
+        backup_pass: int,
+    ) -> None:
         if cycle_id != self._storage_cycle_id:
             return
         self._backup_goal_handle = None
         try:
             result = future.result()
         except Exception as exc:  # noqa: BLE001 - report action-client failures.
-            self._fail_storage_dropoff(f"backup_result_failed:{exc}")
+            self._fail_storage_dropoff(
+                f"backup_{backup_pass}_result_failed:{exc}"
+            )
             return
 
         status_name = _goal_status_name(int(result.status))
         if result.status != GoalStatus.STATUS_SUCCEEDED:
-            self._fail_storage_dropoff(f"backup_{status_name}")
+            self._fail_storage_dropoff(
+                f"backup_{backup_pass}_{status_name}"
+            )
             return
 
         self._publish_stop_cmd()
-        self._send_capture_arm(False, "storage_backup_complete")
-        self._send_gripper(GripperCommand.CLOSE, "storage_backup_complete")
+        if backup_pass == 1:
+            self._send_capture_arm(False, "storage_first_backup_complete")
+            self._send_gripper(
+                GripperCommand.CLOSE,
+                "storage_first_backup_complete",
+                force=True,
+            )
+            self._storage_gate_close_sent_at_sec = self._now_sec()
+            self._set_storage_phase(StoragePhase.CLOSING_GATE_AFTER_BACKUP)
+            self._publish_status(
+                "storage_first_backup_complete",
+                backup_distance_m=float(
+                    self.get_parameter("storage_backup_distance_m").value
+                ),
+            )
+            return
+
+        self._send_capture_arm(False, "storage_second_backup_complete")
+        self._send_gripper(
+            GripperCommand.CLOSE,
+            "storage_second_backup_complete",
+        )
         self._set_storage_phase(StoragePhase.COMPLETE)
         self._publish_mission_event("storage_dropoff_complete")
         self._publish_status(
@@ -773,6 +882,120 @@ class BboxGoalNavigatorNode(Node):
         )
         self._resume_collection_after_storage_complete()
 
+    def _start_storage_forward_motion(self, robot_pose: Pose2D) -> None:
+        target_distance = abs(
+            float(self.get_parameter("storage_backup_distance_m").value)
+        )
+        speed = abs(
+            float(self.get_parameter("storage_backup_speed_mps").value)
+        )
+        if target_distance <= 0.0:
+            self._finish_storage_forward_motion(0.0)
+            return
+        if speed <= 0.0:
+            self._fail_storage_dropoff("drive_forward_invalid_speed")
+            return
+
+        self._storage_forward_start_pose = robot_pose
+        self._storage_forward_started_at_sec = self._now_sec()
+        self._set_storage_phase(StoragePhase.DRIVING_FORWARD)
+        self._publish_storage_forward_cmd(speed)
+        self._publish_status(
+            "storage_drive_forward_started",
+            drive_distance_m=target_distance,
+            drive_speed_mps=speed,
+            drive_time_allowance_sec=max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "storage_backup_time_allowance_sec"
+                    ).value
+                ),
+            ),
+            collision_checks_disabled=True,
+            control_mode="direct_cmd_vel",
+        )
+
+    def _control_storage_forward_motion(self, robot_pose: Pose2D) -> None:
+        start_pose = self._storage_forward_start_pose
+        if start_pose is None:
+            self._fail_storage_dropoff("drive_forward_start_pose_missing")
+            return
+
+        target_distance = abs(
+            float(self.get_parameter("storage_backup_distance_m").value)
+        )
+        speed = abs(
+            float(self.get_parameter("storage_backup_speed_mps").value)
+        )
+        allowance = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "storage_backup_time_allowance_sec"
+                ).value
+            ),
+        )
+        elapsed = max(
+            0.0,
+            self._now_sec() - self._storage_forward_started_at_sec,
+        )
+        distance_traveled = math.hypot(
+            robot_pose.x - start_pose.x,
+            robot_pose.y - start_pose.y,
+        )
+
+        if distance_traveled >= target_distance:
+            self._finish_storage_forward_motion(distance_traveled)
+            return
+        if allowance > 0.0 and elapsed >= allowance:
+            self._fail_storage_dropoff("drive_forward_timeout")
+            return
+        if speed <= 0.0:
+            self._fail_storage_dropoff("drive_forward_invalid_speed")
+            return
+
+        self._publish_storage_forward_cmd(speed)
+        self._publish_status(
+            "storage_driving_forward",
+            drive_distance_m=target_distance,
+            drive_distance_traveled_m=distance_traveled,
+            drive_distance_remaining_m=max(
+                0.0,
+                target_distance - distance_traveled,
+            ),
+            drive_speed_mps=speed,
+            drive_elapsed_sec=elapsed,
+            drive_time_allowance_sec=allowance,
+            collision_checks_disabled=True,
+            control_mode="direct_cmd_vel",
+        )
+
+    def _publish_storage_forward_cmd(self, speed: float) -> None:
+        # Publishing directly bypasses Nav2 collision prediction only while the
+        # storage state machine is in this bounded forward-retrace phase.
+        cmd = Twist()
+        cmd.linear.x = abs(speed)
+        self._cmd_vel_pub.publish(cmd)
+
+    def _finish_storage_forward_motion(
+        self,
+        distance_traveled: float,
+    ) -> None:
+        self._publish_stop_cmd()
+        self._storage_forward_started_at_sec = 0.0
+        self._storage_forward_start_pose = None
+        self._set_storage_phase(StoragePhase.BACKING_UP_SECOND)
+        self._publish_status(
+            "storage_drive_forward_complete",
+            drive_distance_m=abs(
+                float(self.get_parameter("storage_backup_distance_m").value)
+            ),
+            drive_distance_traveled_m=distance_traveled,
+            collision_checks_disabled=False,
+            control_mode="direct_cmd_vel",
+        )
+
     def _resume_collection_after_storage_complete(self) -> None:
         self._captured_object_count = 0
         self._storage_plan = None
@@ -780,6 +1003,10 @@ class BboxGoalNavigatorNode(Node):
         self._storage_nav_retry_count = 0
         self._storage_verify_deadline_sec = 0.0
         self._storage_gate_opened_at_sec = 0.0
+        self._storage_gate_close_sent_at_sec = 0.0
+        self._storage_forward_started_at_sec = 0.0
+        self._storage_forward_start_pose = None
+        self._storage_backup_pass = 0
         self._storage_phase = StoragePhase.INACTIVE
         self._nav_state = "idle"
         self._target_lock.clear()
@@ -1577,14 +1804,24 @@ class BboxGoalNavigatorNode(Node):
         msg.data = event
         self._mission_event_pub.publish(msg)
 
-    def _send_gripper(self, command: int, reason: str) -> None:
+    def _send_gripper(
+        self,
+        command: int,
+        reason: str,
+        *,
+        force: bool = False,
+    ) -> None:
         if not self._control_gripper_gate:
             return
         opens_gate = command in (GripperCommand.OPEN, GripperCommand.UNLOAD)
         desired_state = "open" if opens_gate else "closed"
         # UNLOAD must always be sent because it also clears the firmware's
         # cargo count, even when the gate is already believed to be open.
-        if command != GripperCommand.UNLOAD and self._gate_state == desired_state:
+        if (
+            command != GripperCommand.UNLOAD
+            and self._gate_state == desired_state
+            and not force
+        ):
             return
         msg = GripperCommand()
         msg.header.stamp = self.get_clock().now().to_msg()

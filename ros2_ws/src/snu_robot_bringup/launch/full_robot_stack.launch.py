@@ -438,6 +438,9 @@ def generate_launch_description():
         "bbox_goal_storage_gate_open_wait_sec": LaunchConfiguration(
             "bbox_goal_storage_gate_open_wait_sec"
         ),
+        "bbox_goal_storage_gate_close_wait_after_backup_sec": LaunchConfiguration(
+            "bbox_goal_storage_gate_close_wait_after_backup_sec"
+        ),
         "bbox_goal_storage_backup_action_name": LaunchConfiguration(
             "bbox_goal_storage_backup_action_name"
         ),
@@ -793,6 +796,10 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "bbox_goal_storage_gate_open_wait_sec",
                 default_value="2.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_gate_close_wait_after_backup_sec",
+                default_value="0.5",
             ),
             DeclareLaunchArgument(
                 "bbox_goal_storage_backup_action_name",
