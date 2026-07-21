@@ -233,6 +233,7 @@ class BboxGoalNavigatorNode(Node):
         self._storage_forward_started_at_sec = 0.0
         self._storage_forward_start_pose: Pose2D | None = None
         self._storage_costmap_clear_pending = 0
+        self._storage_costmap_cleared_at_sec = 0.0
 
         self._nav_client = ActionClient(
             self,
@@ -503,6 +504,7 @@ class BboxGoalNavigatorNode(Node):
         self._storage_forward_start_pose = None
         self._storage_backup_pass = 0
         self._storage_costmap_clear_pending = 0
+        self._storage_costmap_cleared_at_sec = 0.0
         self._storage_stage_goal_sent = False
         self._nav_state = "storage_dropoff_start"
         self._send_capture_arm(False, "storage_dropoff_start")
@@ -530,6 +532,7 @@ class BboxGoalNavigatorNode(Node):
         self._storage_forward_start_pose = None
         self._storage_backup_pass = 0
         self._storage_costmap_clear_pending = 0
+        self._storage_costmap_cleared_at_sec = 0.0
         self._storage_phase = StoragePhase.INACTIVE
         self._nav_state = "idle"
         self._target_lock.clear()
@@ -590,12 +593,14 @@ class BboxGoalNavigatorNode(Node):
             return
 
         self._storage_costmap_clear_pending = len(costmap_clients)
+        self._storage_costmap_cleared_at_sec = 0.0
         cycle_id = self._storage_cycle_id
         for name, client in costmap_clients:
             try:
                 future = client.call_async(ClearEntireCostmap.Request())
             except Exception as exc:  # noqa: BLE001 - report service failures.
                 self._storage_costmap_clear_pending = 0
+                self._storage_costmap_cleared_at_sec = 0.0
                 self._fail_storage_dropoff(
                     f"costmap_clear_request_failed:{name}:{exc}"
                 )
@@ -633,6 +638,7 @@ class BboxGoalNavigatorNode(Node):
             future.result()
         except Exception as exc:  # noqa: BLE001 - report service failures.
             self._storage_costmap_clear_pending = 0
+            self._storage_costmap_cleared_at_sec = 0.0
             self._fail_storage_dropoff(
                 f"costmap_clear_failed:{costmap_name}:{exc}"
             )
@@ -643,7 +649,11 @@ class BboxGoalNavigatorNode(Node):
             self._storage_costmap_clear_pending - 1,
         )
         if self._storage_costmap_clear_pending == 0:
-            self.get_logger().info("storage verification costmaps cleared")
+            self._storage_costmap_cleared_at_sec = self._now_sec()
+            if self._storage_phase == StoragePhase.BACKING_UP_SECOND:
+                self.get_logger().info("second backup costmaps cleared")
+            else:
+                self.get_logger().info("storage verification costmaps cleared")
             self._publish_status("storage_costmaps_cleared")
 
     def _control_storage_step(self) -> None:
@@ -800,6 +810,23 @@ class BboxGoalNavigatorNode(Node):
                     backup_pass=2,
                 )
                 return
+            settle_sec = max(
+                0.0,
+                float(self.get_parameter("storage_gate_open_wait_sec").value),
+            )
+            cleared_at_sec = self._storage_costmap_cleared_at_sec
+            if cleared_at_sec > 0.0:
+                elapsed_since_clear = self._now_sec() - cleared_at_sec
+                if elapsed_since_clear < settle_sec:
+                    self._publish_status(
+                        "storage_waiting_after_costmap_clear",
+                        backup_pass=2,
+                        settle_remaining_sec=max(
+                            0.0,
+                            settle_sec - elapsed_since_clear,
+                        ),
+                    )
+                    return
             if (
                 not self._backup_goal_pending
                 and self._backup_goal_handle is None
@@ -875,6 +902,7 @@ class BboxGoalNavigatorNode(Node):
         self._storage_forward_started_at_sec = 0.0
         self._storage_forward_start_pose = None
         self._storage_costmap_clear_pending = 0
+        self._storage_costmap_cleared_at_sec = 0.0
         self._publish_stop_cmd()
         self._set_storage_phase(StoragePhase.FAILED)
         self.get_logger().error(f"storage dropoff failed: {reason}")
@@ -1162,6 +1190,7 @@ class BboxGoalNavigatorNode(Node):
         self._storage_forward_start_pose = None
         self._storage_backup_pass = 0
         self._storage_costmap_clear_pending = 0
+        self._storage_costmap_cleared_at_sec = 0.0
         self._storage_phase = StoragePhase.INACTIVE
         self._nav_state = "idle"
         self._target_lock.clear()
