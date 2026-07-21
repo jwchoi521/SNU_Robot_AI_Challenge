@@ -1200,7 +1200,6 @@ class BboxGoalNavigatorNode(Node):
                 )
                 elapsed_sec = max(0.0, now_sec - self._target_search_goal_started_sec)
                 if timeout_sec > 0.0 and elapsed_sec > timeout_sec:
-                    self._advance_target_search_after_goal()
                     self._last_sent_goal = None
                     self._nav_state = "search_goal_timeout"
                     self._cancel_active_goal("target_search_goal_timeout")
@@ -1794,7 +1793,6 @@ class BboxGoalNavigatorNode(Node):
             self._retry_storage_navigation(purpose, reason)
             return
         if purpose == "search":
-            self._advance_target_search_after_goal()
             self._nav_state = f"search_retry_after_{reason}"
             self._last_sent_goal = None
             return
