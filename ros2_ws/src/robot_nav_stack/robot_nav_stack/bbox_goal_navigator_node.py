@@ -103,7 +103,7 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("control_period_sec", 0.2)
         self.declare_parameter("capture_stop_hold_sec", 0.8)
         self.declare_parameter("capture_remove_radius_m", 0.40)
-        self.declare_parameter("nav_server_wait_sec", 0.05)
+        self.declare_parameter("nav_server_wait_sec", 0.5)
         self.declare_parameter("arena_width_m", 0.0)
         self.declare_parameter("arena_height_m", 0.0)
         self.declare_parameter("arena_origin", "center")
