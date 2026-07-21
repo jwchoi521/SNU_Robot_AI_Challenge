@@ -6,6 +6,7 @@ import rclpy
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import OccupancyGrid
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 from snu_robot_interfaces.msg import FourWheelCommand
 from std_msgs.msg import Bool
@@ -42,7 +43,11 @@ class StartupLateralEscape(Node):
         self._active_publisher = self.create_publisher(
             Bool,
             str(self.get_parameter("active_topic").value),
-            10,
+            QoSProfile(
+                depth=1,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                reliability=ReliabilityPolicy.RELIABLE,
+            ),
         )
 
         self._require_map_ready = bool(self.get_parameter("require_map_ready").value)

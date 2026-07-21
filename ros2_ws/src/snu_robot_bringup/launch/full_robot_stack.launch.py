@@ -370,6 +370,18 @@ def generate_launch_description():
         "bbox_goal_target_search_center_y_m": LaunchConfiguration(
             "bbox_goal_target_search_center_y_m"
         ),
+        "bbox_goal_startup_escape_active_topic": LaunchConfiguration(
+            "startup_escape_active_topic"
+        ),
+        "bbox_goal_target_search_wait_for_startup_complete": LaunchConfiguration(
+            "enable_startup_escape"
+        ),
+        "bbox_goal_target_search_startup_grace_sec": LaunchConfiguration(
+            "bbox_goal_target_search_startup_grace_sec"
+        ),
+        "bbox_goal_target_search_startup_wait_timeout_sec": LaunchConfiguration(
+            "bbox_goal_target_search_startup_wait_timeout_sec"
+        ),
         "bbox_goal_capture_stop_hold_sec": LaunchConfiguration(
             "bbox_goal_capture_stop_hold_sec"
         ),
@@ -733,6 +745,14 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "bbox_goal_target_search_center_y_m",
                 default_value="0.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_startup_grace_sec",
+                default_value="2.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_startup_wait_timeout_sec",
+                default_value="30.0",
             ),
             DeclareLaunchArgument("bbox_goal_capture_stop_hold_sec", default_value="0.8"),
             DeclareLaunchArgument("bbox_goal_capture_remove_radius_m", default_value="0.40"),

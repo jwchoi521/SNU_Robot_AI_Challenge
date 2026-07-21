@@ -222,6 +222,22 @@ def generate_launch_description():
                 "bbox_goal_target_search_center_y_m",
                 default_value="0.0",
             ),
+            DeclareLaunchArgument(
+                "bbox_goal_startup_escape_active_topic",
+                default_value="/startup_escape/active",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_wait_for_startup_complete",
+                default_value="false",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_startup_grace_sec",
+                default_value="2.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_startup_wait_timeout_sec",
+                default_value="30.0",
+            ),
             DeclareLaunchArgument("bbox_goal_capture_stop_hold_sec", default_value="0.8"),
             DeclareLaunchArgument("bbox_goal_capture_remove_radius_m", default_value="0.40"),
             DeclareLaunchArgument("bbox_goal_target_selection_mode", default_value="nearest"),
@@ -696,6 +712,18 @@ def generate_launch_description():
                         ),
                         "target_search_center_y_m": _float_arg(
                             "bbox_goal_target_search_center_y_m"
+                        ),
+                        "startup_escape_active_topic": LaunchConfiguration(
+                            "bbox_goal_startup_escape_active_topic"
+                        ),
+                        "target_search_wait_for_startup_complete": _bool_arg(
+                            "bbox_goal_target_search_wait_for_startup_complete"
+                        ),
+                        "target_search_startup_grace_sec": _float_arg(
+                            "bbox_goal_target_search_startup_grace_sec"
+                        ),
+                        "target_search_startup_wait_timeout_sec": _float_arg(
+                            "bbox_goal_target_search_startup_wait_timeout_sec"
                         ),
                         "capture_stop_hold_sec": _float_arg(
                             "bbox_goal_capture_stop_hold_sec"

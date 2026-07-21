@@ -100,6 +100,10 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("target_search_dwell_sec", 1.0)
         self.declare_parameter("target_search_center_x_m", 0.0)
         self.declare_parameter("target_search_center_y_m", 0.0)
+        self.declare_parameter("startup_escape_active_topic", "/startup_escape/active")
+        self.declare_parameter("target_search_wait_for_startup_complete", False)
+        self.declare_parameter("target_search_startup_grace_sec", 2.0)
+        self.declare_parameter("target_search_startup_wait_timeout_sec", 30.0)
         self.declare_parameter("control_period_sec", 0.2)
         self.declare_parameter("capture_stop_hold_sec", 0.8)
         self.declare_parameter("capture_remove_radius_m", 0.40)
@@ -179,6 +183,14 @@ class BboxGoalNavigatorNode(Node):
         self._target_search_dwell_goal: Pose2D | None = None
         self._target_search_lap_count = 0
         self._skip_next_target_search_initial_spin = False
+        self._node_started_sec = self._now_sec()
+        self._target_search_wait_for_startup_complete = bool(
+            self.get_parameter("target_search_wait_for_startup_complete").value
+        )
+        self._startup_escape_active = self._target_search_wait_for_startup_complete
+        self._startup_escape_seen = False
+        self._startup_escape_completed_sec: float | None = None
+        self._startup_escape_wait_timed_out = False
         self._last_sent_goal: Pose2D | None = None
         self._goal_sequence = 0
         self._active_goal_sequence: int | None = None
@@ -283,6 +295,21 @@ class BboxGoalNavigatorNode(Node):
             self._on_robot_pose,
             10,
         )
+        startup_escape_active_topic = str(
+            self.get_parameter("startup_escape_active_topic").value
+        ).strip()
+        if self._target_search_wait_for_startup_complete and startup_escape_active_topic:
+            startup_escape_qos = QoSProfile(
+                depth=1,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                reliability=ReliabilityPolicy.RELIABLE,
+            )
+            self.create_subscription(
+                Bool,
+                startup_escape_active_topic,
+                self._on_startup_escape_active,
+                startup_escape_qos,
+            )
 
         period = max(0.05, float(self.get_parameter("control_period_sec").value))
         self._timer = self.create_timer(period, self._control_step)
@@ -295,6 +322,20 @@ class BboxGoalNavigatorNode(Node):
 
     def _on_robot_pose(self, msg: PoseStamped) -> None:
         self._robot_pose = _pose_from_msg(msg)
+
+    def _on_startup_escape_active(self, msg: Bool) -> None:
+        active = bool(msg.data)
+        self._startup_escape_seen = True
+        self._startup_escape_wait_timed_out = False
+        if active:
+            self._startup_escape_active = True
+            self._startup_escape_completed_sec = None
+        else:
+            if self._startup_escape_active or self._startup_escape_completed_sec is None:
+                self._startup_escape_completed_sec = self._now_sec()
+            self._startup_escape_active = False
+        self._no_target_since_sec = None
+        self._reset_target_search_runtime()
 
     def _on_target_pose(self, msg: PoseStamped) -> None:
         if msg.header.frame_id and msg.header.frame_id != self._map_frame:
@@ -1090,6 +1131,20 @@ class BboxGoalNavigatorNode(Node):
         now_sec = self._now_sec()
         self._selected_target_distance_m = None
         self._gate_open_latched = False
+        startup_block_reason = self._target_search_startup_block_reason(now_sec)
+        if startup_block_reason is not None:
+            self._no_target_since_sec = None
+            self._reset_target_search_runtime()
+            self._publish_status(
+                "waiting_for_startup_before_target_search",
+                target_missing_reason=reason,
+                target_age_sec=target_age_sec,
+                startup_block_reason=startup_block_reason,
+                startup_escape_active=self._startup_escape_active,
+                startup_escape_seen=self._startup_escape_seen,
+                startup_escape_wait_timed_out=self._startup_escape_wait_timed_out,
+            )
+            return
         if self._no_target_since_sec is None:
             self._no_target_since_sec = now_sec
         missing_for_sec = max(0.0, now_sec - self._no_target_since_sec)
@@ -1241,6 +1296,40 @@ class BboxGoalNavigatorNode(Node):
             self._target_search_spin_index = 0
             return
         self._target_search_phase = "patrol"
+
+    def _target_search_startup_block_reason(self, now_sec: float) -> str | None:
+        if not self._target_search_wait_for_startup_complete:
+            return None
+
+        timeout_sec = max(
+            0.0,
+            float(self.get_parameter("target_search_startup_wait_timeout_sec").value),
+        )
+        if (
+            timeout_sec > 0.0
+            and self._startup_escape_completed_sec is None
+            and now_sec - self._node_started_sec >= timeout_sec
+        ):
+            if not self._startup_escape_wait_timed_out:
+                self.get_logger().warn(
+                    "target search startup wait timed out; allowing search timer to start"
+                )
+            self._startup_escape_wait_timed_out = True
+            self._startup_escape_active = False
+            self._startup_escape_completed_sec = now_sec
+            return None
+
+        if self._startup_escape_active or self._startup_escape_completed_sec is None:
+            return "startup_escape_active"
+
+        grace_sec = max(
+            0.0,
+            float(self.get_parameter("target_search_startup_grace_sec").value),
+        )
+        if now_sec - self._startup_escape_completed_sec < grace_sec:
+            return "startup_grace"
+
+        return None
 
     def _target_search_goal(self, robot: Pose2D) -> Pose2D | None:
         if self._target_search_phase == "initial_spin":
