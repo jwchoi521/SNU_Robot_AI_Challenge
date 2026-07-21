@@ -184,6 +184,8 @@ class ObjectLocalizerNode(Node):
             return
         if not (-2.0 <= object_map.y <= 2.0):
             return
+        if (object_map.x <= -1.4 and object_map.y <= -1.4):
+            return
 
         role = self._detection_role(detection)
         raw_object_map = object_map
