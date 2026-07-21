@@ -130,7 +130,10 @@ class YoloDetectionAdapterNode(Node):
         candidates: list[Detection2D] = []
         for detection in sorted(
             msg.detections,
-            key=lambda item: float(item.confidence),
+            key=lambda item: (
+                float(item.y1) + 0.83 * (float(item.y2) - float(item.y1)),
+                float(item.confidence),
+            ),
             reverse=True,
         ):
             if float(detection.confidence) < min_confidence:
