@@ -74,9 +74,9 @@ class ObjectLocalizerNode(Node):
         self.declare_parameter("locked_target_radius_m", 0.25)
         self.declare_parameter("ignore_storage_objects", True)
         self.declare_parameter("storage_min_x", -2.0)
-        self.declare_parameter("storage_max_x", -1.6)
+        self.declare_parameter("storage_max_x", -1.4)
         self.declare_parameter("storage_min_y", -2.0)
-        self.declare_parameter("storage_max_y", -1.6)
+        self.declare_parameter("storage_max_y", -1.4)
 
         model_path = self.get_parameter("model_path").get_parameter_value().string_value
         if not model_path:

@@ -11,16 +11,16 @@ from robot_nav_stack.storage_dropoff import (
 )
 
 
-BOUNDS = StorageBounds(min_x=-2.0, max_x=-1.6, min_y=-2.0, max_y=-1.6)
+BOUNDS = StorageBounds(min_x=-2.0, max_x=-1.4, min_y=-2.0, max_y=-1.4)
 HALF_LENGTH = 0.16
 HALF_WIDTH = 0.165
 
 
 def test_storage_bounds_contains_only_points_inside_rectangle() -> None:
     assert BOUNDS.contains_point(-1.8, -1.8)
-    assert BOUNDS.contains_point(-2.0, -1.6)
-    assert not BOUNDS.contains_point(-1.59, -1.8)
-    assert not BOUNDS.contains_point(-1.8, -1.59)
+    assert BOUNDS.contains_point(-2.0, -1.4)
+    assert not BOUNDS.contains_point(-1.39, -1.8)
+    assert not BOUNDS.contains_point(-1.8, -1.39)
 
 
 def test_negative_x_plan_enters_from_right_and_faces_negative_x() -> None:
@@ -33,8 +33,8 @@ def test_negative_x_plan_enters_from_right_and_faces_negative_x() -> None:
     )
 
     assert plan.approach_pose.x > BOUNDS.max_x
-    assert isclose(plan.approach_pose.x, -1.39, abs_tol=1.0e-12)
-    assert plan.approach_pose.y == -1.6
+    assert isclose(plan.approach_pose.x, -1.19, abs_tol=1.0e-12)
+    assert plan.approach_pose.y == -1.4
     assert isclose(plan.inside_pose.x, -1.7, abs_tol=1.0e-12)
     assert isclose(plan.inside_pose.y, -1.7, abs_tol=1.0e-12)
     assert plan.inside_pose.theta == 0.0
@@ -51,8 +51,8 @@ def test_negative_y_plan_enters_from_top_and_faces_negative_y() -> None:
     )
 
     assert plan.approach_pose.y > BOUNDS.max_y
-    assert plan.approach_pose.x == -1.6
-    assert isclose(plan.approach_pose.y, -1.39, abs_tol=1.0e-12)
+    assert plan.approach_pose.x == -1.4
+    assert isclose(plan.approach_pose.y, -1.19, abs_tol=1.0e-12)
     assert isclose(plan.inside_pose.x, -1.7, abs_tol=1.0e-12)
     assert isclose(plan.inside_pose.y, -1.7, abs_tol=1.0e-12)
     assert plan.inside_pose.theta == 0.0
@@ -81,8 +81,8 @@ def test_auto_entry_chooses_nearest_legal_approach() -> None:
 
 def test_full_rectangular_footprint_must_be_inside_storage_bounds() -> None:
     centered = Pose2D(-1.8, -1.8, pi)
-    too_far_right = Pose2D(-1.75, -1.8, pi)
-    diagonal = Pose2D(-1.8, -1.8, 0.25 * pi)
+    too_far_right = Pose2D(-1.55, -1.7, pi)
+    diagonal = Pose2D(-1.6, -1.7, 0.25 * pi)
 
     assert footprint_fully_contained(centered, BOUNDS, HALF_LENGTH, HALF_WIDTH)
     assert not footprint_fully_contained(

@@ -754,9 +754,9 @@ def generate_launch_description():
                 default_value="3",
             ),
             DeclareLaunchArgument("bbox_goal_storage_min_x", default_value="-2.0"),
-            DeclareLaunchArgument("bbox_goal_storage_max_x", default_value="-1.6"),
+            DeclareLaunchArgument("bbox_goal_storage_max_x", default_value="-1.4"),
             DeclareLaunchArgument("bbox_goal_storage_min_y", default_value="-2.0"),
-            DeclareLaunchArgument("bbox_goal_storage_max_y", default_value="-1.6"),
+            DeclareLaunchArgument("bbox_goal_storage_max_y", default_value="-1.4"),
             DeclareLaunchArgument(
                 "bbox_goal_storage_entry_mode",
                 default_value="auto",
