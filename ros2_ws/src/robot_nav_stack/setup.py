@@ -37,6 +37,7 @@ setup(
             "bbox_goal_navigator_node = robot_nav_stack.bbox_goal_navigator_node:main",
             "semantic_obstacle_cloud_node = robot_nav_stack.semantic_obstacle_cloud_node:main",
             "mapping_debug_monitor_node = robot_nav_stack.mapping_debug_monitor_node:main",
+            "nav2_startup_gate_node = robot_nav_stack.nav2_startup_gate_node:main",
             "direct_goal_controller_node = robot_nav_stack.direct_goal_controller_node:main",
             "approach_goal_node = robot_nav_stack.approach_goal_node:main",
             "pure_pursuit_node = robot_nav_stack.pure_pursuit_node:main",

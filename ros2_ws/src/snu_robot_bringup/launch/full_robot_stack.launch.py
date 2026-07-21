@@ -3,7 +3,7 @@ from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.actions import OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -520,9 +520,19 @@ def generate_launch_description():
         "camera_yaw": LaunchConfiguration("camera_yaw"),
     }
 
+    nav2_managed_autostart = PythonExpression(
+        [
+            "'false' if '",
+            LaunchConfiguration("nav2_wait_for_map_tf"),
+            "'.strip().lower() in ('1', 'true', 'yes', 'on') else '",
+            LaunchConfiguration("nav2_autostart"),
+            "'",
+        ]
+    )
+
     nav2_arguments = {
         "use_sim_time": LaunchConfiguration("use_sim_time"),
-        "autostart": LaunchConfiguration("nav2_autostart"),
+        "autostart": nav2_managed_autostart,
         "params_file": LaunchConfiguration("nav2_params_file"),
         "nav2_inflation_radius": LaunchConfiguration("nav2_inflation_radius"),
         "nav2_behavior_max_rotational_vel": LaunchConfiguration(
@@ -878,6 +888,14 @@ def generate_launch_description():
             DeclareLaunchArgument("enable_ekf", default_value="false"),
             DeclareLaunchArgument("enable_camera", default_value="true"),
             DeclareLaunchArgument("nav2_autostart", default_value="true"),
+            DeclareLaunchArgument("nav2_wait_for_map_tf", default_value="true"),
+            DeclareLaunchArgument("nav2_ready_map_topic", default_value="/map"),
+            DeclareLaunchArgument("nav2_ready_timeout_sec", default_value="30.0"),
+            DeclareLaunchArgument("nav2_ready_check_period_sec", default_value="0.1"),
+            DeclareLaunchArgument(
+                "nav2_lifecycle_service",
+                default_value="/lifecycle_manager_navigation/manage_nodes",
+            ),
             DeclareLaunchArgument("nav2_params_file", default_value=nav2_params_default),
             # 실험 중 장애물 회피 여유를 launch 옵션으로 바로 조절한다.
             DeclareLaunchArgument("nav2_inflation_radius", default_value="0.16"),
@@ -1184,6 +1202,32 @@ def generate_launch_description():
                 "snu_robot_bringup",
                 "navigation.launch.py",
                 nav2_arguments,
+                condition=IfCondition(LaunchConfiguration("enable_nav2")),
+            ),
+            Node(
+                package="robot_nav_stack",
+                executable="nav2_startup_gate_node",
+                name="nav2_startup_gate_node",
+                output="screen",
+                parameters=[
+                    {
+                        "use_sim_time": LaunchConfiguration("use_sim_time"),
+                        "enabled": LaunchConfiguration("nav2_wait_for_map_tf"),
+                        "autostart_requested": LaunchConfiguration("nav2_autostart"),
+                        "lifecycle_service": LaunchConfiguration(
+                            "nav2_lifecycle_service"
+                        ),
+                        "map_topic": LaunchConfiguration("nav2_ready_map_topic"),
+                        "map_frame": LaunchConfiguration("map_frame"),
+                        "base_frame": LaunchConfiguration("base_frame"),
+                        "ready_timeout_sec": LaunchConfiguration(
+                            "nav2_ready_timeout_sec"
+                        ),
+                        "check_period_sec": LaunchConfiguration(
+                            "nav2_ready_check_period_sec"
+                        ),
+                    }
+                ],
                 condition=IfCondition(LaunchConfiguration("enable_nav2")),
             ),
             _include_launch(
