@@ -93,12 +93,12 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("max_tracked_targets", 20)
         self.declare_parameter("target_search_enabled", True)
         self.declare_parameter("target_search_missing_timeout_sec", 2.0)
-        self.declare_parameter("target_search_radius_m", 1.70)
+        self.declare_parameter("target_search_radius_m", 0.75)
         self.declare_parameter("target_search_goal_timeout_sec", 12.0)
         self.declare_parameter("target_search_initial_spin_enabled", True)
         self.declare_parameter("target_search_initial_spin_step_deg", 60.0)
         self.declare_parameter("target_search_initial_spin_internal_control", True)
-        self.declare_parameter("target_search_initial_spin_yaw_tolerance_deg", 10.0)
+        self.declare_parameter("target_search_initial_spin_yaw_tolerance_deg", 20.0)
         self.declare_parameter(
             "target_search_initial_spin_min_angular_speed_rad_s",
             0.30,
@@ -187,6 +187,7 @@ class BboxGoalNavigatorNode(Node):
         self._target_search_phase = "idle"
         self._target_search_index: int | None = None
         self._target_search_spin_start_yaw: float | None = None
+        self._target_search_turn_target_yaw: float | None = None
         self._target_search_spin_index = 0
         self._target_search_goal_started_sec = 0.0
         self._target_search_dwell_until_sec = 0.0
@@ -1089,7 +1090,7 @@ class BboxGoalNavigatorNode(Node):
             self._no_target_since_sec = None
             self._has_seen_target_since_start = True
             self._reset_target_search_runtime()
-            if self._nav_state.startswith("target_search_initial_spin"):
+            if self._nav_state.startswith("target_search_"):
                 self._publish_stop_cmd()
             if self._active_goal_purpose == "search":
                 self._nav_state = "search_canceling_target_found"
@@ -1272,7 +1273,7 @@ class BboxGoalNavigatorNode(Node):
             return
 
         if (
-            self._target_search_phase == "initial_spin"
+            self._target_search_phase in ("initial_spin", "patrol_turn")
             and bool(
                 self.get_parameter(
                     "target_search_initial_spin_internal_control"
@@ -1303,12 +1304,15 @@ class BboxGoalNavigatorNode(Node):
 
     def _reset_target_search_runtime(self) -> None:
         self._target_search_phase = "idle"
+        self._target_search_index = None
         self._target_search_spin_start_yaw = None
+        self._target_search_turn_target_yaw = None
         self._target_search_spin_index = 0
         self._target_search_goal_started_sec = 0.0
         self._target_search_dwell_until_sec = 0.0
         self._target_search_dwell_phase = None
         self._target_search_dwell_goal = None
+        self._target_search_lap_count = 0
 
     def _ensure_target_search_started(self, robot: Pose2D) -> None:
         if self._target_search_phase != "idle":
@@ -1375,7 +1379,7 @@ class BboxGoalNavigatorNode(Node):
         if robot is None:
             self._publish_stop_cmd()
             self._publish_status(
-                "target_search_initial_spin_waiting_for_robot_pose",
+                f"target_search_{self._target_search_phase}_waiting_for_robot_pose",
                 goal=goal,
                 target_missing_reason=reason,
                 target_missing_for_sec=round(missing_for_sec, 3),
@@ -1404,11 +1408,11 @@ class BboxGoalNavigatorNode(Node):
         )
 
         if abs(yaw_error) <= yaw_tolerance:
-            self._nav_state = "target_search_initial_spin_reached"
+            self._nav_state = f"target_search_{self._target_search_phase}_reached"
             self._target_search_goal_started_sec = 0.0
             self._begin_target_search_dwell(goal)
             self._publish_status(
-                "target_search_initial_spin_reached",
+                self._nav_state,
                 goal=goal,
                 target_missing_reason=reason,
                 target_missing_for_sec=round(missing_for_sec, 3),
@@ -1425,10 +1429,10 @@ class BboxGoalNavigatorNode(Node):
 
         if timeout_sec > 0.0 and elapsed_sec > timeout_sec:
             self._target_search_goal_started_sec = now_sec
-            self._nav_state = "target_search_initial_spin_timeout_retry"
+            self._nav_state = f"target_search_{self._target_search_phase}_timeout_retry"
             self._publish_stop_cmd()
             self._publish_status(
-                "target_search_initial_spin_timeout_retry",
+                self._nav_state,
                 goal=goal,
                 target_missing_reason=reason,
                 target_missing_for_sec=round(missing_for_sec, 3),
@@ -1446,9 +1450,9 @@ class BboxGoalNavigatorNode(Node):
         cmd = Twist()
         cmd.angular.z = angular_z
         self._cmd_vel_pub.publish(cmd)
-        self._nav_state = "target_search_initial_spin_active"
+        self._nav_state = f"target_search_{self._target_search_phase}_active"
         self._publish_status(
-            "target_search_initial_spin_active",
+            self._nav_state,
             goal=goal,
             target_missing_reason=reason,
             target_missing_for_sec=round(missing_for_sec, 3),
@@ -1513,12 +1517,22 @@ class BboxGoalNavigatorNode(Node):
                 )
                 heading = self._apply_goal_heading_offset(wrap_angle(heading))
                 return Pose2D(x=robot.x, y=robot.y, theta=heading)
+        if self._target_search_phase == "patrol_turn":
+            if self._target_search_turn_target_yaw is None:
+                self._target_search_turn_target_yaw = (
+                    self._target_search_patrol_turn_target_yaw()
+                )
+            if self._target_search_turn_target_yaw is None:
+                return None
+            heading = wrap_angle(self._target_search_turn_target_yaw)
+            heading = self._apply_goal_heading_offset(heading)
+            return Pose2D(x=robot.x, y=robot.y, theta=heading)
 
         points = self._target_search_points()
         if not points:
             return None
         if self._target_search_index is None:
-            self._target_search_index = min(
+            self._target_search_index = max(
                 range(len(points)),
                 key=lambda index: math.hypot(
                     points[index][0] - robot.x,
@@ -1529,9 +1543,7 @@ class BboxGoalNavigatorNode(Node):
         index = self._target_search_index % len(points)
         x, y = points[index]
         x, y = self._clamp_goal_to_arena(x, y)
-        center_x = float(self.get_parameter("target_search_center_x_m").value)
-        center_y = float(self.get_parameter("target_search_center_y_m").value)
-        heading = math.atan2(center_y - y, center_x - x)
+        heading = math.atan2(y - robot.y, x - robot.x)
         heading = self._apply_goal_heading_offset(heading)
         return Pose2D(x=x, y=y, theta=heading)
 
@@ -1541,6 +1553,31 @@ class BboxGoalNavigatorNode(Node):
             float(self.get_parameter("target_search_initial_spin_step_deg").value),
         )
         return max(1, int(math.ceil(360.0 / step_deg)))
+
+    def _begin_target_search_patrol_turn(self, goal: Pose2D) -> None:
+        self._target_search_phase = "patrol_turn"
+        self._target_search_turn_target_yaw = (
+            self._target_search_patrol_turn_target_yaw(current_goal=goal)
+        )
+        self._target_search_goal_started_sec = 0.0
+        self._publish_stop_cmd()
+
+    def _target_search_patrol_turn_target_yaw(
+        self,
+        current_goal: Pose2D | None = None,
+    ) -> float | None:
+        points = self._target_search_points()
+        if not points or self._target_search_index is None:
+            return None
+        current_index = self._target_search_index % len(points)
+        next_index = (current_index + 1) % len(points)
+
+        if current_goal is None:
+            current_x, current_y = self._clamp_goal_to_arena(*points[current_index])
+        else:
+            current_x, current_y = current_goal.x, current_goal.y
+        next_x, next_y = self._clamp_goal_to_arena(*points[next_index])
+        return math.atan2(next_y - current_y, next_x - current_x)
 
     def _begin_target_search_dwell(self, goal: Pose2D) -> None:
         dwell_sec = max(0.0, float(self.get_parameter("target_search_dwell_sec").value))
@@ -1559,6 +1596,11 @@ class BboxGoalNavigatorNode(Node):
             self._target_search_goal_started_sec = 0.0
             if self._target_search_spin_index >= self._target_search_spin_count():
                 self._target_search_phase = "patrol"
+        elif phase == "patrol_turn":
+            self._target_search_goal_started_sec = 0.0
+            self._target_search_turn_target_yaw = None
+            self._target_search_phase = "patrol"
+            self._advance_target_search_index()
         elif phase == "patrol":
             self._target_search_goal_started_sec = 0.0
             self._advance_target_search_index()
@@ -1578,16 +1620,11 @@ class BboxGoalNavigatorNode(Node):
             return []
         center_x = float(self.get_parameter("target_search_center_x_m").value)
         center_y = float(self.get_parameter("target_search_center_y_m").value)
-        diagonal = radius / math.sqrt(2.0)
         offsets = [
-            (radius, 0.0),
-            (diagonal, diagonal),
-            (0.0, radius),
-            (-diagonal, diagonal),
-            (-radius, 0.0),
-            (-diagonal, -diagonal),
-            (0.0, -radius),
-            (diagonal, -diagonal),
+            (radius, radius),
+            (-radius, radius),
+            (-radius, -radius),
+            (radius, -radius),
         ]
         return [(center_x + dx, center_y + dy) for dx, dy in offsets]
 
@@ -1922,7 +1959,10 @@ class BboxGoalNavigatorNode(Node):
         if purpose == "target":
             self._publish_mission_event("target_reached")
         elif purpose == "search":
-            self._begin_target_search_dwell(goal)
+            if self._target_search_phase == "patrol":
+                self._begin_target_search_patrol_turn(goal)
+            else:
+                self._begin_target_search_dwell(goal)
             self._last_sent_goal = None
         elif (
             purpose == "storage_approach"

@@ -196,7 +196,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "bbox_goal_target_search_radius_m",
-                default_value="1.70",
+                default_value="0.75",
             ),
             DeclareLaunchArgument(
                 "bbox_goal_target_search_goal_timeout_sec",
@@ -216,7 +216,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "bbox_goal_target_search_initial_spin_yaw_tolerance_deg",
-                default_value="10.0",
+                default_value="20.0",
             ),
             DeclareLaunchArgument(
                 "bbox_goal_target_search_initial_spin_min_angular_speed_rad_s",
