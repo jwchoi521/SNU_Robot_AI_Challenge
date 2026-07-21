@@ -211,6 +211,26 @@ def generate_launch_description():
                 default_value="60.0",
             ),
             DeclareLaunchArgument(
+                "bbox_goal_target_search_initial_spin_internal_control",
+                default_value="true",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_initial_spin_yaw_tolerance_deg",
+                default_value="10.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_initial_spin_min_angular_speed_rad_s",
+                default_value="0.30",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_initial_spin_max_angular_speed_rad_s",
+                default_value="0.85",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_initial_spin_angular_kp",
+                default_value="1.5",
+            ),
+            DeclareLaunchArgument(
                 "bbox_goal_target_search_dwell_sec",
                 default_value="1.0",
             ),
@@ -703,6 +723,21 @@ def generate_launch_description():
                         ),
                         "target_search_initial_spin_step_deg": _float_arg(
                             "bbox_goal_target_search_initial_spin_step_deg"
+                        ),
+                        "target_search_initial_spin_internal_control": _bool_arg(
+                            "bbox_goal_target_search_initial_spin_internal_control"
+                        ),
+                        "target_search_initial_spin_yaw_tolerance_deg": _float_arg(
+                            "bbox_goal_target_search_initial_spin_yaw_tolerance_deg"
+                        ),
+                        "target_search_initial_spin_min_angular_speed_rad_s": _float_arg(
+                            "bbox_goal_target_search_initial_spin_min_angular_speed_rad_s"
+                        ),
+                        "target_search_initial_spin_max_angular_speed_rad_s": _float_arg(
+                            "bbox_goal_target_search_initial_spin_max_angular_speed_rad_s"
+                        ),
+                        "target_search_initial_spin_angular_kp": _float_arg(
+                            "bbox_goal_target_search_initial_spin_angular_kp"
                         ),
                         "target_search_dwell_sec": _float_arg(
                             "bbox_goal_target_search_dwell_sec"

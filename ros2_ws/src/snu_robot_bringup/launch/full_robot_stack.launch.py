@@ -361,6 +361,21 @@ def generate_launch_description():
         "bbox_goal_target_search_initial_spin_step_deg": LaunchConfiguration(
             "bbox_goal_target_search_initial_spin_step_deg"
         ),
+        "bbox_goal_target_search_initial_spin_internal_control": LaunchConfiguration(
+            "bbox_goal_target_search_initial_spin_internal_control"
+        ),
+        "bbox_goal_target_search_initial_spin_yaw_tolerance_deg": LaunchConfiguration(
+            "bbox_goal_target_search_initial_spin_yaw_tolerance_deg"
+        ),
+        "bbox_goal_target_search_initial_spin_min_angular_speed_rad_s": LaunchConfiguration(
+            "bbox_goal_target_search_initial_spin_min_angular_speed_rad_s"
+        ),
+        "bbox_goal_target_search_initial_spin_max_angular_speed_rad_s": LaunchConfiguration(
+            "bbox_goal_target_search_initial_spin_max_angular_speed_rad_s"
+        ),
+        "bbox_goal_target_search_initial_spin_angular_kp": LaunchConfiguration(
+            "bbox_goal_target_search_initial_spin_angular_kp"
+        ),
         "bbox_goal_target_search_dwell_sec": LaunchConfiguration(
             "bbox_goal_target_search_dwell_sec"
         ),
@@ -733,6 +748,26 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "bbox_goal_target_search_initial_spin_step_deg",
                 default_value="60.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_initial_spin_internal_control",
+                default_value="true",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_initial_spin_yaw_tolerance_deg",
+                default_value="10.0",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_initial_spin_min_angular_speed_rad_s",
+                default_value="0.30",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_initial_spin_max_angular_speed_rad_s",
+                default_value="0.85",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_target_search_initial_spin_angular_kp",
+                default_value="1.5",
             ),
             DeclareLaunchArgument(
                 "bbox_goal_target_search_dwell_sec",

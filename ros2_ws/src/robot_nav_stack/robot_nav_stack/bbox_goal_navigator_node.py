@@ -97,6 +97,17 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("target_search_goal_timeout_sec", 12.0)
         self.declare_parameter("target_search_initial_spin_enabled", True)
         self.declare_parameter("target_search_initial_spin_step_deg", 60.0)
+        self.declare_parameter("target_search_initial_spin_internal_control", True)
+        self.declare_parameter("target_search_initial_spin_yaw_tolerance_deg", 10.0)
+        self.declare_parameter(
+            "target_search_initial_spin_min_angular_speed_rad_s",
+            0.30,
+        )
+        self.declare_parameter(
+            "target_search_initial_spin_max_angular_speed_rad_s",
+            0.85,
+        )
+        self.declare_parameter("target_search_initial_spin_angular_kp", 1.5)
         self.declare_parameter("target_search_dwell_sec", 1.0)
         self.declare_parameter("target_search_center_x_m", 0.0)
         self.declare_parameter("target_search_center_y_m", 0.0)
@@ -1078,6 +1089,8 @@ class BboxGoalNavigatorNode(Node):
             self._no_target_since_sec = None
             self._has_seen_target_since_start = True
             self._reset_target_search_runtime()
+            if self._nav_state.startswith("target_search_initial_spin"):
+                self._publish_stop_cmd()
             if self._active_goal_purpose == "search":
                 self._nav_state = "search_canceling_target_found"
                 self._last_sent_goal = None
@@ -1258,6 +1271,23 @@ class BboxGoalNavigatorNode(Node):
             )
             return
 
+        if (
+            self._target_search_phase == "initial_spin"
+            and bool(
+                self.get_parameter(
+                    "target_search_initial_spin_internal_control"
+                ).value
+            )
+        ):
+            self._control_target_search_initial_spin(
+                goal=goal,
+                now_sec=now_sec,
+                reason=reason,
+                missing_for_sec=missing_for_sec,
+                target_age_sec=target_age_sec,
+            )
+            return
+
         if self._send_goal(goal, purpose="search"):
             self._target_search_goal_started_sec = now_sec
             self._publish_status(
@@ -1275,6 +1305,7 @@ class BboxGoalNavigatorNode(Node):
         self._target_search_phase = "idle"
         self._target_search_spin_start_yaw = None
         self._target_search_spin_index = 0
+        self._target_search_goal_started_sec = 0.0
         self._target_search_dwell_until_sec = 0.0
         self._target_search_dwell_phase = None
         self._target_search_dwell_goal = None
@@ -1293,8 +1324,10 @@ class BboxGoalNavigatorNode(Node):
             self._target_search_phase = "initial_spin"
             self._target_search_spin_start_yaw = robot.theta
             self._target_search_spin_index = 0
+            self._target_search_goal_started_sec = 0.0
             return
         self._target_search_phase = "patrol"
+        self._target_search_goal_started_sec = 0.0
 
     def _target_search_startup_block_reason(self, now_sec: float) -> str | None:
         if not self._target_search_wait_for_startup_complete:
@@ -1329,6 +1362,133 @@ class BboxGoalNavigatorNode(Node):
             return "startup_grace"
 
         return None
+
+    def _control_target_search_initial_spin(
+        self,
+        goal: Pose2D,
+        now_sec: float,
+        reason: str,
+        missing_for_sec: float,
+        target_age_sec: float | None,
+    ) -> None:
+        robot = self._robot_pose
+        if robot is None:
+            self._publish_stop_cmd()
+            self._publish_status(
+                "target_search_initial_spin_waiting_for_robot_pose",
+                goal=goal,
+                target_missing_reason=reason,
+                target_missing_for_sec=round(missing_for_sec, 3),
+                target_age_sec=target_age_sec,
+            )
+            return
+
+        if self._target_search_goal_started_sec <= 0.0:
+            self._target_search_goal_started_sec = now_sec
+
+        yaw_error = angle_diff(goal.theta, robot.theta)
+        yaw_tolerance = math.radians(
+            max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "target_search_initial_spin_yaw_tolerance_deg"
+                    ).value
+                ),
+            )
+        )
+        elapsed_sec = max(0.0, now_sec - self._target_search_goal_started_sec)
+        timeout_sec = max(
+            0.0,
+            float(self.get_parameter("target_search_goal_timeout_sec").value),
+        )
+
+        if abs(yaw_error) <= yaw_tolerance:
+            self._nav_state = "target_search_initial_spin_reached"
+            self._target_search_goal_started_sec = 0.0
+            self._begin_target_search_dwell(goal)
+            self._publish_status(
+                "target_search_initial_spin_reached",
+                goal=goal,
+                target_missing_reason=reason,
+                target_missing_for_sec=round(missing_for_sec, 3),
+                target_age_sec=target_age_sec,
+                target_search_elapsed_sec=round(elapsed_sec, 3),
+                target_search_yaw_error_deg=round(math.degrees(yaw_error), 2),
+                target_search_yaw_tolerance_deg=round(math.degrees(yaw_tolerance), 2),
+                target_search_phase=self._target_search_phase,
+                target_search_spin_index=self._target_search_spin_index,
+                target_search_index=self._target_search_index,
+                target_search_lap_count=self._target_search_lap_count,
+            )
+            return
+
+        if timeout_sec > 0.0 and elapsed_sec > timeout_sec:
+            self._target_search_goal_started_sec = now_sec
+            self._nav_state = "target_search_initial_spin_timeout_retry"
+            self._publish_stop_cmd()
+            self._publish_status(
+                "target_search_initial_spin_timeout_retry",
+                goal=goal,
+                target_missing_reason=reason,
+                target_missing_for_sec=round(missing_for_sec, 3),
+                target_age_sec=target_age_sec,
+                target_search_elapsed_sec=round(elapsed_sec, 3),
+                target_search_yaw_error_deg=round(math.degrees(yaw_error), 2),
+                target_search_phase=self._target_search_phase,
+                target_search_spin_index=self._target_search_spin_index,
+                target_search_index=self._target_search_index,
+                target_search_lap_count=self._target_search_lap_count,
+            )
+            return
+
+        angular_z = self._target_search_initial_spin_angular_z(yaw_error)
+        cmd = Twist()
+        cmd.angular.z = angular_z
+        self._cmd_vel_pub.publish(cmd)
+        self._nav_state = "target_search_initial_spin_active"
+        self._publish_status(
+            "target_search_initial_spin_active",
+            goal=goal,
+            target_missing_reason=reason,
+            target_missing_for_sec=round(missing_for_sec, 3),
+            target_age_sec=target_age_sec,
+            target_search_elapsed_sec=round(elapsed_sec, 3),
+            target_search_yaw_error_deg=round(math.degrees(yaw_error), 2),
+            target_search_cmd_angular_z=round(angular_z, 3),
+            target_search_phase=self._target_search_phase,
+            target_search_spin_index=self._target_search_spin_index,
+            target_search_index=self._target_search_index,
+            target_search_lap_count=self._target_search_lap_count,
+        )
+
+    def _target_search_initial_spin_angular_z(self, yaw_error: float) -> float:
+        max_speed = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "target_search_initial_spin_max_angular_speed_rad_s"
+                ).value
+            ),
+        )
+        min_speed = max(
+            0.0,
+            float(
+                self.get_parameter(
+                    "target_search_initial_spin_min_angular_speed_rad_s"
+                ).value
+            ),
+        )
+        if max_speed <= 0.0:
+            return 0.0
+        min_speed = min(min_speed, max_speed)
+        kp = max(
+            0.0,
+            float(self.get_parameter("target_search_initial_spin_angular_kp").value),
+        )
+        speed = abs(yaw_error) * kp
+        speed = max(min_speed, min(max_speed, speed))
+        return math.copysign(speed, yaw_error)
 
     def _target_search_goal(self, robot: Pose2D) -> Pose2D | None:
         if self._target_search_phase == "initial_spin":
@@ -1396,9 +1556,11 @@ class BboxGoalNavigatorNode(Node):
         self._target_search_dwell_goal = None
         if phase == "initial_spin":
             self._target_search_spin_index += 1
+            self._target_search_goal_started_sec = 0.0
             if self._target_search_spin_index >= self._target_search_spin_count():
                 self._target_search_phase = "patrol"
         elif phase == "patrol":
+            self._target_search_goal_started_sec = 0.0
             self._advance_target_search_index()
 
     def _advance_target_search_after_goal(self) -> None:
