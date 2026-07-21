@@ -570,7 +570,7 @@ class BboxGoalNavigatorNode(Node):
         self.get_logger().info(
             f"storage dropoff phase: {previous.value} -> {phase.value}"
         )
-        if phase == StoragePhase.VERIFYING_INSIDE:
+        if phase in (StoragePhase.VERIFYING_INSIDE, StoragePhase.BACKING_UP_SECOND):
             self._start_storage_costmap_clear()
 
     def _start_storage_costmap_clear(self) -> None:
@@ -623,7 +623,10 @@ class BboxGoalNavigatorNode(Node):
     ) -> None:
         if cycle_id != self._storage_cycle_id:
             return
-        if self._storage_phase != StoragePhase.VERIFYING_INSIDE:
+        if self._storage_phase not in (
+            StoragePhase.VERIFYING_INSIDE,
+            StoragePhase.BACKING_UP_SECOND,
+        ):
             return
 
         try:
@@ -790,6 +793,13 @@ class BboxGoalNavigatorNode(Node):
             return
 
         if self._storage_phase == StoragePhase.BACKING_UP_SECOND:
+            if self._storage_costmap_clear_pending > 0:
+                self._publish_status(
+                    "storage_waiting_for_costmap_clear",
+                    pending_costmaps=self._storage_costmap_clear_pending,
+                    backup_pass=2,
+                )
+                return
             if (
                 not self._backup_goal_pending
                 and self._backup_goal_handle is None
