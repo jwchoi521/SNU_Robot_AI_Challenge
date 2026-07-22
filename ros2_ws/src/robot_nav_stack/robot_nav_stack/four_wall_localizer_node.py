@@ -414,7 +414,7 @@ class FourWallLocalizerNode(Node):
         angle = float(msg.angle_min)
         for index, observed in enumerate(msg.ranges):
             rr = float(observed)
-            if math.isfinite(rr) and msg.range_min <= rr <= msg.range_max:
+            if math.isfinite(rr) and msg.range_min <= rr <= 4.0:
                 valid.append((index, angle, rr))
             angle += float(msg.angle_increment)
 
