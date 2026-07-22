@@ -2140,6 +2140,11 @@ class BboxGoalNavigatorNode(Node):
             self._send_capture_arm(True, "gate_open_latched")
             return
         if self._selected_target_distance_m <= open_distance:
+            self.get_logger().info(
+                "gripper gate open distance: "
+                f"target={self._selected_target_distance_m:.3f}m "
+                f"threshold={open_distance:.3f}m"
+            )
             self._gate_open_latched = True
             self._send_gripper(GripperCommand.OPEN, "target_within_gate_open_distance")
             self._send_capture_arm(True, "target_within_gate_open_distance")
