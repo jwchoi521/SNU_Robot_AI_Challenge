@@ -1,5 +1,13 @@
+from __future__ import annotations
+
+import math
+
 from robot_nav_stack.core import Pose2D
-from robot_nav_stack.target_lock import TargetLock
+from robot_nav_stack.target_lock import (
+    TargetLock,
+    closer_target_improvement_m,
+    should_switch_to_closer_target,
+)
 
 
 def _select(
@@ -82,3 +90,31 @@ def test_locked_target_survives_missing_detection_and_reclassification() -> None
 
     target_lock.clear()
     assert not target_lock.active
+
+
+def test_switches_only_when_candidate_is_sufficiently_closer() -> None:
+    robot = Pose2D(0.0, 0.0)
+    active = Pose2D(1.0, 0.0)
+
+    assert not should_switch_to_closer_target(
+        robot_pose=robot,
+        active_target_pose=active,
+        candidate_target_pose=Pose2D(0.89, 0.0),
+        min_improvement_m=0.12,
+    )
+    assert should_switch_to_closer_target(
+        robot_pose=robot,
+        active_target_pose=active,
+        candidate_target_pose=Pose2D(0.88, 0.0),
+        min_improvement_m=0.12,
+    )
+
+
+def test_target_switch_improvement_uses_current_robot_pose() -> None:
+    improvement = closer_target_improvement_m(
+        robot_pose=Pose2D(0.5, 0.0),
+        active_target_pose=Pose2D(1.5, 0.0),
+        candidate_target_pose=Pose2D(0.2, 0.0),
+    )
+
+    assert math.isclose(improvement, 0.7)

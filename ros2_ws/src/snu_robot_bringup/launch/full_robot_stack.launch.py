@@ -337,6 +337,9 @@ def generate_launch_description():
         "bbox_goal_min_separation_m": LaunchConfiguration(
             "bbox_goal_min_separation_m"
         ),
+        "bbox_goal_target_switch_min_improvement_m": LaunchConfiguration(
+            "bbox_goal_target_switch_min_improvement_m"
+        ),
         "bbox_goal_heading_offset_deg": LaunchConfiguration(
             "bbox_goal_heading_offset_deg"
         ),
@@ -750,6 +753,10 @@ def generate_launch_description():
             DeclareLaunchArgument("bbox_goal_approach_distance_m", default_value="0.0"),
             DeclareLaunchArgument("bbox_goal_reached_tolerance_m", default_value="0.05"),
             DeclareLaunchArgument("bbox_goal_min_separation_m", default_value="0.15"),
+            DeclareLaunchArgument(
+                "bbox_goal_target_switch_min_improvement_m",
+                default_value="0.12",
+            ),
             DeclareLaunchArgument("bbox_goal_heading_offset_deg", default_value="0.0"),
             DeclareLaunchArgument("bbox_goal_max_target_age_sec", default_value="1.5"),
             DeclareLaunchArgument("bbox_goal_target_search_enabled", default_value="true"),

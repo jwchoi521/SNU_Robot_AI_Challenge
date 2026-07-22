@@ -71,5 +71,38 @@ class TargetLock:
         self._stamp_sec = None
 
 
+def closer_target_improvement_m(
+    *,
+    robot_pose: Pose2D,
+    active_target_pose: Pose2D,
+    candidate_target_pose: Pose2D,
+) -> float:
+    """Return how much closer the candidate is than the active target."""
+
+    return _distance(active_target_pose, robot_pose) - _distance(
+        candidate_target_pose,
+        robot_pose,
+    )
+
+
+def should_switch_to_closer_target(
+    *,
+    robot_pose: Pose2D,
+    active_target_pose: Pose2D,
+    candidate_target_pose: Pose2D,
+    min_improvement_m: float,
+) -> bool:
+    """Return whether a distinct candidate is sufficiently closer to preempt."""
+
+    if _distance(active_target_pose, candidate_target_pose) <= 1.0e-6:
+        return False
+    improvement_m = closer_target_improvement_m(
+        robot_pose=robot_pose,
+        active_target_pose=active_target_pose,
+        candidate_target_pose=candidate_target_pose,
+    )
+    return improvement_m + 1.0e-9 >= max(0.0, min_improvement_m)
+
+
 def _distance(first: Pose2D, second: Pose2D) -> float:
     return math.hypot(first.x - second.x, first.y - second.y)

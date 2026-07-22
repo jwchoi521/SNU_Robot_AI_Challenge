@@ -24,7 +24,11 @@ from .storage_dropoff import (
     choose_storage_plan,
     should_force_storage_dropoff,
 )
-from .target_lock import TargetLock
+from .target_lock import (
+    TargetLock,
+    closer_target_improvement_m,
+    should_switch_to_closer_target,
+)
 
 
 @dataclass
@@ -87,6 +91,7 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("approach_distance_m", 0.0)
         self.declare_parameter("goal_reached_tolerance_m", 0.12)
         self.declare_parameter("min_goal_separation_m", 0.15)
+        self.declare_parameter("target_switch_min_improvement_m", 0.12)
         self.declare_parameter("min_goal_yaw_delta_deg", 12.0)
         self.declare_parameter("goal_heading_offset_deg", 0.0)
         self.declare_parameter("max_target_age_sec", 1.5)
@@ -209,6 +214,7 @@ class BboxGoalNavigatorNode(Node):
         self._startup_escape_completed_sec: float | None = None
         self._startup_escape_wait_timed_out = False
         self._last_sent_goal: Pose2D | None = None
+        self._active_target_pose: Pose2D | None = None
         self._goal_sequence = 0
         self._active_goal_sequence: int | None = None
         self._active_goal_handle = None
@@ -1263,6 +1269,11 @@ class BboxGoalNavigatorNode(Node):
                     target=_pose_to_dict(selected_target.pose),
                 )
                 return
+            if self._switch_active_target_if_closer(
+                self._robot_pose,
+                selected_target.pose,
+            ):
+                return
 
         if self._target_pose is None or self._target_stamp_sec is None:
             self._control_target_search("waiting_for_target_pose")
@@ -1298,6 +1309,67 @@ class BboxGoalNavigatorNode(Node):
             return
 
         self._send_goal(goal)
+
+    def _switch_active_target_if_closer(
+        self,
+        robot: Pose2D,
+        candidate: Pose2D,
+    ) -> bool:
+        if (
+            self._active_goal_purpose != "target"
+            or self._active_goal_sequence is None
+            or self._active_target_pose is None
+        ):
+            return False
+
+        min_improvement_m = max(
+            0.0,
+            float(
+                self.get_parameter("target_switch_min_improvement_m").value
+            ),
+        )
+        active_target = self._active_target_pose
+        if not should_switch_to_closer_target(
+            robot_pose=robot,
+            active_target_pose=active_target,
+            candidate_target_pose=candidate,
+            min_improvement_m=min_improvement_m,
+        ):
+            return False
+
+        active_distance_m = math.hypot(
+            active_target.x - robot.x,
+            active_target.y - robot.y,
+        )
+        candidate_distance_m = math.hypot(
+            candidate.x - robot.x,
+            candidate.y - robot.y,
+        )
+        improvement_m = closer_target_improvement_m(
+            robot_pose=robot,
+            active_target_pose=active_target,
+            candidate_target_pose=candidate,
+        )
+        self._nav_state = "target_switch_canceling"
+        self._last_sent_goal = None
+        self._cancel_active_goal("closer_target_selected")
+        self._publish_stop_cmd()
+        self.get_logger().info(
+            "switching to closer target: "
+            f"old={active_distance_m:.3f}m, new={candidate_distance_m:.3f}m, "
+            f"improvement={improvement_m:.3f}m, "
+            f"threshold={min_improvement_m:.3f}m"
+        )
+        self._publish_status(
+            "target_switch_canceling",
+            previous_target=active_target,
+            replacement_target=candidate,
+            previous_target_distance_m=round(active_distance_m, 4),
+            replacement_target_distance_m=round(candidate_distance_m, 4),
+            target_distance_improvement_m=round(improvement_m, 4),
+            target_switch_min_improvement_m=min_improvement_m,
+        )
+        return True
 
     def _control_target_search(
         self,
@@ -2029,6 +2101,15 @@ class BboxGoalNavigatorNode(Node):
         self._active_goal_sequence = sequence
         self._active_goal_handle = None
         self._active_goal_purpose = purpose
+        self._active_target_pose = (
+            Pose2D(
+                x=self._target_pose.x,
+                y=self._target_pose.y,
+                theta=self._target_pose.theta,
+            )
+            if purpose == "target" and self._target_pose is not None
+            else None
+        )
         self._cancel_pending_goal = False
         self._last_sent_goal = goal
         self._nav_state = "sending_goal"
@@ -2052,6 +2133,7 @@ class BboxGoalNavigatorNode(Node):
         except Exception as exc:  # noqa: BLE001 - report action-client failures.
             self._active_goal_sequence = None
             self._active_goal_purpose = None
+            self._active_target_pose = None
             self._nav_state = "goal_send_failed"
             self._last_sent_goal = None
             self._publish_status(
@@ -2068,6 +2150,7 @@ class BboxGoalNavigatorNode(Node):
             self._active_goal_sequence = None
             self._active_goal_handle = None
             self._active_goal_purpose = None
+            self._active_target_pose = None
             self._cancel_pending_goal = False
             self._last_sent_goal = None
             self._publish_status(
@@ -2098,6 +2181,7 @@ class BboxGoalNavigatorNode(Node):
         self._active_goal_sequence = None
         self._active_goal_handle = None
         self._active_goal_purpose = None
+        self._active_target_pose = None
         self._cancel_pending_goal = False
         try:
             result = future.result()
@@ -2180,6 +2264,7 @@ class BboxGoalNavigatorNode(Node):
 
     def _cancel_active_goal(self, reason: str) -> None:
         goal_handle = self._active_goal_handle
+        self._active_target_pose = None
         if goal_handle is None:
             if self._active_goal_sequence is not None:
                 self._cancel_pending_goal = True
@@ -2443,6 +2528,12 @@ class BboxGoalNavigatorNode(Node):
                 0.0,
                 float(self.get_parameter("target_lock_distance_m").value),
             ),
+            "target_switch_min_improvement_m": max(
+                0.0,
+                float(
+                    self.get_parameter("target_switch_min_improvement_m").value
+                ),
+            ),
             "target_search_enabled": bool(
                 self.get_parameter("target_search_enabled").value
             ),
@@ -2475,6 +2566,8 @@ class BboxGoalNavigatorNode(Node):
             payload["robot"] = _pose_to_dict(self._robot_pose)
         if self._target_pose is not None:
             payload["target"] = _pose_to_dict(self._target_pose)
+        if self._active_target_pose is not None:
+            payload["active_target"] = _pose_to_dict(self._active_target_pose)
         for key, value in extra.items():
             if isinstance(value, Pose2D):
                 payload[key] = _pose_to_dict(value)
