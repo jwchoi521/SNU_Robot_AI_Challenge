@@ -99,9 +99,9 @@ class StartupLateralEscape(Node):
         self._have_robot_pose = not self._require_robot_pose_ready
         self._have_camera = not self._require_camera_ready
         self._last_wait_log_sec = 0.0
-        self._subscriptions = []
+        self._ready_subscriptions = []
         if self._require_map_ready:
-            self._subscriptions.append(
+            self._ready_subscriptions.append(
                 self.create_subscription(
                     OccupancyGrid,
                     str(self.get_parameter("map_topic").value),
@@ -110,7 +110,7 @@ class StartupLateralEscape(Node):
                 )
             )
         if self._require_robot_pose_ready:
-            self._subscriptions.append(
+            self._ready_subscriptions.append(
                 self.create_subscription(
                     PoseStamped,
                     str(self.get_parameter("robot_pose_topic").value),
@@ -119,7 +119,7 @@ class StartupLateralEscape(Node):
                 )
             )
         if self._require_camera_ready:
-            self._subscriptions.append(
+            self._ready_subscriptions.append(
                 self.create_subscription(
                     Image,
                     str(self.get_parameter("camera_topic").value),
