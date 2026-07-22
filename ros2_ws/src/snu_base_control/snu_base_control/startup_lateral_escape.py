@@ -1,6 +1,15 @@
 from __future__ import annotations
 
 from math import isfinite
+import os
+import select
+
+try:
+    import termios
+    import tty
+except ImportError:  # pragma: no cover - the robot runs on Linux.
+    termios = None
+    tty = None
 
 import rclpy
 from geometry_msgs.msg import PoseStamped
@@ -27,6 +36,7 @@ class StartupLateralEscape(Node):
         self.declare_parameter("require_camera_ready", True)
         self.declare_parameter("camera_topic", "/camera/image_raw")
         self.declare_parameter("ready_timeout_sec", 20.0)
+        self.declare_parameter("wait_for_manual_trigger", False)
         self.declare_parameter("start_delay_sec", 6.0)
         self.declare_parameter("distance_m", 0.50)
         self.declare_parameter("speed_mps", 0.30)
@@ -60,6 +70,9 @@ class StartupLateralEscape(Node):
         self._ready_timeout_sec = max(
             0.0,
             _finite_or_default(self.get_parameter("ready_timeout_sec").value, 20.0),
+        )
+        self._wait_for_manual_trigger = bool(
+            self.get_parameter("wait_for_manual_trigger").value
         )
         self._start_delay_sec = max(
             0.0,
@@ -99,6 +112,9 @@ class StartupLateralEscape(Node):
         self._have_robot_pose = not self._require_robot_pose_ready
         self._have_camera = not self._require_camera_ready
         self._last_wait_log_sec = 0.0
+        self._manual_trigger_stream = None
+        self._manual_trigger_terminal_settings = None
+        self._manual_trigger_unavailable = False
         self._ready_subscriptions = []
         if self._require_map_ready:
             self._ready_subscriptions.append(
@@ -143,6 +159,7 @@ class StartupLateralEscape(Node):
             f"require_robot_pose={self._require_robot_pose_ready}, "
             f"require_camera={self._require_camera_ready}, "
             f"ready_timeout={self._ready_timeout_sec:.2f}s, "
+            f"manual_trigger={self._wait_for_manual_trigger}, "
             f"delay={self._start_delay_sec:.2f}s, "
             f"distance={self._distance_m:.2f}m, speed={self._speed_mps:.2f}m/s, "
             f"direction_sign={self._direction_sign:+.0f}"
@@ -163,7 +180,7 @@ class StartupLateralEscape(Node):
 
         self._publish_active(True)
         now_sec = self._now_sec()
-        if self._start_sec is None:
+        if self._ready_sec is None:
             if not self._ready():
                 if (
                     self._ready_timeout_sec <= 0.0
@@ -176,13 +193,19 @@ class StartupLateralEscape(Node):
                     + ", ".join(self._missing_inputs())
                 )
             self._ready_sec = now_sec
-            self._start_sec = now_sec + self._start_delay_sec
-            self._end_sec = self._start_sec + self._run_sec
-            self._stop_until_sec = self._end_sec + self._stop_hold_sec
-            self.get_logger().info(
-                "startup escape ready; "
-                f"starting in {self._start_delay_sec:.2f}s"
-            )
+            if self._wait_for_manual_trigger:
+                self._arm_manual_trigger()
+                self.get_logger().info(
+                    "startup escape ready; press SPACE or ENTER to start"
+                )
+            else:
+                self._schedule_start(now_sec)
+
+        if self._start_sec is None:
+            if not self._manual_trigger_received():
+                return
+            self.get_logger().info("manual startup trigger received")
+            self._schedule_start(now_sec)
 
         if now_sec < self._start_sec:
             return
@@ -205,6 +228,89 @@ class StartupLateralEscape(Node):
         self.done = True
         self._publish_active(False)
         self.get_logger().info("startup forward escape node done")
+
+    def _schedule_start(self, now_sec: float) -> None:
+        self._start_sec = now_sec + self._start_delay_sec
+        self._end_sec = self._start_sec + self._run_sec
+        self._stop_until_sec = self._end_sec + self._stop_hold_sec
+        self.get_logger().info(
+            "startup escape released; "
+            f"starting in {self._start_delay_sec:.2f}s"
+        )
+
+    def _arm_manual_trigger(self) -> None:
+        if self._manual_trigger_stream is not None or self._manual_trigger_unavailable:
+            return
+        if termios is None or tty is None:
+            self._manual_trigger_unavailable = True
+            self.get_logger().error(
+                "manual startup trigger requires a Linux terminal"
+            )
+            return
+
+        stream = None
+        try:
+            stream = open("/dev/tty", "rb", buffering=0)
+            fd = stream.fileno()
+            terminal_settings = termios.tcgetattr(fd)
+            termios.tcflush(fd, termios.TCIFLUSH)
+            tty.setcbreak(fd)
+        except Exception as exc:
+            if stream is not None:
+                stream.close()
+            self._manual_trigger_unavailable = True
+            self.get_logger().error(
+                "failed to arm manual startup trigger from /dev/tty: " + str(exc)
+            )
+            return
+
+        self._manual_trigger_stream = stream
+        self._manual_trigger_terminal_settings = terminal_settings
+
+    def _manual_trigger_received(self) -> bool:
+        if not self._wait_for_manual_trigger:
+            return True
+        if self._manual_trigger_stream is None:
+            self._arm_manual_trigger()
+            return False
+
+        try:
+            fd = self._manual_trigger_stream.fileno()
+            readable, _, _ = select.select([fd], [], [], 0.0)
+            if not readable:
+                return False
+            key = os.read(fd, 1)
+        except Exception as exc:
+            self.get_logger().error("manual startup trigger read failed: " + str(exc))
+            self._close_manual_trigger_input()
+            self._manual_trigger_unavailable = True
+            return False
+
+        if key not in (b" ", b"\r", b"\n"):
+            return False
+        self._close_manual_trigger_input()
+        return True
+
+    def _close_manual_trigger_input(self) -> None:
+        stream = self._manual_trigger_stream
+        terminal_settings = self._manual_trigger_terminal_settings
+        self._manual_trigger_stream = None
+        self._manual_trigger_terminal_settings = None
+        if stream is None:
+            return
+        try:
+            if termios is not None and terminal_settings is not None:
+                termios.tcsetattr(
+                    stream.fileno(),
+                    termios.TCSADRAIN,
+                    terminal_settings,
+                )
+        finally:
+            stream.close()
+
+    def destroy_node(self):
+        self._close_manual_trigger_input()
+        return super().destroy_node()
 
     def _publish_active(self, active: bool) -> None:
         msg = Bool()

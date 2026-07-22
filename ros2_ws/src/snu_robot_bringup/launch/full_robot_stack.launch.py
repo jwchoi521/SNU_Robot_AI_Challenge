@@ -626,6 +626,10 @@ def generate_launch_description():
             LaunchConfiguration("startup_escape_ready_timeout_sec"),
             value_type=float,
         ),
+        "wait_for_manual_trigger": ParameterValue(
+            LaunchConfiguration("startup_escape_wait_for_manual_trigger"),
+            value_type=bool,
+        ),
         "start_delay_sec": ParameterValue(
             LaunchConfiguration("startup_escape_start_delay_sec"),
             value_type=float,
@@ -925,6 +929,10 @@ def generate_launch_description():
                 default_value="true",
             ),
             DeclareLaunchArgument("startup_escape_ready_timeout_sec", default_value="20.0"),
+            DeclareLaunchArgument(
+                "startup_escape_wait_for_manual_trigger",
+                default_value="true",
+            ),
             DeclareLaunchArgument("startup_escape_start_delay_sec", default_value="1.0"),
             DeclareLaunchArgument("startup_escape_distance_m", default_value="0.50"),
             DeclareLaunchArgument("startup_escape_speed_mps", default_value="0.30"),

@@ -1129,12 +1129,24 @@ class BboxGoalNavigatorNode(Node):
         self._skip_next_target_search_initial_spin = False
 
     def _control_step(self) -> None:
-        if self._now_sec() <= self._stop_until_sec:
+        now_sec = self._now_sec()
+        if now_sec <= self._stop_until_sec:
             self._publish_stop_cmd()
             self._publish_status("capture_stop_hold")
             return
         if self._robot_pose is None:
             self._publish_status("waiting_for_robot_pose")
+            return
+        startup_block_reason = self._startup_escape_block_reason(now_sec)
+        if startup_block_reason is not None:
+            self._selected_target_distance_m = None
+            self._gate_open_latched = False
+            self._publish_status(
+                "waiting_for_startup_before_mission",
+                startup_block_reason=startup_block_reason,
+                startup_escape_active=self._startup_escape_active,
+                startup_escape_seen=self._startup_escape_seen,
+            )
             return
         if self._storage_phase != StoragePhase.INACTIVE:
             self._control_storage_step()
@@ -1390,6 +1402,22 @@ class BboxGoalNavigatorNode(Node):
         self._target_search_goal_started_sec = 0.0
 
     def _target_search_startup_block_reason(self, now_sec: float) -> str | None:
+        startup_block_reason = self._startup_escape_block_reason(now_sec)
+        if startup_block_reason is not None:
+            return startup_block_reason
+        if not self._target_search_wait_for_startup_complete:
+            return None
+
+        grace_sec = max(
+            0.0,
+            float(self.get_parameter("target_search_startup_grace_sec").value),
+        )
+        if now_sec - self._startup_escape_completed_sec < grace_sec:
+            return "startup_grace"
+
+        return None
+
+    def _startup_escape_block_reason(self, now_sec: float) -> str | None:
         if not self._target_search_wait_for_startup_complete:
             return None
 
@@ -1399,6 +1427,7 @@ class BboxGoalNavigatorNode(Node):
         )
         if (
             timeout_sec > 0.0
+            and not self._startup_escape_seen
             and self._startup_escape_completed_sec is None
             and now_sec - self._node_started_sec >= timeout_sec
         ):
@@ -1413,13 +1442,6 @@ class BboxGoalNavigatorNode(Node):
 
         if self._startup_escape_active or self._startup_escape_completed_sec is None:
             return "startup_escape_active"
-
-        grace_sec = max(
-            0.0,
-            float(self.get_parameter("target_search_startup_grace_sec").value),
-        )
-        if now_sec - self._startup_escape_completed_sec < grace_sec:
-            return "startup_grace"
 
         return None
 
