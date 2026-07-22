@@ -1201,7 +1201,7 @@ class BboxGoalNavigatorNode(Node):
         self._selected_target_distance_m = None
         self._no_target_since_sec = None
         self._gate_open_latched = False
-        self._skip_next_target_search_initial_spin = True
+        self._skip_next_target_search_initial_spin = False
 
     def _control_step(self) -> None:
         if self._now_sec() <= self._stop_until_sec:
