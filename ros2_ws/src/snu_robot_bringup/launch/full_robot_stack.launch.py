@@ -388,6 +388,12 @@ def generate_launch_description():
         "bbox_goal_startup_escape_active_topic": LaunchConfiguration(
             "startup_escape_active_topic"
         ),
+        "bbox_goal_mission_start_topic": LaunchConfiguration(
+            "mission_start_topic"
+        ),
+        "bbox_goal_force_storage_after_mission_start_sec": LaunchConfiguration(
+            "bbox_goal_force_storage_after_mission_start_sec"
+        ),
         "bbox_goal_target_search_wait_for_startup_complete": LaunchConfiguration(
             "enable_startup_escape"
         ),
@@ -607,6 +613,7 @@ def generate_launch_description():
     startup_escape_parameters = {
         "wheel_command_topic": "/wheel_commands",
         "active_topic": LaunchConfiguration("startup_escape_active_topic"),
+        "mission_start_topic": LaunchConfiguration("mission_start_topic"),
         "require_map_ready": ParameterValue(
             LaunchConfiguration("startup_escape_require_map_ready"),
             value_type=bool,
@@ -918,6 +925,10 @@ def generate_launch_description():
                 "startup_escape_active_topic",
                 default_value="/startup_escape/active",
             ),
+            DeclareLaunchArgument(
+                "mission_start_topic",
+                default_value="/mission/start",
+            ),
             DeclareLaunchArgument("startup_escape_require_map_ready", default_value="true"),
             DeclareLaunchArgument("startup_escape_map_topic", default_value="/map"),
             DeclareLaunchArgument(
@@ -939,6 +950,10 @@ def generate_launch_description():
             DeclareLaunchArgument("startup_escape_wheel_radius_m", default_value="0.033"),
             DeclareLaunchArgument("startup_escape_direction_sign", default_value="1.0"),
             DeclareLaunchArgument("startup_escape_publish_hz", default_value="30.0"),
+            DeclareLaunchArgument(
+                "bbox_goal_force_storage_after_mission_start_sec",
+                default_value="150.0",
+            ),
             DeclareLaunchArgument("startup_escape_stop_hold_sec", default_value="0.40"),
             DeclareLaunchArgument("esp32_dry_run", default_value="true"),
             DeclareLaunchArgument(

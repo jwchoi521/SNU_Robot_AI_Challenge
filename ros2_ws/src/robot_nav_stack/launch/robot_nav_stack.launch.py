@@ -247,6 +247,14 @@ def generate_launch_description():
                 default_value="/startup_escape/active",
             ),
             DeclareLaunchArgument(
+                "bbox_goal_mission_start_topic",
+                default_value="/mission/start",
+            ),
+            DeclareLaunchArgument(
+                "bbox_goal_force_storage_after_mission_start_sec",
+                default_value="150.0",
+            ),
+            DeclareLaunchArgument(
                 "bbox_goal_target_search_wait_for_startup_complete",
                 default_value="false",
             ),
@@ -750,6 +758,12 @@ def generate_launch_description():
                         ),
                         "startup_escape_active_topic": LaunchConfiguration(
                             "bbox_goal_startup_escape_active_topic"
+                        ),
+                        "mission_start_topic": LaunchConfiguration(
+                            "bbox_goal_mission_start_topic"
+                        ),
+                        "force_storage_after_mission_start_sec": _float_arg(
+                            "bbox_goal_force_storage_after_mission_start_sec"
                         ),
                         "target_search_wait_for_startup_complete": _bool_arg(
                             "bbox_goal_target_search_wait_for_startup_complete"

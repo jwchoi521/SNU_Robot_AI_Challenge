@@ -18,7 +18,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image
 from snu_robot_interfaces.msg import FourWheelCommand
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Empty
 
 
 class StartupLateralEscape(Node):
@@ -29,6 +29,7 @@ class StartupLateralEscape(Node):
 
         self.declare_parameter("wheel_command_topic", "/wheel_commands")
         self.declare_parameter("active_topic", "/startup_escape/active")
+        self.declare_parameter("mission_start_topic", "/mission/start")
         self.declare_parameter("require_map_ready", True)
         self.declare_parameter("map_topic", "/map")
         self.declare_parameter("require_robot_pose_ready", True)
@@ -53,6 +54,15 @@ class StartupLateralEscape(Node):
         self._active_publisher = self.create_publisher(
             Bool,
             str(self.get_parameter("active_topic").value),
+            QoSProfile(
+                depth=1,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                reliability=ReliabilityPolicy.RELIABLE,
+            ),
+        )
+        self._mission_start_publisher = self.create_publisher(
+            Empty,
+            str(self.get_parameter("mission_start_topic").value),
             QoSProfile(
                 depth=1,
                 durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -115,6 +125,7 @@ class StartupLateralEscape(Node):
         self._manual_trigger_stream = None
         self._manual_trigger_terminal_settings = None
         self._manual_trigger_unavailable = False
+        self._mission_start_published = False
         self._ready_subscriptions = []
         if self._require_map_ready:
             self._ready_subscriptions.append(
@@ -230,6 +241,7 @@ class StartupLateralEscape(Node):
         self.get_logger().info("startup forward escape node done")
 
     def _schedule_start(self, now_sec: float) -> None:
+        self._publish_mission_start()
         self._start_sec = now_sec + self._start_delay_sec
         self._end_sec = self._start_sec + self._run_sec
         self._stop_until_sec = self._end_sec + self._stop_hold_sec
@@ -237,6 +249,13 @@ class StartupLateralEscape(Node):
             "startup escape released; "
             f"starting in {self._start_delay_sec:.2f}s"
         )
+
+    def _publish_mission_start(self) -> None:
+        if self._mission_start_published:
+            return
+        self._mission_start_publisher.publish(Empty())
+        self._mission_start_published = True
+        self.get_logger().info("mission timer started")
 
     def _arm_manual_trigger(self) -> None:
         if self._manual_trigger_stream is not None or self._manual_trigger_unavailable:

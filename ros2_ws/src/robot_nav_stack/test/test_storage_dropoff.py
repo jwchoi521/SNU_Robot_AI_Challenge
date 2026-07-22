@@ -8,6 +8,7 @@ from robot_nav_stack.storage_dropoff import (
     footprint_fully_contained,
     heading_matches_entry,
     make_storage_plan,
+    should_force_storage_dropoff,
 )
 
 
@@ -110,3 +111,34 @@ def test_heading_must_match_selected_entry_before_unloading() -> None:
 
     assert heading_matches_entry(Pose2D(-1.8, -1.8, 0.05), plan, 0.1)
     assert not heading_matches_entry(Pose2D(-1.8, -1.8, -0.5 * pi), plan, 0.1)
+
+
+def test_mission_deadline_forces_one_shot_dropoff_with_cargo() -> None:
+    assert not should_force_storage_dropoff(
+        mission_started_sec=100.0,
+        now_sec=249.99,
+        timeout_sec=150.0,
+        captured_object_count=1,
+        already_triggered=False,
+    )
+    assert should_force_storage_dropoff(
+        mission_started_sec=100.0,
+        now_sec=250.0,
+        timeout_sec=150.0,
+        captured_object_count=1,
+        already_triggered=False,
+    )
+    assert not should_force_storage_dropoff(
+        mission_started_sec=100.0,
+        now_sec=250.0,
+        timeout_sec=150.0,
+        captured_object_count=0,
+        already_triggered=False,
+    )
+    assert not should_force_storage_dropoff(
+        mission_started_sec=100.0,
+        now_sec=300.0,
+        timeout_sec=150.0,
+        captured_object_count=1,
+        already_triggered=True,
+    )

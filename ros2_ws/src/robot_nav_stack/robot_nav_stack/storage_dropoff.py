@@ -51,6 +51,22 @@ class StoragePlan:
         return "positive_y"
 
 
+def should_force_storage_dropoff(
+    *,
+    mission_started_sec: float | None,
+    now_sec: float,
+    timeout_sec: float,
+    captured_object_count: int,
+    already_triggered: bool,
+) -> bool:
+    """Return whether the one-shot mission deadline should start a dropoff."""
+    if mission_started_sec is None or already_triggered:
+        return False
+    if timeout_sec <= 0.0 or captured_object_count < 1:
+        return False
+    return now_sec - mission_started_sec >= timeout_sec
+
+
 def make_storage_plan(
     bounds: StorageBounds,
     entry_direction: StorageEntryDirection,

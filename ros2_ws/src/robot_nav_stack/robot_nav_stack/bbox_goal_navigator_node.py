@@ -15,13 +15,14 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from snu_robot_interfaces.msg import GripperCommand
-from std_msgs.msg import Bool, String
+from std_msgs.msg import Bool, Empty, String
 
 from .core import Pose2D, angle_diff, quaternion_from_yaw, wrap_angle, yaw_from_quaternion
 from .storage_dropoff import (
     StorageBounds,
     StoragePlan,
     choose_storage_plan,
+    should_force_storage_dropoff,
 )
 from .target_lock import TargetLock
 
@@ -67,6 +68,8 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("selected_target_pose_topic", "/bbox_goal_target_pose")
         self.declare_parameter("status_topic", "/bbox_goal_navigator/status")
         self.declare_parameter("mission_event_topic", "/mission/event")
+        self.declare_parameter("mission_start_topic", "/mission/start")
+        self.declare_parameter("force_storage_after_mission_start_sec", 150.0)
         self.declare_parameter(
             "capture_event_names",
             "object_captured,cargo_entry,pickup_success,target_captured",
@@ -218,6 +221,8 @@ class BboxGoalNavigatorNode(Node):
         self._last_status: dict[str, Any] = {}
         self._warned_nav_server_unavailable = False
         self._captured_object_count = 0
+        self._mission_started_sec: float | None = None
+        self._mission_timeout_storage_triggered = False
         self._storage_phase = StoragePhase.INACTIVE
         self._storage_plan: StoragePlan | None = None
         self._storage_stage_goal_sent = False
@@ -310,6 +315,21 @@ class BboxGoalNavigatorNode(Node):
             self._on_robot_pose,
             10,
         )
+        mission_start_topic = str(
+            self.get_parameter("mission_start_topic").value
+        ).strip()
+        if mission_start_topic:
+            mission_start_qos = QoSProfile(
+                depth=1,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                reliability=ReliabilityPolicy.RELIABLE,
+            )
+            self.create_subscription(
+                Empty,
+                mission_start_topic,
+                self._on_mission_start,
+                mission_start_qos,
+            )
         startup_escape_active_topic = str(
             self.get_parameter("startup_escape_active_topic").value
         ).strip()
@@ -337,6 +357,25 @@ class BboxGoalNavigatorNode(Node):
 
     def _on_robot_pose(self, msg: PoseStamped) -> None:
         self._robot_pose = _pose_from_msg(msg)
+
+    def _on_mission_start(self, _msg: Empty) -> None:
+        if self._mission_started_sec is not None:
+            return
+        self._mission_started_sec = self._now_sec()
+        self._mission_timeout_storage_triggered = False
+        timeout_sec = max(
+            0.0,
+            float(
+                self.get_parameter("force_storage_after_mission_start_sec").value
+            ),
+        )
+        self.get_logger().info(
+            f"mission timer started; forced storage deadline={timeout_sec:.1f}s"
+        )
+        self._publish_status(
+            "mission_timer_started",
+            force_storage_after_mission_start_sec=timeout_sec,
+        )
 
     def _on_startup_escape_active(self, msg: Bool) -> None:
         active = bool(msg.data)
@@ -482,8 +521,52 @@ class BboxGoalNavigatorNode(Node):
             1,
             int(self.get_parameter("storage_trigger_count").value),
         )
+        now_sec = self._now_sec()
+        if self._trigger_mission_timeout_storage(now_sec):
+            return
         if self._storage_dropoff_enabled and self._captured_object_count >= trigger_count:
             self._begin_storage_dropoff()
+
+    def _trigger_mission_timeout_storage(self, now_sec: float) -> bool:
+        if not self._storage_dropoff_enabled:
+            return False
+        timeout_sec = max(
+            0.0,
+            float(
+                self.get_parameter("force_storage_after_mission_start_sec").value
+            ),
+        )
+        if not should_force_storage_dropoff(
+            mission_started_sec=self._mission_started_sec,
+            now_sec=now_sec,
+            timeout_sec=timeout_sec,
+            captured_object_count=self._captured_object_count,
+            already_triggered=self._mission_timeout_storage_triggered,
+        ):
+            return False
+
+        self._mission_timeout_storage_triggered = True
+        elapsed_sec = (
+            now_sec - self._mission_started_sec
+            if self._mission_started_sec is not None
+            else 0.0
+        )
+        if self._storage_phase != StoragePhase.INACTIVE:
+            self._publish_status(
+                "mission_timeout_storage_already_active",
+                mission_elapsed_sec=round(elapsed_sec, 3),
+            )
+            return False
+
+        self._nav_state = "mission_timeout_storage_triggered"
+        self._cancel_active_goal("mission_timeout_storage_triggered")
+        self._publish_stop_cmd()
+        self._publish_status(
+            "mission_timeout_storage_triggered",
+            mission_elapsed_sec=round(elapsed_sec, 3),
+        )
+        self._begin_storage_dropoff()
+        return True
 
     def _begin_storage_dropoff(self) -> None:
         self._storage_cycle_id += 1
@@ -1147,6 +1230,8 @@ class BboxGoalNavigatorNode(Node):
                 startup_escape_active=self._startup_escape_active,
                 startup_escape_seen=self._startup_escape_seen,
             )
+            return
+        if self._trigger_mission_timeout_storage(now_sec):
             return
         if self._storage_phase != StoragePhase.INACTIVE:
             self._control_storage_step()
@@ -2224,6 +2309,18 @@ class BboxGoalNavigatorNode(Node):
             "active_goal_purpose": self._active_goal_purpose,
             "send_nav2_goal": self._send_nav2_goal,
             "captured_object_count": self._captured_object_count,
+            "mission_timer_started": self._mission_started_sec is not None,
+            "mission_timeout_storage_triggered": (
+                self._mission_timeout_storage_triggered
+            ),
+            "force_storage_after_mission_start_sec": max(
+                0.0,
+                float(
+                    self.get_parameter(
+                        "force_storage_after_mission_start_sec"
+                    ).value
+                ),
+            ),
             "storage_trigger_count": max(
                 1, int(self.get_parameter("storage_trigger_count").value)
             ),
