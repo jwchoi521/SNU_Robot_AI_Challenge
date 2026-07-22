@@ -121,6 +121,7 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("target_search_startup_wait_timeout_sec", 30.0)
         self.declare_parameter("control_period_sec", 0.2)
         self.declare_parameter("capture_stop_hold_sec", 0.8)
+        self.declare_parameter("capture_wait_timeout_sec", 10.0)
         self.declare_parameter("capture_remove_radius_m", 0.40)
         self.declare_parameter("nav_server_wait_sec", 0.5)
         self.declare_parameter("arena_width_m", 0.0)
@@ -218,6 +219,8 @@ class BboxGoalNavigatorNode(Node):
         self._gate_open_latched = False
         self._capture_arm_armed = False
         self._stop_until_sec = 0.0
+        self._capture_wait_deadline_sec = 0.0
+        self._capture_wait_target_pose: Pose2D | None = None
         self._last_status: dict[str, Any] = {}
         self._warned_nav_server_unavailable = False
         self._captured_object_count = 0
@@ -495,6 +498,7 @@ class BboxGoalNavigatorNode(Node):
             )
             return
 
+        self._clear_capture_wait()
         self._captured_object_count += 1
         self._nav_state = "capture_complete"
         self._cancel_active_goal(event_name)
@@ -570,6 +574,7 @@ class BboxGoalNavigatorNode(Node):
 
     def _begin_storage_dropoff(self) -> None:
         self._storage_cycle_id += 1
+        self._clear_capture_wait()
         self._storage_plan = None
         self._storage_nav_retry_count = 0
         self._storage_verify_deadline_sec = 0.0
@@ -609,6 +614,7 @@ class BboxGoalNavigatorNode(Node):
         self._storage_costmap_clear_pending = 0
         self._storage_phase = StoragePhase.INACTIVE
         self._nav_state = "idle"
+        self._clear_capture_wait()
         self._target_lock.clear()
         self._reset_target_search_runtime()
         self._last_sent_goal = None
@@ -1201,6 +1207,7 @@ class BboxGoalNavigatorNode(Node):
         self._storage_costmap_clear_pending = 0
         self._storage_phase = StoragePhase.INACTIVE
         self._nav_state = "idle"
+        self._clear_capture_wait()
         self._target_lock.clear()
         self._reset_target_search_runtime()
         self._last_sent_goal = None
@@ -1230,6 +1237,8 @@ class BboxGoalNavigatorNode(Node):
                 startup_escape_active=self._startup_escape_active,
                 startup_escape_seen=self._startup_escape_seen,
             )
+            return
+        if self._control_capture_wait(now_sec):
             return
         if self._trigger_mission_timeout_storage(now_sec):
             return
@@ -2121,6 +2130,7 @@ class BboxGoalNavigatorNode(Node):
 
         if purpose == "target":
             self._publish_mission_event("target_reached")
+            self._begin_capture_wait(goal)
         elif purpose == "search":
             if self._target_search_phase == "patrol":
                 self._begin_target_search_patrol_turn(goal)
@@ -2162,6 +2172,7 @@ class BboxGoalNavigatorNode(Node):
             self._last_sent_goal = None
             return
         if purpose == "target":
+            self._clear_capture_wait()
             self._send_capture_arm(False, f"target_navigation_failure:{reason}")
             self._send_gripper(GripperCommand.CLOSE, "target_navigation_failure")
             self._gate_open_latched = False
@@ -2217,22 +2228,123 @@ class BboxGoalNavigatorNode(Node):
             self._send_gripper(GripperCommand.OPEN, "target_within_gate_open_distance")
             self._send_capture_arm(True, "target_within_gate_open_distance")
 
-    def _remove_selected_target(self) -> int:
-        target = self._target_pose
+    def _begin_capture_wait(self, goal: Pose2D) -> None:
+        timeout_sec = max(
+            0.0,
+            float(self.get_parameter("capture_wait_timeout_sec").value),
+        )
+        if timeout_sec <= 0.0:
+            return
+
+        target = self._target_pose or goal
+        self._capture_wait_target_pose = Pose2D(
+            x=target.x,
+            y=target.y,
+            theta=target.theta,
+        )
+        self._capture_wait_deadline_sec = self._now_sec() + timeout_sec
+        self._nav_state = "waiting_for_capture_event"
+        self._publish_stop_cmd()
+        self.get_logger().info(
+            f"target reached; waiting {timeout_sec:.1f}s for cargo entry event"
+        )
+        self._publish_status(
+            "waiting_for_capture_event",
+            capture_wait_timeout_sec=timeout_sec,
+            capture_wait_target=self._capture_wait_target_pose,
+        )
+
+    def _control_capture_wait(self, now_sec: float) -> bool:
+        if self._capture_wait_deadline_sec <= 0.0:
+            return False
+        if now_sec >= self._capture_wait_deadline_sec:
+            self._discard_capture_target_after_timeout(now_sec)
+            return True
+
+        self._publish_stop_cmd()
+        self._publish_status(
+            "waiting_for_capture_event",
+            capture_wait_remaining_sec=round(
+                self._capture_wait_deadline_sec - now_sec,
+                3,
+            ),
+            capture_wait_target=self._capture_wait_target_pose,
+        )
+        return True
+
+    def _discard_capture_target_after_timeout(self, now_sec: float) -> None:
+        target = self._capture_wait_target_pose or self._target_pose
+        self._clear_capture_wait()
+        self._nav_state = "capture_wait_timeout_target_discarded"
+        self._cancel_active_goal("capture_wait_timeout")
+        self._publish_stop_cmd()
+        self._send_capture_arm(False, "capture_wait_timeout", force=True)
+        self._send_gripper(
+            GripperCommand.CLOSE,
+            "capture_wait_timeout",
+            force=True,
+        )
+        self._gate_open_latched = False
+
+        removed = (
+            self._remove_tracked_targets_near(
+                target,
+                self._capture_remove_radius_m(),
+            )
+            if target is not None
+            else 0
+        )
+
+        self._target_lock.clear()
+        self._reset_target_search_runtime()
+        self._last_sent_goal = None
+        self._target_pose = None
+        self._target_stamp_sec = None
+        self._selected_target_distance_m = None
+        self._no_target_since_sec = now_sec
         if target is None:
-            return 0
-        remove_radius = max(
+            self.get_logger().warn(
+                "capture wait timed out; target state cleared without a target pose"
+            )
+        else:
+            self.get_logger().warn(
+                "capture wait timed out; discarded target at "
+                f"({target.x:.3f}, {target.y:.3f})"
+            )
+        self._publish_status(
+            "capture_wait_timeout_target_discarded",
+            discarded_target=target,
+            removed_tracked_targets=removed,
+        )
+
+    def _clear_capture_wait(self) -> None:
+        self._capture_wait_deadline_sec = 0.0
+        self._capture_wait_target_pose = None
+
+    def _capture_remove_radius_m(self) -> float:
+        return max(
             0.0,
             float(self.get_parameter("capture_remove_radius_m").value),
         )
+
+    def _remove_tracked_targets_near(self, target: Pose2D, radius: float) -> int:
         before = len(self._tracked_targets)
         self._tracked_targets = [
             tracked
             for tracked in self._tracked_targets
             if math.hypot(tracked.pose.x - target.x, tracked.pose.y - target.y)
-            > remove_radius
+            > radius
         ]
         return before - len(self._tracked_targets)
+
+    def _remove_selected_target(self) -> int:
+        target = self._target_pose
+        if target is None:
+            return 0
+        return self._remove_tracked_targets_near(
+            target,
+            self._capture_remove_radius_m(),
+        )
 
     def _publish_goal_pose(self, goal: Pose2D) -> None:
         self._goal_pub.publish(self._make_pose_stamped(goal))

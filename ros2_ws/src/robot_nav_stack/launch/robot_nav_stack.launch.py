@@ -267,6 +267,7 @@ def generate_launch_description():
                 default_value="30.0",
             ),
             DeclareLaunchArgument("bbox_goal_capture_stop_hold_sec", default_value="0.8"),
+            DeclareLaunchArgument("bbox_goal_capture_wait_timeout_sec", default_value="10.0"),
             DeclareLaunchArgument("bbox_goal_capture_remove_radius_m", default_value="0.40"),
             DeclareLaunchArgument("bbox_goal_target_selection_mode", default_value="nearest"),
             DeclareLaunchArgument(
@@ -776,6 +777,9 @@ def generate_launch_description():
                         ),
                         "capture_stop_hold_sec": _float_arg(
                             "bbox_goal_capture_stop_hold_sec"
+                        ),
+                        "capture_wait_timeout_sec": _float_arg(
+                            "bbox_goal_capture_wait_timeout_sec"
                         ),
                         "capture_remove_radius_m": _float_arg(
                             "bbox_goal_capture_remove_radius_m"
