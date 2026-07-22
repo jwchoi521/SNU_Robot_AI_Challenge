@@ -94,7 +94,9 @@ private:
         class_agnostic_nms_);
 
       publishDetections(*image_msg, detections);
-      publishAnnotated(*image_msg, cv_ptr->image, detections);
+      if (annotated_pub_->get_subscription_count() > 0U) {
+        publishAnnotated(*image_msg, cv_ptr->image, detections);
+      }
     } catch (const std::exception & error) {
       RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 2000, "YOLO inference failed: %s", error.what());
     }

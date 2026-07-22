@@ -101,14 +101,20 @@ private:
 
     msg::FruitClassificationArray output_msg;
     output_msg.header = detections_msg->header;
-    cv::Mat annotated = cv_ptr->image.clone();
+    const bool publish_annotated = annotated_pub_->get_subscription_count() > 0U;
+    cv::Mat annotated;
+    if (publish_annotated) {
+      annotated = cv_ptr->image.clone();
+    }
 
     for (const auto & detection_msg : detections_msg->detections) {
       if (
         detection_msg.class_id != cube_class_id_ ||
         detection_msg.confidence < static_cast<float>(min_cube_confidence_))
       {
-        drawShapeDetection(annotated, detection_msg);
+        if (publish_annotated) {
+          drawShapeDetection(annotated, detection_msg);
+        }
         continue;
       }
 
@@ -130,7 +136,9 @@ private:
         item.class_names = class_names_;
         item.probabilities = prediction.probabilities;
         output_msg.classifications.push_back(item);
-        drawClassification(annotated, detection_msg, prediction);
+        if (publish_annotated) {
+          drawClassification(annotated, detection_msg, prediction);
+        }
       } catch (const std::exception & error) {
         RCLCPP_ERROR_THROTTLE(
           get_logger(),
@@ -142,8 +150,10 @@ private:
     }
 
     classifications_pub_->publish(output_msg);
-    auto annotated_msg = cv_bridge::CvImage(image_msg->header, "bgr8", annotated).toImageMsg();
-    annotated_pub_->publish(*annotated_msg);
+    if (publish_annotated) {
+      auto annotated_msg = cv_bridge::CvImage(image_msg->header, "bgr8", annotated).toImageMsg();
+      annotated_pub_->publish(*annotated_msg);
+    }
   }
 
   Prediction classifyCrop(const cv::Mat & crop)
