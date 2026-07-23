@@ -1786,13 +1786,20 @@ class BboxGoalNavigatorNode(Node):
         if not points:
             return None
         if self._target_search_index is None:
-            self._target_search_index = max(
-                range(len(points)),
-                key=lambda index: math.hypot(
-                    points[index][0] - robot.x,
-                    points[index][1] - robot.y,
-                ),
-            )
+            center_x = float(self.get_parameter("target_search_center_x_m").value)
+            center_y = float(self.get_parameter("target_search_center_y_m").value)
+            dx = robot.x - center_x
+            dy = robot.y - center_y
+
+            # 1사분면 -> 4사분면(Index 1), 4사분면 -> 3사분면(Index 2), 3사분면 -> 2사분면(Index 3), 2사분면 -> 1사분면(Index 0)
+            if dx >= 0 and dy >= 0:
+                self._target_search_index = 1
+            elif dx >= 0 and dy < 0:
+                self._target_search_index = 2
+            elif dx < 0 and dy < 0:
+                self._target_search_index = 3
+            else:
+                self._target_search_index = 0
 
         index = self._target_search_index % len(points)
         x, y = points[index]
@@ -1875,10 +1882,10 @@ class BboxGoalNavigatorNode(Node):
         center_x = float(self.get_parameter("target_search_center_x_m").value)
         center_y = float(self.get_parameter("target_search_center_y_m").value)
         offsets = [
-            (radius, radius),
-            (-radius, radius),
-            (-radius, -radius),
-            (radius, -radius),
+            (radius, radius),    # Index 0: 1사분면 (+X, +Y)
+            (radius, -radius),   # Index 1: 4사분면 (+X, -Y)
+            (-radius, -radius),  # Index 2: 3사분면 (-X, -Y)
+            (-radius, radius),   # Index 3: 2사분면 (-X, +Y)
         ]
         return [(center_x + dx, center_y + dy) for dx, dy in offsets]
 
