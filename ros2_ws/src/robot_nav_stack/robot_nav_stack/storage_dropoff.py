@@ -67,6 +67,17 @@ def should_force_storage_dropoff(
     return now_sec - mission_started_sec >= timeout_sec
 
 
+def storage_forward_target_duration(
+    backup_duration_sec: float,
+    extra_time_sec: float,
+) -> float:
+    """Return the forward command duration relative to the completed backup."""
+    return max(0.0, float(backup_duration_sec)) + max(
+        0.0,
+        float(extra_time_sec),
+    )
+
+
 def make_storage_plan(
     bounds: StorageBounds,
     entry_direction: StorageEntryDirection,

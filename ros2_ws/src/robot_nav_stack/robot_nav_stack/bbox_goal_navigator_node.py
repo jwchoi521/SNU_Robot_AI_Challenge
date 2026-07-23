@@ -23,6 +23,7 @@ from .storage_dropoff import (
     StoragePlan,
     choose_storage_plan,
     should_force_storage_dropoff,
+    storage_forward_target_duration,
 )
 from .target_lock import (
     TargetLock,
@@ -153,6 +154,7 @@ class BboxGoalNavigatorNode(Node):
         self.declare_parameter("storage_backup_distance_m", 0.50)
         self.declare_parameter("storage_backup_speed_mps", 0.20)
         self.declare_parameter("storage_backup_time_allowance_sec", 4.0)
+        self.declare_parameter("storage_forward_extra_time_sec", 0.5)
         self.declare_parameter("storage_gate_close_wait_after_backup_sec", 0.5)
 
         self._map_frame = str(self.get_parameter("map_frame").value)
@@ -241,6 +243,7 @@ class BboxGoalNavigatorNode(Node):
         self._storage_cycle_id = 0
         self._storage_gate_close_sent_at_sec = 0.0
         self._storage_reverse_started_at_sec = 0.0
+        self._storage_first_reverse_duration_sec = 0.0
         self._storage_reverse_start_pose: Pose2D | None = None
         self._storage_forward_started_at_sec = 0.0
         self._storage_forward_start_pose: Pose2D | None = None
@@ -587,6 +590,7 @@ class BboxGoalNavigatorNode(Node):
         self._storage_gate_opened_at_sec = 0.0
         self._storage_gate_close_sent_at_sec = 0.0
         self._storage_reverse_started_at_sec = 0.0
+        self._storage_first_reverse_duration_sec = 0.0
         self._storage_reverse_start_pose = None
         self._storage_forward_started_at_sec = 0.0
         self._storage_forward_start_pose = None
@@ -614,6 +618,7 @@ class BboxGoalNavigatorNode(Node):
         self._storage_gate_opened_at_sec = 0.0
         self._storage_gate_close_sent_at_sec = 0.0
         self._storage_reverse_started_at_sec = 0.0
+        self._storage_first_reverse_duration_sec = 0.0
         self._storage_reverse_start_pose = None
         self._storage_forward_started_at_sec = 0.0
         self._storage_forward_start_pose = None
@@ -919,6 +924,7 @@ class BboxGoalNavigatorNode(Node):
         self._send_capture_arm(False, f"storage_failure:{reason}")
         self._send_gripper(GripperCommand.CLOSE, f"storage_failure:{reason}")
         self._storage_reverse_started_at_sec = 0.0
+        self._storage_first_reverse_duration_sec = 0.0
         self._storage_reverse_start_pose = None
         self._storage_forward_started_at_sec = 0.0
         self._storage_forward_start_pose = None
@@ -1043,10 +1049,16 @@ class BboxGoalNavigatorNode(Node):
         backup_pass: int,
         distance_traveled: float,
     ) -> None:
+        reverse_duration = (
+            max(0.0, self._now_sec() - self._storage_reverse_started_at_sec)
+            if self._storage_reverse_start_pose is not None
+            else 0.0
+        )
         self._publish_stop_cmd()
         self._storage_reverse_started_at_sec = 0.0
         self._storage_reverse_start_pose = None
         if backup_pass == 1:
+            self._storage_first_reverse_duration_sec = reverse_duration
             self._send_capture_arm(False, "storage_first_backup_complete")
             self._send_gripper(
                 GripperCommand.CLOSE,
@@ -1061,6 +1073,7 @@ class BboxGoalNavigatorNode(Node):
                     float(self.get_parameter("storage_backup_distance_m").value)
                 ),
                 backup_distance_traveled_m=distance_traveled,
+                backup_elapsed_sec=reverse_duration,
                 collision_checks_disabled=True,
                 control_mode="direct_cmd_vel",
             )
@@ -1085,14 +1098,22 @@ class BboxGoalNavigatorNode(Node):
         self._resume_collection_after_storage_complete()
 
     def _start_storage_forward_motion(self, robot_pose: Pose2D) -> None:
-        target_distance = abs(
+        backup_distance = abs(
             float(self.get_parameter("storage_backup_distance_m").value)
         )
         speed = abs(
             float(self.get_parameter("storage_backup_speed_mps").value)
         )
-        if target_distance <= 0.0:
-            self._finish_storage_forward_motion(0.0)
+        extra_time = max(
+            0.0,
+            float(self.get_parameter("storage_forward_extra_time_sec").value),
+        )
+        target_duration = storage_forward_target_duration(
+            self._storage_first_reverse_duration_sec,
+            extra_time,
+        )
+        if backup_distance <= 0.0 or target_duration <= 0.0:
+            self._finish_storage_forward_motion(0.0, 0.0)
             return
         if speed <= 0.0:
             self._fail_storage_dropoff("drive_forward_invalid_speed")
@@ -1104,16 +1125,10 @@ class BboxGoalNavigatorNode(Node):
         self._publish_storage_forward_cmd(speed)
         self._publish_status(
             "storage_drive_forward_started",
-            drive_distance_m=target_distance,
             drive_speed_mps=speed,
-            drive_time_allowance_sec=max(
-                0.0,
-                float(
-                    self.get_parameter(
-                        "storage_backup_time_allowance_sec"
-                    ).value
-                ),
-            ),
+            preceding_backup_duration_sec=self._storage_first_reverse_duration_sec,
+            drive_extra_time_sec=extra_time,
+            drive_duration_sec=target_duration,
             collision_checks_disabled=True,
             control_mode="direct_cmd_vel",
         )
@@ -1124,19 +1139,16 @@ class BboxGoalNavigatorNode(Node):
             self._fail_storage_dropoff("drive_forward_start_pose_missing")
             return
 
-        target_distance = abs(
-            float(self.get_parameter("storage_backup_distance_m").value)
-        )
         speed = abs(
             float(self.get_parameter("storage_backup_speed_mps").value)
         )
-        allowance = max(
+        extra_time = max(
             0.0,
-            float(
-                self.get_parameter(
-                    "storage_backup_time_allowance_sec"
-                ).value
-            ),
+            float(self.get_parameter("storage_forward_extra_time_sec").value),
+        )
+        target_duration = storage_forward_target_duration(
+            self._storage_first_reverse_duration_sec,
+            extra_time,
         )
         elapsed = max(
             0.0,
@@ -1147,11 +1159,8 @@ class BboxGoalNavigatorNode(Node):
             robot_pose.y - start_pose.y,
         )
 
-        if distance_traveled >= target_distance:
-            self._finish_storage_forward_motion(distance_traveled)
-            return
-        if allowance > 0.0 and elapsed >= allowance:
-            self._fail_storage_dropoff("drive_forward_timeout")
+        if elapsed >= target_duration:
+            self._finish_storage_forward_motion(distance_traveled, elapsed)
             return
         if speed <= 0.0:
             self._fail_storage_dropoff("drive_forward_invalid_speed")
@@ -1160,15 +1169,13 @@ class BboxGoalNavigatorNode(Node):
         self._publish_storage_forward_cmd(speed)
         self._publish_status(
             "storage_driving_forward",
-            drive_distance_m=target_distance,
             drive_distance_traveled_m=distance_traveled,
-            drive_distance_remaining_m=max(
-                0.0,
-                target_distance - distance_traveled,
-            ),
             drive_speed_mps=speed,
             drive_elapsed_sec=elapsed,
-            drive_time_allowance_sec=allowance,
+            drive_duration_remaining_sec=max(0.0, target_duration - elapsed),
+            preceding_backup_duration_sec=self._storage_first_reverse_duration_sec,
+            drive_extra_time_sec=extra_time,
+            drive_duration_sec=target_duration,
             collision_checks_disabled=True,
             control_mode="direct_cmd_vel",
         )
@@ -1183,6 +1190,7 @@ class BboxGoalNavigatorNode(Node):
     def _finish_storage_forward_motion(
         self,
         distance_traveled: float,
+        elapsed_sec: float,
     ) -> None:
         self._publish_stop_cmd()
         self._storage_forward_started_at_sec = 0.0
@@ -1190,9 +1198,11 @@ class BboxGoalNavigatorNode(Node):
         self._set_storage_phase(StoragePhase.BACKING_UP_SECOND)
         self._publish_status(
             "storage_drive_forward_complete",
-            drive_distance_m=abs(
-                float(self.get_parameter("storage_backup_distance_m").value)
+            drive_duration_sec=storage_forward_target_duration(
+                self._storage_first_reverse_duration_sec,
+                float(self.get_parameter("storage_forward_extra_time_sec").value),
             ),
+            drive_elapsed_sec=elapsed_sec,
             drive_distance_traveled_m=distance_traveled,
             collision_checks_disabled=False,
             control_mode="direct_cmd_vel",
@@ -1207,6 +1217,7 @@ class BboxGoalNavigatorNode(Node):
         self._storage_gate_opened_at_sec = 0.0
         self._storage_gate_close_sent_at_sec = 0.0
         self._storage_reverse_started_at_sec = 0.0
+        self._storage_first_reverse_duration_sec = 0.0
         self._storage_reverse_start_pose = None
         self._storage_forward_started_at_sec = 0.0
         self._storage_forward_start_pose = None

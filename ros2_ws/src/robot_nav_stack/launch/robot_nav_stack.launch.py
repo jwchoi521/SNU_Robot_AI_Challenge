@@ -23,6 +23,14 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("scan_topic", default_value="/scan"),
+            DeclareLaunchArgument(
+                "four_wall_localizer_package",
+                default_value="robot_nav_stack_cpp",
+            ),
+            DeclareLaunchArgument(
+                "object_localizer_package",
+                default_value="robot_nav_stack_cpp",
+            ),
             DeclareLaunchArgument("odom_topic", default_value="/odometry/filtered"),
             DeclareLaunchArgument("imu_topic", default_value="/imu"),
             DeclareLaunchArgument("image_topic", default_value="/camera/image_raw"),
@@ -353,6 +361,10 @@ def generate_launch_description():
                 "bbox_goal_storage_backup_time_allowance_sec",
                 default_value="4.0",
             ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_forward_extra_time_sec",
+                default_value="0.5",
+            ),
             DeclareLaunchArgument("enable_mapping_debug", default_value="true"),
             DeclareLaunchArgument("mapping_debug_period_sec", default_value="1.0"),
             DeclareLaunchArgument(
@@ -374,7 +386,7 @@ def generate_launch_description():
                 ),
             ),
             Node(
-                package="robot_nav_stack",
+                package=LaunchConfiguration("four_wall_localizer_package"),
                 executable="four_wall_localizer_node",
                 name="four_wall_localizer_node",
                 parameters=[
@@ -451,7 +463,7 @@ def generate_launch_description():
                 ],
             ),
             Node(
-                package="robot_nav_stack",
+                package=LaunchConfiguration("object_localizer_package"),
                 executable="object_localizer_node",
                 name="object_localizer_node",
                 condition=UnlessCondition(LaunchConfiguration("enable_object_track_fusion")),
@@ -502,7 +514,7 @@ def generate_launch_description():
                 ],
             ),
             Node(
-                package="robot_nav_stack",
+                package=LaunchConfiguration("object_localizer_package"),
                 executable="object_localizer_node",
                 name="object_localizer_node",
                 condition=IfCondition(LaunchConfiguration("enable_object_track_fusion")),
@@ -864,6 +876,9 @@ def generate_launch_description():
                         ),
                         "storage_backup_time_allowance_sec": _float_arg(
                             "bbox_goal_storage_backup_time_allowance_sec"
+                        ),
+                        "storage_forward_extra_time_sec": _float_arg(
+                            "bbox_goal_storage_forward_extra_time_sec"
                         ),
                     }
                 ],

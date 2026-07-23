@@ -9,6 +9,7 @@ from robot_nav_stack.storage_dropoff import (
     heading_matches_entry,
     make_storage_plan,
     should_force_storage_dropoff,
+    storage_forward_target_duration,
 )
 
 
@@ -142,3 +143,8 @@ def test_mission_deadline_forces_one_shot_dropoff_with_cargo() -> None:
         captured_object_count=1,
         already_triggered=True,
     )
+
+
+def test_storage_forward_duration_adds_configured_drive_time() -> None:
+    assert storage_forward_target_duration(2.5, 0.5) == 3.0
+    assert storage_forward_target_duration(2.5, -1.0) == 2.5

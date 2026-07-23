@@ -12,7 +12,13 @@ setup(
         ("share/" + package_name, ["package.xml"]),
         ("share/" + package_name + "/config", ["config/nav2_smac_reeds_shepp.yaml"]),
         ("share/" + package_name + "/launch", ["launch/robot_nav_stack.launch.py"]),
-        ("share/" + package_name + "/models", ["models/bbox_pose_anchor033.joblib"]),
+        (
+            "share/" + package_name + "/models",
+            [
+                "models/bbox_pose_anchor033.joblib",
+                "models/bbox_pose_anchor033.cppbin",
+            ],
+        ),
     ],
     install_requires=[
         "setuptools",

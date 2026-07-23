@@ -145,6 +145,12 @@ def generate_launch_description():
     }
 
     nav_arguments = {
+        "four_wall_localizer_package": LaunchConfiguration(
+            "four_wall_localizer_package"
+        ),
+        "object_localizer_package": LaunchConfiguration(
+            "object_localizer_package"
+        ),
         "scan_topic": LaunchConfiguration("scan_topic"),
         "odom_topic": LaunchConfiguration("odom_topic"),
         "imu_topic": LaunchConfiguration("imu_topic"),
@@ -491,6 +497,9 @@ def generate_launch_description():
         ),
         "bbox_goal_storage_backup_time_allowance_sec": LaunchConfiguration(
             "bbox_goal_storage_backup_time_allowance_sec"
+        ),
+        "bbox_goal_storage_forward_extra_time_sec": LaunchConfiguration(
+            "bbox_goal_storage_forward_extra_time_sec"
         ),
         "enable_mapping_debug": LaunchConfiguration("enable_mapping_debug"),
         "mapping_debug_period_sec": LaunchConfiguration("mapping_debug_period_sec"),
@@ -904,6 +913,10 @@ def generate_launch_description():
                 "bbox_goal_storage_backup_time_allowance_sec",
                 default_value="4.0",
             ),
+            DeclareLaunchArgument(
+                "bbox_goal_storage_forward_extra_time_sec",
+                default_value="0.5",
+            ),
             DeclareLaunchArgument("enable_nav2", default_value="false"),
             DeclareLaunchArgument("enable_slam", default_value="false"),
             DeclareLaunchArgument("enable_base_odometry", default_value="false"),
@@ -1008,6 +1021,14 @@ def generate_launch_description():
             DeclareLaunchArgument("lidar_inverted", default_value="false"),
             DeclareLaunchArgument("lidar_angle_compensate", default_value="true"),
             DeclareLaunchArgument("scan_topic", default_value="/scan"),
+            DeclareLaunchArgument(
+                "four_wall_localizer_package",
+                default_value="robot_nav_stack_cpp",
+            ),
+            DeclareLaunchArgument(
+                "object_localizer_package",
+                default_value="robot_nav_stack_cpp",
+            ),
             DeclareLaunchArgument("odom_topic", default_value="/odometry/filtered"),
             DeclareLaunchArgument("imu_topic", default_value="/imu"),
             DeclareLaunchArgument("yolo_detections_topic", default_value="/shape_yolo/detections"),
