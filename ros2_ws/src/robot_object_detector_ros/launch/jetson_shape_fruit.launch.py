@@ -155,7 +155,7 @@ def generate_launch_description():
                         "input_width": ParameterValue(classifier_input_size, value_type=int),
                         "input_height": ParameterValue(classifier_input_size, value_type=int),
                         "cube_class_id": 0,
-                        "threshold": 0.7,
+                        "threshold": 0.2,
                         "class_names": [
                             "apple",
                             "orange",
