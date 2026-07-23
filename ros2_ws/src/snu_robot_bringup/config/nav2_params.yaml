@@ -39,7 +39,7 @@ controller_server:
       min_lookahead_dist: 0.15
       max_lookahead_dist: 0.55
       lookahead_time: 1.5
-      rotate_to_heading_angular_vel: 1.00
+      rotate_to_heading_angular_vel: 1.50
       transform_tolerance: 0.2
       use_velocity_scaled_lookahead_dist: false
       min_approach_linear_velocity: 0.05
@@ -52,7 +52,7 @@ controller_server:
       regulated_linear_scaling_min_speed: 0.05
       use_rotate_to_heading: true
       rotate_to_heading_min_angle: 0.25
-      max_angular_accel: 15.0
+      max_angular_accel: 25.0
       max_robot_pose_search_dist: 10.0
 
 planner_server:
