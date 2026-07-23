@@ -5,6 +5,52 @@ import json
 from pathlib import Path
 
 
+def _strip_ultralytics_engine_metadata(engine_path: Path) -> Path:
+    payload = engine_path.read_bytes()
+    if len(payload) < 4:
+        raise ValueError(f"engine is too small to contain metadata: {engine_path}")
+
+    metadata_length = int.from_bytes(
+        payload[:4],
+        byteorder="little",
+        signed=True,
+    )
+    metadata_end = 4 + metadata_length
+    if metadata_length <= 0 or metadata_end >= len(payload):
+        raise ValueError(
+            f"engine does not contain an Ultralytics metadata prefix: {engine_path}"
+        )
+
+    try:
+        metadata = json.loads(payload[4:metadata_end].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"engine does not contain valid Ultralytics metadata: {engine_path}"
+        ) from exc
+    if not isinstance(metadata, dict) or not {"names", "task"} <= metadata.keys():
+        raise ValueError(
+            f"engine metadata is not an Ultralytics YOLO payload: {engine_path}"
+        )
+
+    engine_payload = payload[metadata_end:]
+    metadata_path = engine_path.with_name(f"{engine_path.name}.metadata.json")
+    temporary_path = engine_path.with_name(f"{engine_path.name}.tmp")
+    try:
+        temporary_path.write_bytes(engine_payload)
+        metadata_path.write_text(
+            json.dumps(metadata, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary_path.replace(engine_path)
+    finally:
+        if temporary_path.exists():
+            temporary_path.unlink()
+
+    print(f"Raw TensorRT engine saved as {engine_path}")
+    print(f"Ultralytics metadata saved as {metadata_path}")
+    return metadata_path
+
+
 def _load_torch_checkpoint(path: Path) -> dict[str, object] | None:
     import torch
 
@@ -170,6 +216,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dynamic", action="store_true")
     parser.add_argument("--simplify", action="store_true")
     parser.add_argument("--workspace", type=float, default=None)
+    parser.add_argument(
+        "--strip-metadata",
+        action="store_true",
+        help=(
+            "Remove the Ultralytics metadata prefix from a YOLO TensorRT engine "
+            "and save that metadata in a sidecar .engine.metadata.json file."
+        ),
+    )
     return parser
 
 
@@ -202,6 +256,8 @@ def main() -> int:
         simplify=args.simplify,
         workspace=args.workspace,
     )
+    if args.strip_metadata:
+        _strip_ultralytics_engine_metadata(Path(exported_path))
     print(exported_path)
     return 0
 
