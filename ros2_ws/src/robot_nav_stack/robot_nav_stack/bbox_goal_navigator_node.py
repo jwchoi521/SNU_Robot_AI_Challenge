@@ -1813,7 +1813,7 @@ class BboxGoalNavigatorNode(Node):
             1.0,
             float(self.get_parameter("target_search_initial_spin_step_deg").value),
         )
-        return max(1, int(math.ceil(360.0 / step_deg)))
+        return max(1, int(math.ceil(360.0 / step_deg))-1)
 
     def _begin_target_search_patrol_turn(self, goal: Pose2D) -> None:
         self._target_search_phase = "patrol_turn"

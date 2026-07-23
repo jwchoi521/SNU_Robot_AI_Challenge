@@ -791,7 +791,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "bbox_goal_target_search_initial_spin_step_deg",
-                default_value="60.0",
+                default_value="90.0",
             ),
             DeclareLaunchArgument(
                 "bbox_goal_target_search_initial_spin_internal_control",
