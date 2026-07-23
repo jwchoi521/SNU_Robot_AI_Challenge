@@ -186,8 +186,20 @@ double stamp_to_seconds(const builtin_interfaces::msg::Time & stamp)
 
 builtin_interfaces::msg::Time seconds_to_stamp(double seconds)
 {
-  return rclcpp::Time(
-    static_cast<std::int64_t>(std::llround(seconds * 1.0e9)), RCL_ROS_TIME).to_msg();
+  constexpr std::int64_t nanoseconds_per_second = 1000000000LL;
+  const std::int64_t total_nanoseconds =
+    static_cast<std::int64_t>(std::llround(seconds * 1.0e9));
+  std::int64_t whole_seconds = total_nanoseconds / nanoseconds_per_second;
+  std::int64_t remaining_nanoseconds = total_nanoseconds % nanoseconds_per_second;
+  if (remaining_nanoseconds < 0) {
+    --whole_seconds;
+    remaining_nanoseconds += nanoseconds_per_second;
+  }
+
+  builtin_interfaces::msg::Time stamp;
+  stamp.sec = static_cast<std::int32_t>(whole_seconds);
+  stamp.nanosec = static_cast<std::uint32_t>(remaining_nanoseconds);
+  return stamp;
 }
 
 }  // namespace
@@ -703,7 +715,7 @@ private:
     return lowercase(error).find("future") != std::string::npos;
   }
 
-  double now_sec() const
+  double now_sec()
   {
     return static_cast<double>(get_clock()->now().nanoseconds()) * 1.0e-9;
   }

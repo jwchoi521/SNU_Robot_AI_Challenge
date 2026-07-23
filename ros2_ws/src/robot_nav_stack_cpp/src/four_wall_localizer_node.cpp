@@ -355,8 +355,20 @@ private:
 
   static builtin_interfaces::msg::Time seconds_to_stamp(double seconds)
   {
-    return rclcpp::Time(
-      static_cast<int64_t>(std::llround(seconds * 1.0e9)), RCL_ROS_TIME).to_msg();
+    constexpr int64_t nanoseconds_per_second = 1000000000LL;
+    const int64_t total_nanoseconds =
+      static_cast<int64_t>(std::llround(seconds * 1.0e9));
+    int64_t whole_seconds = total_nanoseconds / nanoseconds_per_second;
+    int64_t remaining_nanoseconds = total_nanoseconds % nanoseconds_per_second;
+    if (remaining_nanoseconds < 0) {
+      --whole_seconds;
+      remaining_nanoseconds += nanoseconds_per_second;
+    }
+
+    builtin_interfaces::msg::Time stamp;
+    stamp.sec = static_cast<int32_t>(whole_seconds);
+    stamp.nanosec = static_cast<uint32_t>(remaining_nanoseconds);
+    return stamp;
   }
 
   void on_odom(const nav_msgs::msg::Odometry::SharedPtr msg)
