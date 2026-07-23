@@ -175,6 +175,9 @@ def generate_launch_description():
         "target_fruit": LaunchConfiguration("target_fruit"),
         "no_fruit_class": LaunchConfiguration("no_fruit_class"),
         "target_min_confidence": LaunchConfiguration("target_min_confidence"),
+        "object_role_confirm_frames": LaunchConfiguration(
+            "object_role_confirm_frames"
+        ),
         "map_frame": LaunchConfiguration("map_frame"),
         "odom_frame": LaunchConfiguration("odom_frame"),
         "base_frame": LaunchConfiguration("base_frame"),
@@ -1056,6 +1059,7 @@ def generate_launch_description():
             DeclareLaunchArgument("target_fruit", default_value=""),
             DeclareLaunchArgument("no_fruit_class", default_value="none"),
             DeclareLaunchArgument("target_min_confidence", default_value="0.0"),
+            DeclareLaunchArgument("object_role_confirm_frames", default_value="2"),
             DeclareLaunchArgument("map_frame", default_value="map"),
             DeclareLaunchArgument("odom_frame", default_value="odom"),
             DeclareLaunchArgument("base_frame", default_value="base_link"),

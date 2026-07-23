@@ -34,6 +34,17 @@ class TrackedMapObject:
     seen_count: int = 1
 
 
+@dataclass
+class RoleTrack:
+    pose: Pose2D
+    first_seen_sec: float
+    last_seen_sec: float
+    last_stamp: float = -1.0
+    confirmed_role: str = "unconfirmed"
+    pending_role: str = ""
+    pending_role_count: int = 0
+
+
 class ObjectLocalizerNode(Node):
     """Convert camera detections into map-frame object poses.
 
@@ -68,6 +79,7 @@ class ObjectLocalizerNode(Node):
         self.declare_parameter("object_association_radius_m", 0.35)
         self.declare_parameter("object_update_alpha", 0.4)
         self.declare_parameter("max_tracked_objects", 20)
+        self.declare_parameter("object_role_confirm_frames", 2)
         self.declare_parameter(
             "target_lock_status_topic",
             "/bbox_goal_navigator/status",
@@ -101,6 +113,7 @@ class ObjectLocalizerNode(Node):
         self.pending_detections: list[PendingLocalization] = []
         self._warned_pending_tf_wait = False
         self.tracked_objects: list[TrackedMapObject] = []
+        self.role_tracks: list[RoleTrack] = []
         self.locked_target = LockedTargetState()
         self._warned_target_lock_status = False
         self._logged_locked_target_override = False
@@ -196,6 +209,7 @@ class ObjectLocalizerNode(Node):
         if self._in_storage_zone(object_map):
             return
 
+        protected_locked_target = False
         lock_radius = max(
             0.0,
             float(self.get_parameter("locked_target_radius_m").value),
@@ -207,6 +221,7 @@ class ObjectLocalizerNode(Node):
             object_map = self.locked_target.pose
             raw_object_map = object_map
             role = "target"
+            protected_locked_target = True
             if not self._logged_locked_target_override:
                 self.get_logger().info(
                     "holding locked target classification and map pose against "
@@ -214,11 +229,14 @@ class ObjectLocalizerNode(Node):
                 )
                 self._logged_locked_target_override = True
 
+        if not protected_locked_target:
+            role = self._confirm_object_role(role, raw_object_map, detection.stamp)
+
         # Obstacle association/smoothing happens once in the semantic cloud node.
         object_map = (
-            raw_object_map
-            if role == "obstacle"
-            else self._stabilize_object_pose(detection, object_map)
+            self._stabilize_object_pose(detection, object_map)
+            if role == "target"
+            else raw_object_map
         )
         out = self._make_pose_msg(object_map, detection.stamp)
         self.pub.publish(out)
@@ -324,6 +342,98 @@ class ObjectLocalizerNode(Node):
         best_track.seen_count += 1
         return best_track.pose
 
+    def _confirm_object_role(
+        self,
+        raw_role: str,
+        object_map: Pose2D,
+        stamp: float,
+    ) -> str:
+        if raw_role not in ("target", "obstacle"):
+            return raw_role
+        required_frames = max(
+            1,
+            int(self.get_parameter("object_role_confirm_frames").value),
+        )
+        if required_frames <= 1:
+            return raw_role
+
+        track = self._find_role_track(object_map)
+        now_sec = self._now_sec()
+        if track is None:
+            self.role_tracks.append(
+                RoleTrack(
+                    pose=object_map,
+                    first_seen_sec=now_sec,
+                    last_seen_sec=now_sec,
+                    last_stamp=stamp,
+                    pending_role=raw_role,
+                    pending_role_count=1,
+                )
+            )
+            self._trim_role_tracks()
+            return "unconfirmed"
+
+        self._update_role_track_pose(track, object_map, now_sec)
+        same_frame = abs(track.last_stamp - stamp) <= 1.0e-6
+        if not same_frame:
+            self._update_role_confirmation(track, raw_role, required_frames)
+            track.last_stamp = stamp
+        return track.confirmed_role
+
+    def _find_role_track(self, object_map: Pose2D) -> RoleTrack | None:
+        association_radius = max(
+            0.0,
+            float(self.get_parameter("object_association_radius_m").value),
+        )
+        best_track: RoleTrack | None = None
+        best_distance = association_radius
+        for track in self.role_tracks:
+            distance = self._distance_xy(track.pose, object_map)
+            if distance <= best_distance:
+                best_distance = distance
+                best_track = track
+        return best_track
+
+    def _update_role_track_pose(
+        self,
+        track: RoleTrack,
+        object_map: Pose2D,
+        now_sec: float,
+    ) -> None:
+        alpha = min(
+            1.0,
+            max(0.0, float(self.get_parameter("object_update_alpha").value)),
+        )
+        if alpha > 0.0:
+            track.pose = Pose2D(
+                x=(1.0 - alpha) * track.pose.x + alpha * object_map.x,
+                y=(1.0 - alpha) * track.pose.y + alpha * object_map.y,
+                theta=wrap_angle(
+                    track.pose.theta
+                    + alpha * wrap_angle(object_map.theta - track.pose.theta)
+                ),
+            )
+        track.last_seen_sec = now_sec
+
+    @staticmethod
+    def _update_role_confirmation(
+        track: RoleTrack,
+        raw_role: str,
+        required_frames: int,
+    ) -> None:
+        if track.confirmed_role == raw_role:
+            track.pending_role = raw_role
+            track.pending_role_count = required_frames
+            return
+        if track.pending_role == raw_role:
+            track.pending_role_count += 1
+        else:
+            track.pending_role = raw_role
+            track.pending_role_count = 1
+        if track.pending_role_count >= required_frames:
+            track.confirmed_role = raw_role
+            track.pending_role_count = required_frames
+
     # cube_any 안에서 fruit 종류가 다른 물체가 같은 track으로 섞이지 않게 한다.
     def _tracking_key(self, detection: Detection) -> str:
         fruit_kind = self._clean_name(detection.fruit_kind)
@@ -336,6 +446,13 @@ class ObjectLocalizerNode(Node):
             return
         self.tracked_objects.sort(key=lambda track: track.last_seen_sec, reverse=True)
         del self.tracked_objects[max_tracked:]
+
+    def _trim_role_tracks(self) -> None:
+        max_tracked = max(1, int(self.get_parameter("max_tracked_objects").value))
+        if len(self.role_tracks) <= max_tracked:
+            return
+        self.role_tracks.sort(key=lambda track: track.last_seen_sec, reverse=True)
+        del self.role_tracks[max_tracked:]
 
     @staticmethod
     def _distance_xy(a: Pose2D, b: Pose2D) -> float:

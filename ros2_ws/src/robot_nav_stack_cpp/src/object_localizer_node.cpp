@@ -77,6 +77,17 @@ struct TrackedMapObject
   int seen_count{1};
 };
 
+struct RoleTrack
+{
+  Pose2D pose;
+  double first_seen_sec{0.0};
+  double last_seen_sec{0.0};
+  double last_stamp{-1.0};
+  std::string confirmed_role{"unconfirmed"};
+  std::string pending_role;
+  int pending_role_count{0};
+};
+
 struct StorageBounds
 {
   double min_x{-2.0};
@@ -298,6 +309,7 @@ private:
     declare_parameter<double>("object_association_radius_m", 0.35);
     declare_parameter<double>("object_update_alpha", 0.4);
     declare_parameter<std::int64_t>("max_tracked_objects", 20);
+    declare_parameter<std::int64_t>("object_role_confirm_frames", 2);
     declare_parameter<std::string>("target_lock_status_topic", "/bbox_goal_navigator/status");
     declare_parameter<double>("locked_target_radius_m", 0.25);
     declare_parameter<bool>("ignore_storage_objects", true);
@@ -374,6 +386,7 @@ private:
     Pose2D raw_object_map = object_map;
     if (in_storage_zone(object_map)) {return;}
 
+    bool protected_locked_target = false;
     const double lock_radius = std::max(0.0, double_parameter("locked_target_radius_m"));
     if (locked_target_pose_ &&
       std::hypot(object_map.x - locked_target_pose_->x,
@@ -382,6 +395,7 @@ private:
       object_map = *locked_target_pose_;
       raw_object_map = object_map;
       role = "target";
+      protected_locked_target = true;
       if (!logged_locked_target_override_) {
         RCLCPP_INFO(
           get_logger(),
@@ -390,8 +404,12 @@ private:
       }
     }
 
-    object_map = role == "obstacle" ? raw_object_map :
-      stabilize_object_pose(detection, object_map);
+    if (!protected_locked_target) {
+      role = confirm_object_role(role, raw_object_map, detection.stamp);
+    }
+
+    object_map = role == "target" ? stabilize_object_pose(detection, object_map) :
+      raw_object_map;
     const auto output = make_pose_msg(object_map, detection.stamp);
     pose_pub_->publish(output);
     if (role == "target") {
@@ -519,6 +537,83 @@ private:
     return best_track->pose;
   }
 
+  std::string confirm_object_role(
+    const std::string & raw_role, const Pose2D & object_map, double stamp)
+  {
+    if (raw_role != "target" && raw_role != "obstacle") {return raw_role;}
+    const int required_frames = std::max(1, int_parameter("object_role_confirm_frames"));
+    if (required_frames <= 1) {return raw_role;}
+
+    RoleTrack * track = find_role_track(object_map);
+    const double now = now_sec();
+    if (track == nullptr) {
+      role_tracks_.push_back(RoleTrack{
+        object_map, now, now, stamp, "unconfirmed", raw_role, 1});
+      trim_role_tracks();
+      return "unconfirmed";
+    }
+
+    update_role_track_pose(*track, object_map, now);
+    const bool same_frame = std::fabs(track->last_stamp - stamp) <= 1e-6;
+    if (!same_frame) {
+      update_role_confirmation(*track, raw_role, required_frames);
+      track->last_stamp = stamp;
+    }
+    return track->confirmed_role;
+  }
+
+  RoleTrack * find_role_track(const Pose2D & object_map)
+  {
+    const double association_radius = std::max(
+      0.0, double_parameter("object_association_radius_m"));
+    RoleTrack * best_track = nullptr;
+    double best_distance = association_radius;
+    for (auto & track : role_tracks_) {
+      const double distance = std::hypot(
+        track.pose.x - object_map.x, track.pose.y - object_map.y);
+      if (distance <= best_distance) {
+        best_distance = distance;
+        best_track = &track;
+      }
+    }
+    return best_track;
+  }
+
+  void update_role_track_pose(
+    RoleTrack & track, const Pose2D & object_map, double now)
+  {
+    const double alpha = std::clamp(
+      double_parameter("object_update_alpha"), 0.0, 1.0);
+    if (alpha > 0.0) {
+      track.pose = Pose2D{
+        (1.0 - alpha) * track.pose.x + alpha * object_map.x,
+        (1.0 - alpha) * track.pose.y + alpha * object_map.y,
+        wrap_angle(track.pose.theta +
+        alpha * wrap_angle(object_map.theta - track.pose.theta))};
+    }
+    track.last_seen_sec = now;
+  }
+
+  void update_role_confirmation(
+    RoleTrack & track, const std::string & raw_role, int required_frames)
+  {
+    if (track.confirmed_role == raw_role) {
+      track.pending_role = raw_role;
+      track.pending_role_count = required_frames;
+      return;
+    }
+    if (track.pending_role == raw_role) {
+      ++track.pending_role_count;
+    } else {
+      track.pending_role = raw_role;
+      track.pending_role_count = 1;
+    }
+    if (track.pending_role_count >= required_frames) {
+      track.confirmed_role = raw_role;
+      track.pending_role_count = required_frames;
+    }
+  }
+
   std::string tracking_key(const Detection & detection) const
   {
     const std::string fruit_kind = clean_name(detection.fruit_kind);
@@ -536,6 +631,18 @@ private:
         return left.last_seen_sec > right.last_seen_sec;
       });
     tracked_objects_.resize(static_cast<std::size_t>(max_tracked));
+  }
+
+  void trim_role_tracks()
+  {
+    const int max_tracked = std::max(1, int_parameter("max_tracked_objects"));
+    if (role_tracks_.size() <= static_cast<std::size_t>(max_tracked)) {return;}
+    std::stable_sort(
+      role_tracks_.begin(), role_tracks_.end(),
+      [](const auto & left, const auto & right) {
+        return left.last_seen_sec > right.last_seen_sec;
+      });
+    role_tracks_.resize(static_cast<std::size_t>(max_tracked));
   }
 
   void retry_pending_detections()
@@ -740,6 +847,7 @@ private:
   std::deque<PendingLocalization> pending_detections_;
   bool warned_pending_tf_wait_{false};
   std::vector<TrackedMapObject> tracked_objects_;
+  std::vector<RoleTrack> role_tracks_;
   std::optional<Pose2D> locked_target_pose_;
   bool warned_target_lock_status_{false};
   bool logged_locked_target_override_{false};
