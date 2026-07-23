@@ -54,6 +54,7 @@ class ObjectLocalizerNode(Node):
         self.declare_parameter("target_shape", "")
         self.declare_parameter("target_fruit", "")
         self.declare_parameter("no_fruit_class", "none")
+        self.declare_parameter("target_min_confidence", 0.0)
         self.declare_parameter("target_frame", "map")
         self.declare_parameter("source_frame", "")
         self.declare_parameter("lidar_frame", "lidar")
@@ -130,6 +131,9 @@ class ObjectLocalizerNode(Node):
         self.target_shape = self._clean_name(str(self.get_parameter("target_shape").value))
         self.target_fruit = self._clean_name(str(self.get_parameter("target_fruit").value))
         self.no_fruit_class = self._clean_name(str(self.get_parameter("no_fruit_class").value))
+        self.target_min_confidence = max(
+            0.0, float(self.get_parameter("target_min_confidence").value)
+        )
         self.sub = self.create_subscription(String, detections_topic, self.on_detection_json, 10)
         self.pub = self.create_publisher(PoseStamped, object_pose_topic, 10)
         self.json_pub = (
@@ -429,6 +433,8 @@ class ObjectLocalizerNode(Node):
             target_shape=self.target_shape,
             target_fruit=self.target_fruit,
             no_fruit_class=self.no_fruit_class,
+            detection_confidence=detection.confidence,
+            target_min_confidence=self.target_min_confidence,
         )
 
     @staticmethod

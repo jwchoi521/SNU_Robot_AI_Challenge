@@ -242,6 +242,7 @@ public:
     target_shape_ = clean_name(string_parameter("target_shape"));
     target_fruit_ = clean_name(string_parameter("target_fruit"));
     no_fruit_class_ = clean_name(string_parameter("no_fruit_class"));
+    target_min_confidence_ = std::max(0.0, double_parameter("target_min_confidence"));
 
     detection_sub_ = create_subscription<std_msgs::msg::String>(
       detections_topic, 10,
@@ -283,6 +284,7 @@ private:
     declare_parameter<std::string>("target_shape", "");
     declare_parameter<std::string>("target_fruit", "");
     declare_parameter<std::string>("no_fruit_class", "none");
+    declare_parameter<double>("target_min_confidence", 0.0);
     declare_parameter<std::string>("target_frame", "map");
     declare_parameter<std::string>("source_frame", "");
     declare_parameter<std::string>("lidar_frame", "lidar");
@@ -637,7 +639,10 @@ private:
         fruit_kind == target_fruit_;
     }
     if (target_shape_.empty() && target_fruit_.empty()) {return "unfiltered";}
-    return shape_matches || fruit_matches ? "target" : "obstacle";
+    if ((shape_matches || fruit_matches) && detection.confidence >= target_min_confidence_) {
+      return "target";
+    }
+    return "obstacle";
   }
 
   Pose2D transform_source_to_map(const Pose2D & object_source, double stamp)
@@ -725,6 +730,7 @@ private:
   std::string target_shape_;
   std::string target_fruit_;
   std::string no_fruit_class_;
+  double target_min_confidence_{0.0};
   double tf_lookup_timeout_sec_{0.0};
   bool fallback_to_latest_tf_{false};
   double latest_tf_max_extrapolation_sec_{3.0};
