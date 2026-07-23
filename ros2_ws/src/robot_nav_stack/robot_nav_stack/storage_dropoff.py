@@ -107,8 +107,8 @@ def make_storage_plan(
         raise ValueError(f"unsupported storage entry direction: {entry_direction!r}")
 
     inside = Pose2D(
-        x=-1.7,
-        y=-1.7,
+        x=-1.75,
+        y=-1.75,
         theta=0.0,
     )
     return StoragePlan(entry_direction, approach, inside)
