@@ -653,7 +653,6 @@ class BboxGoalNavigatorNode(Node):
 
     def _start_storage_costmap_clear(self) -> None:
         costmap_clients = (
-            ("local", self._clear_local_costmap_client),
             ("global", self._clear_global_costmap_client),
         )
         unavailable = [
