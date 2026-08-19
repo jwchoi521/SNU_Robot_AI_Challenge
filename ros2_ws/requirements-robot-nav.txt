@@ -1,4 +1,6 @@
+# Python 3.10 / ROS Humble compatible pins.
 joblib==1.5.3
-numpy==2.5.0
-pandas==3.0.4
-scikit-learn==1.9.0
+numpy==2.2.6
+scipy==1.15.3
+pandas==2.3.3
+scikit-learn==1.7.2

@@ -10,6 +10,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <exception>
 #include <functional>
 #include <memory>
@@ -35,9 +36,12 @@ public:
     class_names_ = declare_parameter<std::vector<std::string>>(
       "class_names",
       {"cube_any", "octahedron", "dodecahedron", "icosahedron"});
-    conf_threshold_ = declare_parameter<double>("conf_threshold", 0.25);
+    conf_threshold_ = declare_parameter<double>("conf_threshold", 0.5);
     nms_iou_threshold_ = declare_parameter<double>("nms_iou_threshold", 0.7);
-    class_agnostic_nms_ = declare_parameter<bool>("class_agnostic_nms", false);
+    class_agnostic_nms_ = declare_parameter<bool>("class_agnostic_nms", true);
+    inference_fps_ = declare_parameter<double>("inference_fps", 0.0);
+    min_inference_period_sec_ =
+      std::isfinite(inference_fps_) && inference_fps_ > 0.0 ? 1.0 / inference_fps_ : 0.0;
 
     engine_ = std::make_unique<TensorRtEngine>(engine_path);
     engine_->setInputShape(0, {1, 3, input_height_, input_width_});
@@ -51,14 +55,19 @@ public:
 
     RCLCPP_INFO(
       get_logger(),
-      "loaded YOLO TensorRT engine %s; subscribing %s",
+      "loaded YOLO TensorRT engine %s; subscribing %s; inference_fps=%.2f",
       engine_path.c_str(),
-      image_topic_.c_str());
+      image_topic_.c_str(),
+      inference_fps_);
   }
 
 private:
   void onImage(const sensor_msgs::msg::Image::ConstSharedPtr image_msg)
   {
+    if (!shouldRunInference()) {
+      return;
+    }
+
     cv_bridge::CvImageConstPtr cv_ptr;
     try {
       cv_ptr = cv_bridge::toCvShare(image_msg, "bgr8");
@@ -85,10 +94,34 @@ private:
         class_agnostic_nms_);
 
       publishDetections(*image_msg, detections);
-      publishAnnotated(*image_msg, cv_ptr->image, detections);
+      if (annotated_pub_->get_subscription_count() > 0U) {
+        publishAnnotated(*image_msg, cv_ptr->image, detections);
+      }
     } catch (const std::exception & error) {
       RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 2000, "YOLO inference failed: %s", error.what());
     }
+  }
+
+  bool shouldRunInference()
+  {
+    if (min_inference_period_sec_ <= 0.0) {
+      return true;
+    }
+
+    const auto now = get_clock()->now();
+    if (!has_last_inference_time_) {
+      last_inference_time_ = now;
+      has_last_inference_time_ = true;
+      return true;
+    }
+
+    const auto elapsed_sec = (now - last_inference_time_).seconds();
+    if (elapsed_sec < min_inference_period_sec_) {
+      return false;
+    }
+
+    last_inference_time_ = now;
+    return true;
   }
 
   void publishDetections(
@@ -150,8 +183,12 @@ private:
   int num_classes_ = 4;
   std::vector<std::string> class_names_;
   double conf_threshold_ = 0.25;
-  double nms_iou_threshold_ = 0.7;
-  bool class_agnostic_nms_ = false;
+  double nms_iou_threshold_ = 0.8;
+  bool class_agnostic_nms_ = true;
+  double inference_fps_ = 0.0;
+  double min_inference_period_sec_ = 0.0;
+  bool has_last_inference_time_ = false;
+  rclcpp::Time last_inference_time_;
 
   std::unique_ptr<TensorRtEngine> engine_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;

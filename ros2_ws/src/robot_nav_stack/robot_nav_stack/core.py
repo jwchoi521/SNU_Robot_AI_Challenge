@@ -33,6 +33,9 @@ class Detection:
     bbox: BBox
     object_type: str
     confidence: float = 1.0
+    class_id: int = -1
+    fruit_kind: str = ""
+    fruit_confidence: float = 0.0
 
 
 def transform_point(parent_pose_child: Pose2D, point_child: Pose2D) -> Pose2D:

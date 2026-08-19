@@ -13,8 +13,9 @@ shape_yolo_node:
       - dodecahedron
       - icosahedron
     conf_threshold: 0.25
-    nms_iou_threshold: 0.7
-    class_agnostic_nms: false
+    nms_iou_threshold: 0.8
+    class_agnostic_nms: true
+    inference_fps: 0.0
 
 cube_fruit_classifier_node:
   ros__parameters:

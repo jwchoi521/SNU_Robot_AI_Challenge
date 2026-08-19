@@ -163,6 +163,11 @@ View the overlay:
 rqt_image_view /cube_fruit/annotated_image
 ```
 
+When the detector is launched through
+`snu_robot_bringup full_robot_stack.launch.py`, this same topic includes the
+bbox-model distance estimate. The classifier-only overlay is routed to
+`/cube_fruit/classifier_annotated_image`.
+
 Print final cube fruit classifications:
 
 ```bash
@@ -193,7 +198,8 @@ not pickable.
 
 ```text
 shape_yolo_node.conf_threshold        default 0.25
-shape_yolo_node.nms_iou_threshold     default 0.7
+shape_yolo_node.nms_iou_threshold     default 0.8
+shape_yolo_node.class_agnostic_nms    default true
 cube_fruit_classifier_node.threshold  default 0.7
 ```
 

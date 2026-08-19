@@ -1,0 +1,33 @@
+# Python bytecode, environments, and tool caches
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Build, packaging, runtime outputs, and logs
+/build/
+/install/
+dist/
+*.egg-info/
+*.egg-link
+/runs/
+log/
+*.log
+
+# ROS 2 / colcon workspace outputs
+/ros2_ws/build/
+/ros2_ws/install/
+/ros2_ws/log/
+
+# Local datasets and captures
+/dataset/raw/
+
+# Local model artifacts
+/models/
+
+# Local SLAM capture/model artifacts
+/u_shape_robot_slam/

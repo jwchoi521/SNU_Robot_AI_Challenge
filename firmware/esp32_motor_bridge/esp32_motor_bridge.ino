@@ -19,6 +19,7 @@ struct MotorPins {
   int pin_a;
   int pin_b;
   float sign;
+  float compensation_scale;
 };
 
 struct EncoderPins {
@@ -36,7 +37,8 @@ constexpr unsigned long CONTROL_PERIOD_MS = 20;
 
 // Closed-loop velocity controller. These values are intentionally conservative
 // and should be tuned on the lifted robot before floor driving.
-constexpr float MAX_TARGET_COUNTS_PER_SEC = 1200.0f;
+// Measured encoder scale: 141.7 counts/rad, so 20 rad/s ~= 2834 counts/s.
+constexpr float MAX_TARGET_COUNTS_PER_SEC = 2834.0f;
 constexpr float VELOCITY_FEED_FORWARD = 0.35f;
 constexpr float VELOCITY_KP = 0.0005f;
 constexpr float VELOCITY_KI = 0.00008f;
@@ -44,10 +46,10 @@ constexpr float VELOCITY_INTEGRAL_LIMIT = 2500.0f;
 constexpr float MIN_MOVING_POWER = 0.12f;
 
 // Motor input pins from the current wiring note.
-MotorPins FRONT_LEFT_MOTOR = {23, 25, -1.0f};
-MotorPins FRONT_RIGHT_MOTOR = {4, 5, 1.0f};
-MotorPins REAR_LEFT_MOTOR = {2, 15, -1.0f};
-MotorPins REAR_RIGHT_MOTOR = {14, 13, 1.0f};
+MotorPins FRONT_LEFT_MOTOR = {23, 25, -1.0f, 1.17f};
+MotorPins FRONT_RIGHT_MOTOR = {4, 5, 1.0f, 0.89f};
+MotorPins REAR_LEFT_MOTOR = {2, 15, -1.0f, 1.11f};
+MotorPins REAR_RIGHT_MOTOR = {14, 13, 1.0f, 0.89f};
 
 // Encoder pins from the current wiring note.
 EncoderPins FRONT_LEFT_ENCODER = {18, 19, -1.0f};
@@ -150,7 +152,8 @@ void setupEncoder(const EncoderPins& encoder, void (*isr)(), volatile uint8_t& s
 }
 
 void setMotor(const MotorPins& motor, float power) {
-  float signed_power = power * motor.sign;
+  float compensated_power = power * motor.compensation_scale;
+  float signed_power = compensated_power * motor.sign;
   signed_power = constrain(signed_power, -1.0f, 1.0f);
   const int duty = static_cast<int>(abs(signed_power) * PWM_MAX);
 

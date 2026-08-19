@@ -40,7 +40,8 @@ gpio_encoder_joint_state:
     poll_rate_hz: 500.0
 
     # Must be calibrated from the actual encoder spec and gear ratio.
-    encoder_counts_per_revolution: 1.0
+    # Effective wheel encoder scale after removing firmware-side 1.3x tick scaling.
+    encoder_counts_per_revolution: 684.8
 
     front_left_joint: front_left_wheel_joint
     front_right_joint: front_right_wheel_joint

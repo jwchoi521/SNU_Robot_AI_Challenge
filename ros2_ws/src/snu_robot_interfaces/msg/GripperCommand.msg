@@ -4,6 +4,7 @@ uint8 OPEN=1
 uint8 CLOSE=2
 uint8 STOP=3
 uint8 SET_OPENING=4
+uint8 UNLOAD=5
 
 std_msgs/Header header
 uint8 command

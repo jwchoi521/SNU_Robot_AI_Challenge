@@ -1,19 +1,44 @@
 esp32_serial_bridge:
   ros__parameters:
     dry_run: true
-    serial_port: /dev/ttyUSB0
+    serial_port: /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
     baud_rate: 115200
+    reset_on_open: false
+    reset_pulse_sec: 0.1
     serial_reset_wait_sec: 2.0
-    esp32_command_mode: velocity
+    esp32_protocol: u_shape
+    esp32_command_mode: encoder_velocity
     command_topic: /wheel_commands
+    gripper_command_topic: /gripper/command
+    capture_arm_topic: /capture/arm
     joint_states_topic: /joint_states
     command_timeout_sec: 0.5
     read_rate_hz: 100.0
-    max_power: 0.12
-    max_wheel_velocity_rad_s: 20.0
+    max_power: 0.35
+    u_shape_pwm_max: 120
+    log_serial_writes: false
+    log_pwm_status: false
+    close_gate_on_start: true
+    disarm_capture_on_start: true
+    publish_imu: true
+    imu_topic: /imu
+    imu_frame: base_link
+    imu_yaw_offset_deg: 0.0
+    # Retry IMU ON until the first IMU sample is received. 0 max attempts means
+    # keep retrying, useful when ESP32 ignores the first command during reset.
+    imu_enable_retry_sec: 1.0
+    imu_enable_retry_max_attempts: 0
+    # With updated U-shape firmware, send IMU RESET every N failed IMU ON retries.
+    # Set 0 to disable reset retries.
+    imu_reset_retry_attempts: 5
+    # Full robot launch can enable this so Nav2 cannot drive before IMU is ready.
+    require_imu_before_motion: false
+    required_imu_max_age_sec: 1.0
+    stop_repeat_sec: 0.25
+    max_wheel_velocity_rad_s: 50.0
 
-    # Must be calibrated from the actual motor encoder spec and gear ratio.
-    encoder_counts_per_revolution: 1.0
+    # Effective wheel encoder scale after removing firmware-side 1.3x tick scaling.
+    encoder_counts_per_revolution: 684.8
 
     front_left_joint: front_left_wheel_joint
     front_right_joint: front_right_wheel_joint
