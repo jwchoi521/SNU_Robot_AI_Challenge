@@ -11,7 +11,7 @@
 ```bash
 rm -rf /root/snu_robot_ai_challenge_verify
 mkdir -p /root/snu_robot_ai_challenge_verify/ros2_ws
-cp -a /mnt/c/Users/정진욱/Documents/Codex/2026-06-23/wlrma/SNU_Robot_AI_Challenge/ros2_ws/src \
+cp -a /mnt/c/Users/<사용자명>/path/to/SNU_Robot_AI_Challenge/ros2_ws/src \
   /root/snu_robot_ai_challenge_verify/ros2_ws/
 
 cd /root/snu_robot_ai_challenge_verify/ros2_ws
