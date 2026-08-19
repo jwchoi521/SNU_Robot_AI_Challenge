@@ -122,7 +122,7 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-### 전체 스택 기동
+### 전체 스택 기동 (최소)
 
 ```bash
 ros2 launch snu_robot_bringup full_robot_stack.launch.py \
@@ -146,6 +146,86 @@ include합니다. **`jetson_shape_fruit.launch.py`나 `sllidar_c1_launch.py`를 
 > `enable_bbox_goal_navigation`은 인식과 위치추정을 검증하는 동안 `false`로 두세요.
 > `true`이면 새 `/object_pose_map` target이 들어올 때마다 `NavigateToPose` goal을 보냅니다.
 > 안전 브링업 순서는 [`docs/BBOX_GOAL_NAVIGATION_TEST.md`](docs/BBOX_GOAL_NAVIGATION_TEST.md) 참고.
+
+### 전체 스택 기동 (실전)
+
+실제 로봇에서 미션을 도는 최종 커맨드입니다. 위 최소 예시와 달리 SLAM 대신 고정 맵을 쓰고,
+bbox goal 주행·semantic 장애물·ESP32 브리지를 모두 켭니다.
+
+```bash
+cd ~/SNU_Robot_AI_Challenge/ros2_ws && source install/setup.bash && \
+ros2 launch snu_robot_bringup full_robot_stack.launch.py \
+  use_sim_time:=false \
+  shape_engine:=$HOME/SNU_Robot_AI_Challenge/models/shape_yolo_finetune_2_raw.engine \
+  shape_input_size:=640 \
+  classifier_engine:=$HOME/SNU_Robot_AI_Challenge/models/classifier_real_sz256_finetune_5.engine \
+  classifier_input_size:=256 \
+  enable_camera:=true camera_index:=0 frame_width:=1280 frame_height:=720 \
+  fps:=10.0 inference_fps:=10.0 \
+  enable_lidar_driver:=true lidar_serial_port:=/dev/ttyUSB0 lidar_yaw_deg:=180.0 \
+  enable_lidar_deskew:=false \
+  enable_sensor_tf:=true laser_yaw:=3.14159265 publish_lidar_tf:=false \
+  enable_known_map_server:=true enable_slam:=false \
+  enable_nav2:=true nav2_autostart:=true nav2_inflation_radius:=0.09 \
+  nav2_behavior_max_rotational_vel:=0.5 \
+  enable_base_odometry:=true enable_ekf:=true odom_topic:=/odometry/filtered \
+  ekf_params_file:=$HOME/SNU_Robot_AI_Challenge/ros2_ws/src/snu_robot_bringup/config/ekf_no_imu.yaml \
+  publish_tf:=true wall_tf_mode:=map_to_odom wall_tf_transform_tolerance_sec:=0.2 \
+  use_imu_yaw_prior:=false use_odom_prior:=false \
+  use_global_seed_search_on_first_scan:=false fallback_to_latest_tf:=false \
+  max_rays:=120 min_rays:=30 opt_iterations:=2 \
+  object_source_frame:=base_link object_update_alpha:=0.5 \
+  adapter_max_detections_per_frame:=8 adapter_max_output_hz:=10.0 \
+  adapter_min_confidence:=0.5 shape_nms_iou_threshold:=0.7 \
+  pending_detection_timeout_sec:=1.5 max_pending_detections:=30 \
+  object_role_confirm_frames:=2 \
+  target_shape:=icosahedron target_fruit:=pineapple target_min_confidence:=0.92 \
+  no_fruit_class:=none \
+  enable_bbox_goal_navigation:=true bbox_goal_send_nav2_goal:=true \
+  bbox_goal_target_topic:=/target_object_pose_map \
+  bbox_goal_target_selection_mode:=nearest \
+  bbox_goal_approach_distance_m:=0.0 bbox_goal_reached_tolerance_m:=0.01 \
+  bbox_goal_max_target_age_sec:=2.0 bbox_goal_heading_offset_deg:=0.0 \
+  bbox_goal_target_lock_distance_m:=0.51 \
+  bbox_goal_target_switch_min_improvement_m:=0.12 \
+  bbox_goal_control_gripper_gate:=true gripper_command_topic:=/gripper/command \
+  bbox_goal_gate_open_distance_m:=0.5 bbox_goal_capture_wait_timeout_sec:=5.0 \
+  bbox_goal_storage_max_x:=-1.6 bbox_goal_storage_max_y:=-1.6 \
+  bbox_goal_storage_forward_extra_time_sec:=0.2 \
+  bbox_goal_target_search_initial_spin_yaw_tolerance_deg:=30.0 \
+  bbox_goal_target_search_initial_spin_max_angular_speed_rad_s:=1.00 \
+  enable_semantic_obstacle_cloud:=true \
+  semantic_obstacle_topic:=/semantic_obstacle_cloud \
+  semantic_obstacle_radius_m:=0.1 semantic_obstacle_point_spacing_m:=0.1 \
+  semantic_obstacle_ttl_sec:=10.0 \
+  semantic_obstacle_clear_costmaps_on_expiry:=true \
+  semantic_clear_costmaps_on_target:=true \
+  startup_escape_start_delay_sec:=0.1 startup_escape_distance_m:=0.40 \
+  startup_escape_speed_mps:=0.40 startup_escape_direction_sign:=1.0 \
+  enable_wheel_command_mapper:=true \
+  enable_esp32_serial_bridge:=true esp32_dry_run:=false \
+  esp32_serial_port:=/dev/ttyUSB1 esp32_serial_reset_wait_sec:=0.5 \
+  esp32_protocol:=u_shape esp32_command_mode:=encoder_velocity \
+  esp32_close_gate_on_start:=true esp32_require_imu_before_motion:=false \
+  esp32_publish_imu:=false esp32_imu_topic:=/imu esp32_log_serial_writes:=true
+```
+
+이 설정에서 눈여겨볼 점:
+
+| 항목 | 값 | 의미 |
+| --- | --- | --- |
+| 미션 목표 | `target_shape:=icosahedron`, `target_fruit:=pineapple` | **OR 조건.** 정이십면체 **또는** 파인애플 큐브면 target, 나머지는 전부 obstacle (`object_role.py`) |
+| target 신뢰도 | `target_min_confidence:=0.92` | 이 값 미만이면 조건이 맞아도 obstacle로 강등. 오인식 추격 방지 |
+| 위치추정 | `enable_slam:=false` + `enable_known_map_server:=true` | SLAM을 돌리지 않고 미리 만든 4×4 아레나 맵 + 4벽 localizer 사용 |
+| TF 발행 | `wall_tf_mode:=map_to_odom` | wall localizer가 `map -> odom`을 발행, EKF가 `odom -> base_link` 담당 |
+| IMU | `use_imu_yaw_prior:=false`, `esp32_publish_imu:=false`, `ekf_no_imu.yaml` | IMU를 쓰지 않고 휠 오도메트리만으로 EKF 구성 |
+| LiDAR 방향 | `lidar_yaw_deg:=180.0`, `laser_yaw:=3.14159265` | LiDAR가 뒤집혀 장착됨. `publish_lidar_tf:=false`로 드라이버 TF 중복 방지 |
+| 모터 제어 | `esp32_command_mode:=encoder_velocity` | ESP32가 엔코더 피드백으로 휠 속도를 제어 (`V` 프로토콜) |
+| 보관 구역 | `bbox_goal_storage_max_x/y:=-1.6` | `min_x/min_y`는 기본값 `-2.0`이므로 하역 구역은 `x,y ∈ [-2.0, -1.6]`, 즉 아레나 좌하단 40cm 모서리 |
+
+시리얼 포트는 LiDAR가 `/dev/ttyUSB0`, ESP32가 `/dev/ttyUSB1`입니다 (카메라는 시리얼이 아니라
+`camera_index:=0`인 V4L2 장치). USB 인식 순서가 바뀌면 두 포트가 뒤바뀌므로 udev 규칙을
+걸어두거나 기동 전에 확인하세요.
 
 ### 테스트
 
